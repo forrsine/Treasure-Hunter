@@ -1,0 +1,61 @@
+{
+  "characters": [
+    {
+      "classId": 1,
+      "classKey": "Warrior",
+      "name": "战士",
+      "description": "近战职业，生命和防御较高，适合正面战斗。",
+      "previewPrefabPath": "Characters/Warrior",
+      "gamePrefabPath": "Characters/Warrior",
+      "initLevel": 1,
+      "hp": 360,
+      "mp": 120,
+      "attack": 35,
+      "defense": 20,
+      "moveSpeed": 5
+    },
+    {
+      "classId": 2,
+      "classKey": "Wizard",
+      "name": "法师",
+      "description": "远程魔法职业，魔法值和技能伤害较高，但生命较低。",
+      "previewPrefabPath": "Characters/Wizard",
+      "gamePrefabPath": "Characters/Wizard",
+      "initLevel": 1,
+      "hp": 260,
+      "mp": 360,
+      "attack": 45,
+      "defense": 10,
+      "moveSpeed": 5
+    },
+    {
+      "classId": 3,
+      "classKey": "Archer",
+      "name": "弓箭手",
+      "description": "远程物理职业，攻击距离远，速度快，暴击较高。",
+      "previewPrefabPath": "Characters/Archer",
+      "gamePrefabPath": "Characters/Archer",
+      "initLevel": 1,
+      "hp": 300,
+      "mp": 180,
+      "attack": 38,
+      "defense": 14,
+      "moveSpeed": 5.5
+    }
+,
+    {
+    "classId": 4,
+  "classKey": "Assassin",
+  "name": "刺客",
+  "description": "灵活敏捷的近战职业，移动速度较快，擅长连续攻击和高爆发输出。",
+  "previewPrefabPath": "Characters/AssassinPreview",
+  "gamePrefabPath": "Characters/Assassin",
+  "initLevel": 1,
+  "hp": 300,
+  "mp": 160,
+  "attack": 46,
+  "defense": 10,
+  "moveSpeed": 6.5
+}
+  ]
+}
