@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TreasureHunter.Server")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f9c8e22baa57acd2172646b0c5e213bbf76bb08e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+64bcf4c5caaeee39e17756d364e9e5dd056d14cf")]
 [assembly: System.Reflection.AssemblyProductAttribute("TreasureHunter.Server")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TreasureHunter.Server")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -185,39 +185,56 @@ public sealed class DBService : Singleton<DBService>
 
         try
         {
-            using var checkCommand = new SqlCommand(
+            // 同一个请求既可以创建空槽位，也可以覆盖已有槽位。
+            // UPDLOCK + HOLDLOCK 会在当前事务内锁住目标槽位，避免两个并发请求
+            // 同时判断槽位为空并重复插入，最终触发唯一索引冲突。
+            using var saveCommand = new SqlCommand(
                 """
-                SELECT COUNT(1)
-                FROM dbo.PlayerCharacters
-                WHERE UserId = @UserId AND SlotIndex = @SlotIndex;
+                IF EXISTS (
+                    SELECT 1
+                    FROM dbo.PlayerCharacters WITH (UPDLOCK, HOLDLOCK)
+                    WHERE UserId = @UserId AND SlotIndex = @SlotIndex
+                )
+                BEGIN
+                    UPDATE dbo.PlayerCharacters
+                    SET Name = @Name,
+                        ClassId = @ClassId,
+                        Level = 1,
+                        Exp = 0,
+                        UpdatedAt = SYSUTCDATETIME()
+                    OUTPUT INSERTED.Id,
+                           INSERTED.UserId,
+                           INSERTED.SlotIndex,
+                           INSERTED.Name,
+                           INSERTED.ClassId,
+                           INSERTED.Level,
+                           INSERTED.Exp
+                    WHERE UserId = @UserId AND SlotIndex = @SlotIndex;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.PlayerCharacters
+                        (UserId, SlotIndex, Name, ClassId, Level, Exp)
+                    OUTPUT INSERTED.Id,
+                           INSERTED.UserId,
+                           INSERTED.SlotIndex,
+                           INSERTED.Name,
+                           INSERTED.ClassId,
+                           INSERTED.Level,
+                           INSERTED.Exp
+                    VALUES (@UserId, @SlotIndex, @Name, @ClassId, 1, 0);
+                END
                 """,
                 connection,
                 transaction);
 
-            checkCommand.Parameters.AddWithValue("@UserId", userId);
-            checkCommand.Parameters.AddWithValue("@SlotIndex", slotIndex);
-
-            if (Convert.ToInt32(checkCommand.ExecuteScalar()) > 0)
-            {
-                throw new InvalidOperationException("This slot already has a character.");
-            }
-
-            using var insertCommand = new SqlCommand(
-                """
-                INSERT INTO dbo.PlayerCharacters (UserId, SlotIndex, Name, ClassId, Level, Exp)
-                OUTPUT INSERTED.Id, INSERTED.UserId, INSERTED.SlotIndex, INSERTED.Name, INSERTED.ClassId, INSERTED.Level, INSERTED.Exp
-                VALUES (@UserId, @SlotIndex, @Name, @ClassId, 1, 0);
-                """,
-                connection,
-                transaction);
-
-            insertCommand.Parameters.AddWithValue("@UserId", userId);
-            insertCommand.Parameters.AddWithValue("@SlotIndex", slotIndex);
-            insertCommand.Parameters.AddWithValue("@Name", name);
-            insertCommand.Parameters.AddWithValue("@ClassId", classId);
+            saveCommand.Parameters.AddWithValue("@UserId", userId);
+            saveCommand.Parameters.AddWithValue("@SlotIndex", slotIndex);
+            saveCommand.Parameters.AddWithValue("@Name", name);
+            saveCommand.Parameters.AddWithValue("@ClassId", classId);
 
             TCharacter? character = null;
-            using (SqlDataReader reader = insertCommand.ExecuteReader())
+            using (SqlDataReader reader = saveCommand.ExecuteReader())
             {
                 if (reader.Read())
                 {
