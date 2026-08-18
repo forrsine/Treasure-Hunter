@@ -3,12 +3,17 @@ using Microsoft.Data.SqlClient;
 
 namespace GameServer.Services;
 
+/// <summary>
+/// SQL Server 数据访问服务：集中管理连接创建、账号查询、注册事务和角色存档读写。
+/// 本层只处理数据库模型，不直接构造网络响应，避免持久化代码与协议代码耦合。
+/// </summary>
 public sealed class DBService : Singleton<DBService>
 {
     private string _connectionString = "";
 
     public void Init()
     {
+        // 启动阶段只验证配置；每次业务操作按需打开并及时释放独立连接。
         Settings.Load();
         _connectionString = Settings.ConnectionString;
 
@@ -18,6 +23,10 @@ public sealed class DBService : Singleton<DBService>
         }
     }
 
+    /// <summary>
+    /// 打开一个新的数据库连接。
+    /// 当前服务端采用“短连接按需打开”的方式，简单直观，也方便 using 自动释放。
+    /// </summary>
     public SqlConnection OpenConnection()
     {
         var connection = new SqlConnection(_connectionString);
@@ -25,6 +34,9 @@ public sealed class DBService : Singleton<DBService>
         return connection;
     }
 
+    /// <summary>
+    /// 查询当前连接到的数据库名称，主要用于本地联调验证配置。
+    /// </summary>
     public string? GetDatabaseName()
     {
         using SqlConnection connection = OpenConnection();
@@ -32,8 +44,14 @@ public sealed class DBService : Singleton<DBService>
         return command.ExecuteScalar()?.ToString();
     }
 
+    /// <summary>
+    /// 确保角色表存在。
+    /// 原型阶段允许服务端启动后自动补表，减少本地搭环境成本；
+    /// 正式项目更推荐用数据库迁移脚本统一管理表结构版本。
+    /// </summary>
     public void EnsurePlayerCharactersTable(SqlConnection connection, SqlTransaction? transaction = null)
     {
+        // 原型阶段自动补表便于运行，正式生产环境更适合使用可追踪版本的数据库迁移脚本。
         using var command = new SqlCommand(
             """
             IF OBJECT_ID(N'dbo.PlayerCharacters', N'U') IS NULL
@@ -61,6 +79,9 @@ public sealed class DBService : Singleton<DBService>
         command.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// 根据用户名查找用户，并顺带加载该账号的玩家聚合信息。
+    /// </summary>
     public TUser? FindUserByUsername(string username)
     {
         using SqlConnection connection = OpenConnection();
@@ -96,6 +117,9 @@ public sealed class DBService : Singleton<DBService>
         return user;
     }
 
+    /// <summary>
+    /// 判断用户名是否已存在。
+    /// </summary>
     public bool UsernameExists(SqlConnection connection, string username, SqlTransaction? transaction = null)
     {
         using var command = new SqlCommand(
@@ -107,8 +131,13 @@ public sealed class DBService : Singleton<DBService>
         return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
 
+    /// <summary>
+    /// 注册一个新用户。
+    /// 用户表和玩家档案表必须在同一事务里一起成功，否则会产生脏数据。
+    /// </summary>
     public TUser RegisterUser(string username, string passwordHash)
     {
+        // 用户和玩家基础记录必须同时成功，因此放在同一个事务中提交。
         using SqlConnection connection = OpenConnection();
         using SqlTransaction transaction = connection.BeginTransaction();
 
@@ -177,8 +206,13 @@ public sealed class DBService : Singleton<DBService>
         }
     }
 
+    /// <summary>
+    /// 创建或覆盖某个角色槽位的角色。
+    /// 这里使用事务和行锁，避免并发请求同时写入同一个槽位。
+    /// </summary>
     public TCharacter CreateCharacter(long userId, int slotIndex, string name, int classId)
     {
+        // 槽位校验和写入位于同一事务，防止并发请求创建两个相同槽位角色。
         using SqlConnection connection = OpenConnection();
         EnsurePlayerCharactersTable(connection);
         using SqlTransaction transaction = connection.BeginTransaction();
@@ -253,6 +287,9 @@ public sealed class DBService : Singleton<DBService>
         }
     }
 
+    /// <summary>
+    /// 读取某个账号下的全部角色列表。
+    /// </summary>
     public List<TCharacter> LoadCharacters(long userId)
     {
         using SqlConnection connection = OpenConnection();
@@ -316,6 +353,7 @@ public sealed class DBService : Singleton<DBService>
 
     private static TCharacter ReadCharacter(SqlDataReader reader)
     {
+        // 数据库字段到内存模型的映射集中在一处，表结构变化时只需调整这里。
         long id = reader.GetInt64(0);
         int classId = reader.GetInt32(4);
 

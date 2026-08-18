@@ -6,10 +6,15 @@ using SkillBridge.Message;
 
 namespace GameServer.Services;
 
+/// <summary>
+/// 用户与角色业务服务：处理注册、登录、创建角色、进入游戏和离开游戏。
+/// 构造函数只完成消息订阅，具体数据访问交给 DBService，在线实体交给 CharacterManager。
+/// </summary>
 public sealed class UserService : Singleton<UserService>
 {
     public UserService()
     {
+        // 服务实例在网络启动前创建，因此首个客户端请求到达时处理器已经注册完成。
         MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserLoginRequest>(OnLogin);
         MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserRegisterRequest>(OnRegister);
         MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserCreateCharacterRequest>(OnCreateCharacter);
@@ -21,9 +26,14 @@ public sealed class UserService : Singleton<UserService>
     {
     }
 
+    /// <summary>
+    /// 处理登录请求。
+    /// 核心顺序是：查账号 -> 校验密码哈希 -> 把用户挂到 Session -> 返回用户与角色列表。
+    /// </summary>
     private void OnLogin(NetConnection<NetSession> sender, UserLoginRequest request)
     {
-        Log.InfoFormat("UserLoginRequest: User:{0} Pass:{1}", request.User, request.Password);
+        // 安全要求：日志只能记录账号和结果，绝不能输出明文密码。
+        Log.InfoFormat("UserLoginRequest: User:{0}", request.User);
 
         sender.Session.Response.userLogin = new UserLoginResponse();
 
@@ -61,9 +71,13 @@ public sealed class UserService : Singleton<UserService>
         sender.SendResponse();
     }
 
+    /// <summary>
+    /// 处理注册请求。
+    /// 账号长度和密码长度先做基础校验，再进入数据库创建流程。
+    /// </summary>
     private void OnRegister(NetConnection<NetSession> sender, UserRegisterRequest request)
     {
-        Log.InfoFormat("UserRegisterRequest: User:{0} Pass:{1}", request.User, request.Password);
+        Log.InfoFormat("UserRegisterRequest: User:{0}", request.User);
 
         sender.Session.Response.userRegister = new UserRegisterResponse();
 
@@ -96,6 +110,7 @@ public sealed class UserService : Singleton<UserService>
             }
             else
             {
+                // 数据库只保存带随机盐的 BCrypt 哈希，即使数据库泄露也不会直接暴露明文密码。
                 string passwordHash = BCrypt.Net.BCrypt.HashPassword(password);
                 DBService.Instance.RegisterUser(username, passwordHash);
 
@@ -113,6 +128,10 @@ public sealed class UserService : Singleton<UserService>
         sender.SendResponse();
     }
 
+    /// <summary>
+    /// 处理创建角色请求。
+    /// 这里先校验登录态、槽位、职业和角色名，再交给 DBService 用事务写入。
+    /// </summary>
     private void OnCreateCharacter(NetConnection<NetSession> sender, UserCreateCharacterRequest request)
     {
         Log.InfoFormat("UserCreateCharacterRequest: Name:{0} Class:{1}", request.Name, request.Class);
@@ -180,8 +199,14 @@ public sealed class UserService : Singleton<UserService>
         sender.SendResponse();
     }
 
+    /// <summary>
+    /// 处理进入游戏请求。
+    /// 服务端不会直接信任客户端传来的角色 ID，而是只允许从当前 Session 已登录账号的角色列表中选择。
+    /// 这是网络安全里很常见的一条原则：客户端发来的只是“意图”，最终对象由服务端自己确认。
+    /// </summary>
     private void OnGameEnter(NetConnection<NetSession> sender, UserGameEnterRequest request)
     {
+        // 服务端根据已登录 Session 中的角色列表决定进入对象，不接受客户端任意角色 ID。
         TUser? user = sender.Session.User;
         sender.Session.Response.gameEnter = new UserGameEnterResponse();
 
@@ -215,6 +240,10 @@ public sealed class UserService : Singleton<UserService>
         sender.SendResponse();
     }
 
+    /// <summary>
+    /// 处理离开游戏请求。
+    /// 离场时要把在线角色从 CharacterManager 中移除，避免服务器残留“幽灵在线角色”。
+    /// </summary>
     private void OnGameLeave(NetConnection<NetSession> sender, UserGameLeaveRequest request)
     {
         Character? character = sender.Session.Character;
@@ -231,13 +260,22 @@ public sealed class UserService : Singleton<UserService>
         sender.SendResponse();
     }
 
+    /// <summary>
+    /// 在线角色离场的统一清理入口。
+    /// 主动退出和异常断线都走这里，避免清理逻辑分散后前后不一致。
+    /// </summary>
     public void CharacterLeave(Character character)
     {
+        // 主动离开和异常断线共用同一清理入口，避免在线角色残留。
         Log.InfoFormat("CharacterLeave: characterID:{0}:{1}", character.Id, character.Info.Name);
         CharacterManager.Instance.RemoveCharacter(character.Id);
         character.Clear();
     }
 
+    /// <summary>
+    /// 把数据库用户模型转换成网络层用户信息。
+    /// 这样数据库表结构与网络协议结构就能保持解耦。
+    /// </summary>
     private static NUserInfo BuildUserInfo(TUser user)
     {
         var info = new NUserInfo
@@ -257,6 +295,9 @@ public sealed class UserService : Singleton<UserService>
         return info;
     }
 
+    /// <summary>
+    /// 把数据库角色记录转换成客户端可识别的角色信息。
+    /// </summary>
     private static NCharacterInfo BuildCharacterInfo(TCharacter character)
     {
         return new NCharacterInfo

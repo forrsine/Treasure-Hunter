@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// 游戏角色集合管理器。
+/// 负责角色进入/离开以及唯一实体编号，具体 Prefab 创建交给 GameplayCharacterSpawner 监听事件完成。
+/// </summary>
 public sealed class GameplayCharacterManager
 {
     private static readonly GameplayCharacterManager instance = new GameplayCharacterManager();
@@ -19,6 +23,11 @@ public sealed class GameplayCharacterManager
     public event Action<GameplayCharacter> CharacterEntered;
     public event Action<GameplayCharacter> CharacterLeft;
 
+    /// <summary>
+    /// 让当前选中的角色进入玩法场景。
+    /// 这个方法只负责准备角色描述数据并发出“进入”事件，
+    /// 真正的 Prefab 创建交给 GameplayCharacterSpawner 去完成。
+    /// </summary>
     public GameplayCharacter EnterCurrentCharacter(
         NCharacter selectedCharacter,
         Vector3 position,
@@ -48,6 +57,10 @@ public sealed class GameplayCharacterManager
         return character;
     }
 
+    /// <summary>
+    /// 把角色加入当前场景角色集合。
+    /// 如果同一个实体编号已经存在，先移除旧的，再登记新的。
+    /// </summary>
     public void AddCharacter(GameplayCharacter character)
     {
         if (character == null)
@@ -64,6 +77,9 @@ public sealed class GameplayCharacterManager
         CharacterEntered?.Invoke(character);
     }
 
+    /// <summary>
+    /// 按实体编号移除一个角色，并通知监听者做销毁清理。
+    /// </summary>
     public void RemoveCharacter(long entityId)
     {
         if (!characters.TryGetValue(entityId, out GameplayCharacter character))
@@ -75,6 +91,10 @@ public sealed class GameplayCharacterManager
         characters.Remove(entityId);
     }
 
+    /// <summary>
+    /// 清空当前场景内全部角色。
+    /// 切换角色或重新进入玩法场景前，通常会先走这里，保证旧角色不会残留。
+    /// </summary>
     public void Clear()
     {
         if (characters.Count == 0)
@@ -91,6 +111,10 @@ public sealed class GameplayCharacterManager
         }
     }
 
+    /// <summary>
+    /// 根据职业编号查找职业配置。
+    /// 如果当前职业找不到，并且不是回退职业，就尝试使用保底职业配置。
+    /// </summary>
     private CharacterDefine ResolveCharacterDefine(int classId, int fallbackClassId)
     {
         CharacterDataManager dataManager = CharacterDataManager.Instance;
@@ -110,6 +134,10 @@ public sealed class GameplayCharacterManager
         return dataManager.GetCharacter(fallbackClassId);
     }
 
+    /// <summary>
+    /// 没有合法存档时，创建一份仅用于进入场景的临时角色数据。
+    /// 这能保证开发阶段即使没登录、没建角，也能直接进主场景测试。
+    /// </summary>
     private NCharacter CreateFallbackCharacter(CharacterDefine define)
     {
         return new NCharacter
@@ -123,6 +151,10 @@ public sealed class GameplayCharacterManager
         };
     }
 
+    /// <summary>
+    /// 生成当前角色的实体编号。
+    /// 正式存档角色优先使用服务端真实 ID；临时角色则使用负数自减 ID，避免和正式数据冲突。
+    /// </summary>
     private long CreateEntityId(NCharacter save)
     {
         if (save != null && save.id > 0)

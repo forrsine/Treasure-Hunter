@@ -1,25 +1,48 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// 玩家武器碰撞盒。
 /// 
 /// 新手阅读顺序：
-/// 1. PlayerCo 的攻击动画会在合适的帧启用/关闭武器碰撞体。
+/// 1. PlayerCombatComponent 会在合适的动画帧启用/关闭武器碰撞体。
 /// 2. 武器碰到任何实现 FighterInterface 的对象，就可以调用 Hit。
-/// 3. 真正伤害不是直接写死在武器上，而是从 PlayerCo.RollAttackDamage 计算，
+/// 3. 真正伤害不是直接写死在武器上，而是交给 PlayerCombatSystem 计算，
 ///    这样暴击、吸血、攻击力升级都能统一生效。
 /// </summary>
 public class WeaponCo : MonoBehaviour
 {
+    private readonly HashSet<FighterInterface> damagedTargetsInCurrentWindow = new HashSet<FighterInterface>();
+    private int currentHitWindowId = -1;
+
     /// <summary>
-    /// 武器碰到可受击对象时，统一走 PlayerCo 的伤害、暴击、吸血和漂浮文字流程。
+    /// 进入攻击盒时尝试造成伤害。
+    /// 注意：连击时敌人可能一直待在攻击盒里，单靠 OnTriggerEnter 不一定会再次触发。
     /// </summary>
     private void OnTriggerEnter(Collider other)
     {
-        PlayerCo player = GameplayRuntime.Instance.CurrentPlayer;
+        TryHit(other);
+    }
+
+    /// <summary>
+    /// 敌人持续停留在攻击盒中时也要尝试命中。
+    /// 同一次攻击窗口内会做目标去重，所以不会因为 OnTriggerStay 每个物理帧都扣血。
+    /// </summary>
+    private void OnTriggerStay(Collider other)
+    {
+        TryHit(other);
+    }
+
+    /// <summary>
+    /// 近战命中的统一入口：先确认攻击窗口，再确认目标是否本窗口已经受击，最后才结算伤害。
+    /// </summary>
+    private void TryHit(Collider other)
+    {
+        // 优先从武器所属层级寻找玩家，避免场景中存在多个角色时拿到错误的全局玩家。
+        PlayerCombatComponent combat = GetOwnerCombat();
 
         // Ignore self-collisions and any hit before the current player is ready.
-        if (other.transform.root == transform.root || player == null)
+        if (other.transform.root == transform.root || combat == null)
         {
             return;
         }
@@ -34,10 +57,48 @@ public class WeaponCo : MonoBehaviour
             return;
         }
 
-        // 让 PlayerCo 统一计算本次攻击伤害，里面会处理暴击。
+        RefreshHitWindow(combat.AttackHitWindowId);
+        if (damagedTargetsInCurrentWindow.Contains(fighterInterface))
+        {
+            return;
+        }
+
+        damagedTargetsInCurrentWindow.Add(fighterInterface);
+        ApplyDamage(combat, other, fighterInterface);
+    }
+
+    private PlayerCombatComponent GetOwnerCombat()
+    {
+        PlayerCombatComponent combat = GetComponentInParent<PlayerCombatComponent>();
+        if (combat == null && GameplayRuntime.Instance.CurrentPlayer != null)
+        {
+            combat = GameplayRuntime.Instance.CurrentPlayer.GetComponent<PlayerCombatComponent>();
+        }
+
+        return combat;
+    }
+
+    private void RefreshHitWindow(int hitWindowId)
+    {
+        if (currentHitWindowId == hitWindowId)
+        {
+            return;
+        }
+
+        currentHitWindowId = hitWindowId;
+        damagedTargetsInCurrentWindow.Clear();
+    }
+
+    /// <summary>
+    /// 武器碰到可受击对象时，统一走玩家战斗组件的伤害、暴击、吸血和漂浮文字流程。
+    /// 这个方法只负责结算，避免触发检测和伤害公式混在一起。
+    /// </summary>
+    private void ApplyDamage(PlayerCombatComponent combat, Collider other, FighterInterface fighterInterface)
+    {
+        // 让战斗系统统一计算本次攻击伤害，里面会处理暴击。
         // isCritical 会告诉我们这次是否暴击，后面用来决定伤害数字颜色。
         bool isCritical;
-        int damage = player.RollAttackDamage(out isCritical);
+        int damage = combat.RollAttackDamage(out isCritical);
 
         // 找到真正被打中的目标脚本，后面把漂浮文字显示在这个目标斜上方。
         Component fighterComponent = fighterInterface as Component;
@@ -71,6 +132,17 @@ public class WeaponCo : MonoBehaviour
                 appliedDamage = vaultCanTakeDamage ? Mathf.Min(damage, targetHpBeforeHit) : 0;
                 shouldShowDamageText = vaultCanTakeDamage;
             }
+            else
+            {
+                SpiderKingBossController boss = other.GetComponentInParent<SpiderKingBossController>();
+                if (boss != null)
+                {
+                    feedbackTarget = boss.transform;
+                    targetHpBeforeHit = Mathf.Max(0, boss.CurrentHp);
+                    shouldShowDamageText = !boss.IsDead && targetHpBeforeHit > 0;
+                    appliedDamage = shouldShowDamageText ? Mathf.Min(damage, targetHpBeforeHit) : 0;
+                }
+            }
         }
 
         // 先把伤害交给目标，让目标自己扣血、死亡、刷新血条。
@@ -79,11 +151,11 @@ public class WeaponCo : MonoBehaviour
         // 命中有效时显示伤害数字：普通白色，暴击深红色。
         if (shouldShowDamageText)
         {
-            FloatingCombatText.ShowDamage(feedbackTarget, other, damage, isCritical);
+            FloatingCombatText.ShowDamage(feedbackTarget, other, appliedDamage, isCritical);
         }
 
         // 再把“实际造成的伤害值”交给玩家处理吸血。
         // 回血数字现在统一显示在玩家头顶，所以这里不再把敌人位置传过去。
-        player.HandleDamageDealt(appliedDamage);
+        combat.HandleDamageDealt(appliedDamage);
     }
 }

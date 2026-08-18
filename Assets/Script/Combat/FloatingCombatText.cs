@@ -10,6 +10,8 @@ using UnityEngine;
 /// </summary>
 public class FloatingCombatText : MonoBehaviour
 {
+    private const string PoolKey = "FloatingCombatText";
+
     // 暴击使用紫黑色。它和玩家受伤的普通红字区分更明显。
     private static readonly Color CriticalDamageColor = new Color(0.18f, 0f, 0.28f, 1f);
 
@@ -115,11 +117,25 @@ public class FloatingCombatText : MonoBehaviour
             return;
         }
 
-        // 新建一个普通 GameObject，再挂上本脚本和 TextMesh。
-        // 这样不需要你手动做预制体，直接运行就能看到效果。
-        GameObject textObject = new GameObject("FloatingCombatText");
-        FloatingCombatText floatingText = textObject.AddComponent<FloatingCombatText>();
-        TextMesh mesh = textObject.AddComponent<TextMesh>();
+        // 优先从对象池获取飘字对象，避免战斗中频繁 new GameObject / Destroy。
+        // 如果测试场景没有 SkillVisualPool，就退回临时创建，保证功能不会因为对象池缺失而中断。
+        GameObject textObject = SkillVisualPool.Instance != null
+            ? SkillVisualPool.Instance.GetEffectObject(PoolKey)
+            : new GameObject(PoolKey);
+
+        textObject.name = PoolKey;
+
+        FloatingCombatText floatingText = textObject.GetComponent<FloatingCombatText>();
+        if (floatingText == null)
+        {
+            floatingText = textObject.AddComponent<FloatingCombatText>();
+        }
+
+        TextMesh mesh = textObject.GetComponent<TextMesh>();
+        if (mesh == null)
+        {
+            mesh = textObject.AddComponent<TextMesh>();
+        }
 
         floatingText.Initialize(mesh, color);
         mesh.text = content;
@@ -166,7 +182,7 @@ public class FloatingCombatText : MonoBehaviour
 
         if (age >= lifetime)
         {
-            Destroy(gameObject);
+            ReleaseToPool();
             return;
         }
 
@@ -213,6 +229,27 @@ public class FloatingCombatText : MonoBehaviour
         Color fadedColor = startColor;
         fadedColor.a = alpha;
         textMesh.color = fadedColor;
+    }
+
+    /// <summary>
+    /// 飘字生命周期结束后回收对象。
+    /// 有对象池时隐藏复用；没有对象池时销毁，方便独立测试场景运行。
+    /// </summary>
+    private void ReleaseToPool()
+    {
+        if (textMesh != null)
+        {
+            textMesh.text = string.Empty;
+        }
+
+        if (SkillVisualPool.Instance != null)
+        {
+            SkillVisualPool.Instance.ReleaseVisual(PoolKey, gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
     }
 
     /// <summary>
@@ -307,5 +344,93 @@ public class FloatingCombatText : MonoBehaviour
         }
 
         return hasBounds;
+    }
+}
+
+/// <summary>
+/// 战斗反馈工具：统一处理伤害数字显示前的目标定位和实际伤害预估。
+/// 注意：这里不负责真正扣血，只负责表现层需要的“显示在哪里、显示多少”。
+/// </summary>
+public static class CombatFeedbackUtility
+{
+    /// <summary>
+    /// 根据命中的目标预估本次实际生效伤害。
+    /// 例如怪物只剩 3 点血，技能打 100 点，飘字显示 3 更符合玩家感受，也能避免吸血按溢出伤害计算。
+    /// </summary>
+    public static int PreviewAppliedDamage(
+        FighterInterface fighter,
+        Collider hitCollider,
+        int rawDamage,
+        out Transform feedbackTarget,
+        out bool shouldShowDamageText)
+    {
+        feedbackTarget = GetDefaultFeedbackTarget(fighter, hitCollider);
+        shouldShowDamageText = rawDamage > 0;
+
+        if (rawDamage <= 0)
+        {
+            return 0;
+        }
+
+        SlimeCo slime = hitCollider != null ? hitCollider.GetComponentInParent<SlimeCo>() : null;
+        if (slime != null)
+        {
+            feedbackTarget = slime.transform;
+            int hpBeforeHit = Mathf.Max(0, slime.Hp);
+            shouldShowDamageText = hpBeforeHit > 0;
+            return shouldShowDamageText ? Mathf.Min(rawDamage, hpBeforeHit) : 0;
+        }
+
+        BoxCo vault = hitCollider != null ? hitCollider.GetComponentInParent<BoxCo>() : null;
+        if (vault != null)
+        {
+            feedbackTarget = vault.transform;
+            bool canTakeDamage = !vault.IsInvincible && !vault.IsRespawning && vault.CurrentHp > 0;
+            shouldShowDamageText = canTakeDamage;
+            return canTakeDamage ? Mathf.Min(rawDamage, vault.CurrentHp) : 0;
+        }
+
+        SpiderKingBossController boss = hitCollider != null
+            ? hitCollider.GetComponentInParent<SpiderKingBossController>()
+            : null;
+        if (boss != null)
+        {
+            feedbackTarget = boss.transform;
+            bool canTakeDamage = !boss.IsDead && boss.CurrentHp > 0;
+            shouldShowDamageText = canTakeDamage;
+            return canTakeDamage ? Mathf.Min(rawDamage, boss.CurrentHp) : 0;
+        }
+
+        return rawDamage;
+    }
+
+    /// <summary>
+    /// 显示玩家造成的伤害数字。
+    /// 调用方可以先用 PreviewAppliedDamage 得到 appliedDamage，再真正调用目标 Hit。
+    /// </summary>
+    public static void ShowPlayerDamageText(
+        Transform feedbackTarget,
+        Collider hitCollider,
+        int appliedDamage,
+        bool shouldShowDamageText,
+        bool isCritical)
+    {
+        if (!shouldShowDamageText || appliedDamage <= 0 || feedbackTarget == null)
+        {
+            return;
+        }
+
+        FloatingCombatText.ShowDamage(feedbackTarget, hitCollider, appliedDamage, isCritical);
+    }
+
+    private static Transform GetDefaultFeedbackTarget(FighterInterface fighter, Collider hitCollider)
+    {
+        Component fighterComponent = fighter as Component;
+        if (fighterComponent != null)
+        {
+            return fighterComponent.transform;
+        }
+
+        return hitCollider != null ? hitCollider.transform : null;
     }
 }

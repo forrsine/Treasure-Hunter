@@ -8,6 +8,10 @@ using UnityEngine;
 
 namespace Network
 {
+    /// <summary>
+    /// Unity TCP 客户端：管理连接、重试、收发缓冲区和主线程消息分发。
+    /// 网络线程只处理字节流，业务响应最终通过 MessageDistributer 交给 GameApiClient。
+    /// </summary>
     public class NetClient : MonoBehaviour
     {
         private const int DefaultTryConnectTimes = 3;
@@ -46,8 +50,13 @@ namespace Network
             get { return clientSocket != null && clientSocket.Connected; }
         }
 
+        /// <summary>
+        /// 初始化单例客户端，并确保它跨场景复用。
+        /// 重复创建网络客户端最危险的问题不是报错，而是同一条消息可能被处理两次。
+        /// </summary>
         private void Awake()
         {
+            // 网络连接跨场景复用；重复客户端会造成消息被接收两次，因此只保留一个实例。
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
@@ -60,11 +69,18 @@ namespace Network
             MessageDistributer.Instance.ThrowException = true;
         }
 
+        /// <summary>
+        /// 设置服务端地址。
+        /// </summary>
         public void Init(string serverIP, int port)
         {
             address = new IPEndPoint(IPAddress.Parse(serverIP), port);
         }
 
+        /// <summary>
+        /// 主动发起连接。
+        /// 如果当前已经处于连接过程中，则直接忽略，避免重复创建 Socket。
+        /// </summary>
         public void Connect(int times = DefaultTryConnectTimes)
         {
             if (connecting)
@@ -88,6 +104,10 @@ namespace Network
             DoConnect();
         }
 
+        /// <summary>
+        /// 关闭连接并清理本地网络状态。
+        /// 断线后如果不清队列和缓冲，旧消息可能污染下一次连接。
+        /// </summary>
         public void CloseConnection(int errorCode)
         {
             Debug.LogWarning("CloseConnection(), errorCode: " + errorCode);
@@ -109,6 +129,10 @@ namespace Network
             RaiseDisconnected(errorCode, "");
         }
 
+        /// <summary>
+        /// 发送一条协议消息。
+        /// 未连接时会先触发连接，并把消息暂存到待发送队列。
+        /// </summary>
         public void SendMessage(NetMessage message)
         {
             if (!running)
@@ -130,6 +154,10 @@ namespace Network
             sendQueue.Enqueue(message);
         }
 
+        /// <summary>
+        /// 执行一次真正的 Socket 连接。
+        /// 这里使用超时等待，是为了在 Unity 环境中尽快拿到明确结果，而不是无限卡住。
+        /// </summary>
         private void DoConnect()
         {
             try
@@ -173,6 +201,10 @@ namespace Network
             connecting = false;
         }
 
+        /// <summary>
+        /// 保持连接可用。
+        /// 已连接则直接返回；未连接且允许重试时，会尝试重新连接。
+        /// </summary>
         private bool KeepConnect()
         {
             if (connecting || address == null)
@@ -193,6 +225,10 @@ namespace Network
             return false;
         }
 
+        /// <summary>
+        /// 处理接收缓冲。
+        /// Socket 层只负责拿到字节流，拆包和业务分发交给 PackageHandler 与 MessageDistributer。
+        /// </summary>
         private bool ProcessRecv()
         {
             try
@@ -225,6 +261,10 @@ namespace Network
             return true;
         }
 
+        /// <summary>
+        /// 处理发送缓冲。
+        /// 显式维护 sendOffset，是为了兼容一次 Send 只发出部分字节的情况。
+        /// </summary>
         private bool ProcessSend()
         {
             try
@@ -277,6 +317,7 @@ namespace Network
 
         private void Update()
         {
+            // Unity API 必须在主线程调用，这里每帧处理已完成的网络消息和待发送队列。
             if (!running)
             {
                 return;

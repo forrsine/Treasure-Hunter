@@ -1,5 +1,8 @@
 using UnityEngine;
 
+/// <summary>
+/// 选角跨场景数据的临时验证脚本，用于确认 SelectedCharacterState 是否正确保存角色。
+/// </summary>
 public class SelectedCharacterTest : MonoBehaviour
 {
     private void Start()
@@ -8,10 +11,10 @@ public class SelectedCharacterTest : MonoBehaviour
 
         if (save == null)
         {
-            Debug.LogWarning("û��ѡ���ɫ");
+            Debug.LogWarning("没有选择角色");
             return;
         }
 
-        Debug.Log($"��ǰ������Ϸ�Ľ�ɫ��{save.name}, classId={save.classId}, level={save.level}");
+        Debug.Log($"当前进入游戏的角色：{save.name}, classId={save.classId}, level={save.level}");
     }
 }

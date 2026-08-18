@@ -5,6 +5,11 @@ using System.Collections;
 using System.Linq;
 using UnityEngine;
 
+/// <summary>
+/// 客户端业务 API 门面：向 UI 提供注册、登录、创建角色等协程接口，
+/// 内部负责组织协议消息、等待响应、维护登录状态并把网络 DTO 转成客户端 NCharacter。
+/// UI 不需要直接操作 Socket 或 Protobuf 消息。
+/// </summary>
 public class GameApiClient : MonoBehaviour
 {
     [SerializeField] private string serverIp = "127.0.0.1";
@@ -40,6 +45,7 @@ public class GameApiClient : MonoBehaviour
         EnsureNetClient();
         LoadSession();
 
+        // 订阅与注销必须成对出现，避免跨场景后旧对象仍收到网络响应。
         MessageDistributer.Instance.Subscribe<UserRegisterResponse>(OnUserRegister);
         MessageDistributer.Instance.Subscribe<UserLoginResponse>(OnUserLogin);
         MessageDistributer.Instance.Subscribe<UserCreateCharacterResponse>(OnUserCreateCharacter);
@@ -52,6 +58,10 @@ public class GameApiClient : MonoBehaviour
         MessageDistributer.Instance.Unsubscribe<UserCreateCharacterResponse>(OnUserCreateCharacter);
     }
 
+    /// <summary>
+    /// 保存本地会话痕迹。
+    /// 当前原型阶段主要缓存用户名；正式项目通常会在这里保存可验证的 Token。
+    /// </summary>
     public void SaveSession(string token, string username)
     {
         Token = token;
@@ -62,6 +72,9 @@ public class GameApiClient : MonoBehaviour
         PlayerPrefs.Save();
     }
 
+    /// <summary>
+    /// 从本地读取上次登录信息。
+    /// </summary>
     public void LoadSession()
     {
         Username = PlayerPrefs.GetString(UsernameKey, "");
@@ -69,6 +82,10 @@ public class GameApiClient : MonoBehaviour
         IsLoggedIn = false;
     }
 
+    /// <summary>
+    /// 清理登录态和本地角色缓存。
+    /// 退出登录时必须一起清空缓存，避免下一位用户看到上一位的数据。
+    /// </summary>
     public void ClearSession()
     {
         Token = "";
@@ -81,6 +98,10 @@ public class GameApiClient : MonoBehaviour
         PlayerPrefs.Save();
     }
 
+    /// <summary>
+    /// 发送注册请求并等待响应。
+    /// UI 可以通过协程自然地先显示“正在注册”，再在回调里处理结果。
+    /// </summary>
     public IEnumerator Register(string username, string password, Action<bool, string> onDone)
     {
         bool done = false;
@@ -119,6 +140,9 @@ public class GameApiClient : MonoBehaviour
         onDone?.Invoke(success, NormalizeServerMessage(message, success ? "注册成功。" : "注册失败。"));
     }
 
+    /// <summary>
+    /// 发送登录请求，并在成功后缓存服务端返回的角色列表。
+    /// </summary>
     public IEnumerator Login(string username, string password, Action<bool, string> onDone)
     {
         bool done = false;
@@ -196,6 +220,10 @@ public class GameApiClient : MonoBehaviour
         onDone?.Invoke(true, "角色存档加载完成。", cachedCharacters ?? new NCharacter[0]);
     }
 
+    /// <summary>
+    /// 创建角色并刷新本地角色缓存。
+    /// 因为网络请求是异步完成的，所以这里通过回调把结果还给 UI。
+    /// </summary>
     public IEnumerator CreateCharacter(int slotIndex, string characterName, int classId, Action<bool, string, NCharacter> onDone)
     {
         if (!IsLoggedIn)
@@ -249,6 +277,10 @@ public class GameApiClient : MonoBehaviour
         onDone?.Invoke(success, NormalizeServerMessage(message, success ? "角色创建成功。" : "角色创建失败。"), createdCharacter);
     }
 
+    /// <summary>
+    /// 底层发送入口。
+    /// 发送前会确保 NetClient 已存在且服务端地址已配置。
+    /// </summary>
     private void Send(NetMessage message)
     {
         EnsureNetClient();
@@ -256,6 +288,9 @@ public class GameApiClient : MonoBehaviour
         netClient.SendMessage(message);
     }
 
+    /// <summary>
+    /// 等待某个异步响应完成，直到收到结果或超时。
+    /// </summary>
     private IEnumerator WaitForResponse(Func<bool> isDone)
     {
         float deadline = Time.realtimeSinceStartup + requestTimeout;
@@ -306,6 +341,10 @@ public class GameApiClient : MonoBehaviour
         netClient = netClientObject.AddComponent<NetClient>();
     }
 
+    /// <summary>
+    /// 收到注册响应后，转交给当前等待中的回调。
+    /// 先取出再置空，可以避免同一响应被重复消费。
+    /// </summary>
     private void OnUserRegister(object sender, UserRegisterResponse response)
     {
         Action<UserRegisterResponse> callback = registerCallback;
@@ -313,6 +352,9 @@ public class GameApiClient : MonoBehaviour
         callback?.Invoke(response);
     }
 
+    /// <summary>
+    /// 收到登录响应后的转发入口。
+    /// </summary>
     private void OnUserLogin(object sender, UserLoginResponse response)
     {
         Action<UserLoginResponse> callback = loginCallback;
@@ -320,6 +362,9 @@ public class GameApiClient : MonoBehaviour
         callback?.Invoke(response);
     }
 
+    /// <summary>
+    /// 收到创建角色响应后的转发入口。
+    /// </summary>
     private void OnUserCreateCharacter(object sender, UserCreateCharacterResponse response)
     {
         Action<UserCreateCharacterResponse> callback = createCharacterCallback;

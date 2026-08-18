@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -16,6 +17,12 @@ using UnityEngine.UI;
 /// </summary>
 public class SlimeCo : MonoBehaviour, FighterInterface
 {
+    /// <summary>
+    /// 普通怪正式死亡事件：只在当前生命轮次首次进入死亡状态时触发。
+    /// 掉落控制器订阅这个实例事件，清场 Destroy 和对象池回收不会伪造死亡奖励。
+    /// </summary>
+    public event Action<SlimeCo> Died;
+
     // ---------- 状态枚举 ----------
     public enum EnemyState
     {
@@ -41,6 +48,8 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     public Transform target;                    // 玩家目标
     public Transform[] partrolTargets;          // 巡逻路径点
     int partrolIndex;                           // 当前巡逻点索引
+    // 怪物出生时缓存巡逻点的世界坐标，避免巡逻点跟随怪物移动，也不需要把它们移到场景根节点。
+    private Vector3[] patrolWorldPositions = new Vector3[0];
     public Animator animator;                   // 动画控制器
 
     public float walkSpeed = 2f;                // 移动速度
@@ -49,6 +58,16 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     public float atkDistance = 2f;              // 攻击距离
     public float rotateSpeed = 15f;             // 旋转速度
 
+    [Header("防堆叠移动")]
+    [SerializeField, Tooltip("普通怪移动时需要避开的层，默认包含 Player、Enemy 和 Box。")]
+    private LayerMask separationLayers;
+    [SerializeField, Min(0.1f), Tooltip("检测附近碰撞体的半径。")]
+    private float separationCheckRadius = 0.9f;
+    [SerializeField, Min(0.1f), Tooltip("小怪与玩家/箱子/其他怪物之间尽量保持的水平距离。")]
+    private float personalSpaceRadius = 0.75f;
+    [SerializeField, Min(0f), Tooltip("距离过近时额外推开的速度。")]
+    private float separationStrength = 2.4f;
+
     private float atkCd = 1f;                   // 攻击冷却时间
     private float curAtkCd = 0f;                // 当前攻击冷却计时
     public Collider atkCollider;                // 攻击碰撞体（近战用）
@@ -56,6 +75,15 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     public int HpMax = 5;
     private bool isDie = false;                 // 是否已死亡
     bool destroyScheduled = false;              // 是否已安排销毁
+    Coroutine destroyCoroutine;                 // 死亡延迟销毁协程，后续接对象池时需要能主动停止。
+    private MonsterPool ownerPool;              // 生成本怪物的对象池，死亡后优先回收到这里。
+    private GameObject sourcePrefab;            // 本怪物对应的原始 Prefab，用来回收到正确队列。
+    private int reuseVersion;                   // 对象池复用版本号，用于区分同一个实例的不同生命轮次。
+
+    public int ReuseVersion
+    {
+        get { return reuseVersion; }
+    }
 
     // ---------- 材质颜色及纹理变化 ----------
     public SkinnedMeshRenderer myRenderer;      // 渲染器
@@ -103,6 +131,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     const string Color01Property = "_Color01";
     const string Color02Property = "_Color02";
     const string Color03Property = "_Color03";
+    private static readonly Collider[] SeparationBuffer = new Collider[16];
 
     // ---------- 受击动画状态机控制 ----------
     float nextHitAnimationAllowedTime;          // 下一次允许播放受击动画的时间（用于冷却）
@@ -121,6 +150,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     private int baseHpMax;
     private int baseAtkPower;
     private int baseExp;
+    private float baseWalkSpeed;
 
     // -1 表示还没有按金库击破次数应用过难度；出生时会用当前难度初始化。
     private int appliedVaultDestroyedCount = -1;
@@ -143,6 +173,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         // 先记录预制体上的基础数值，后续难度成长都按基础值计算。
         CacheBaseStats();
         CacheHitAnimationHashes();  // 缓存动画状态哈希
+        EnsureSeparationLayerMask();
         EnsureAudioSource();
     }
 
@@ -155,6 +186,10 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         CacheHitAnimationHashes();
         hitAnimationCooldown = Mathf.Max(0f, hitAnimationCooldown);
         hitAnimationFallbackDuration = Mathf.Max(0.05f, hitAnimationFallbackDuration);
+        separationCheckRadius = Mathf.Max(0.1f, separationCheckRadius);
+        personalSpaceRadius = Mathf.Max(0.1f, personalSpaceRadius);
+        separationStrength = Mathf.Max(0f, separationStrength);
+        EnsureSeparationLayerMask();
     }
 
     /// <summary>
@@ -183,6 +218,8 @@ public class SlimeCo : MonoBehaviour, FighterInterface
             Debug.LogWarning("SlimeCo is missing SkinnedMeshRenderer, hit color change will not work.", this);
         }
 
+        CachePatrolWorldPositions();
+
         // 怪物可能是在金库已被击破多次后才生成的，所以出生时要立刻套用当前全局难度。
         ApplyVaultDifficulty(GetCurrentVaultDestroyedCount(), false);
         UpDateHpBar();
@@ -197,9 +234,6 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         BoxCo.OnVaultDestroyed += HandleVaultDestroyed;
         GameplayRuntime.Instance.CurrentPlayerChanged += HandleCurrentPlayerChanged;
         RefreshTargetFromRuntime();
-
-        // 等一帧再分离巡逻点，避免刚生成时层级/位置还没稳定。
-        StartCoroutine(initBronPos());
     }
 
     /// <summary>
@@ -211,7 +245,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         GameplayRuntime.Instance.CurrentPlayerChanged -= HandleCurrentPlayerChanged;
     }
 
-    private void HandleCurrentPlayerChanged(PlayerCo player)
+    private void HandleCurrentPlayerChanged(PlayerRuntimeController player)
     {
         target = player != null ? player.transform : null;
     }
@@ -224,19 +258,151 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         }
     }
 
-    IEnumerator initBronPos()
+    /// <summary>
+    /// 缓存怪物出生时各巡逻点的世界坐标。
+    /// 巡逻点继续保留为怪物子物体，怪物死亡时会一起销毁；实际巡逻只读取缓存坐标，
+    /// 因此怪物移动后不会把目标点一起带走。
+    /// </summary>
+    private void CachePatrolWorldPositions()
     {
-        yield return null;
-        // 将巡逻点从父级分离，避免移动时跟随
-        
+        if (partrolTargets == null || partrolTargets.Length == 0)
+        {
+            patrolWorldPositions = new Vector3[0];
+            partrolIndex = 0;
+            return;
+        }
 
+        List<Vector3> validPositions = new List<Vector3>(partrolTargets.Length);
         for (int i = 0; i < partrolTargets.Length; i++)
         {
-            if (partrolTargets[i] != null)
+            Transform patrolTarget = partrolTargets[i];
+            if (patrolTarget != null)
             {
-                partrolTargets[i].parent = null;
+                validPositions.Add(patrolTarget.position);
             }
         }
+
+        patrolWorldPositions = validPositions.ToArray();
+        partrolIndex = 0;
+    }
+
+    /// <summary>
+    /// 统一切换怪物状态。
+    /// 现在仍然保留 enum + switch 的轻量状态机，只把状态赋值收口到一个方法里，
+    /// 后续如果要加进入状态/退出状态/对象池重置，就不用到处找 enemyState = xxx。
+    /// </summary>
+    private void ChangeState(EnemyState nextState)
+    {
+        if (enemyState == nextState)
+        {
+            return;
+        }
+
+        enemyState = nextState;
+    }
+
+    /// <summary>
+    /// 绑定怪物对象池来源。
+    /// 由 MonsterPool 在取出或创建怪物时调用，死亡时 SlimeCo 就知道该回收到哪个池子。
+    /// </summary>
+    public void BindPool(MonsterPool pool, GameObject prefab)
+    {
+        ownerPool = pool;
+        sourcePrefab = prefab;
+    }
+
+    /// <summary>
+    /// 对象池取出怪物时调用：重置血量、状态、攻击碰撞、受击锁定和巡逻点。
+    /// 怪物不会重新执行 Awake，所以所有运行时状态都要在这里恢复干净。
+    /// </summary>
+    public void ResetEnemyForSpawn()
+    {
+        reuseVersion++;
+        CacheBaseStats();
+        RefreshTargetFromRuntime();
+
+        if (cc == null)
+        {
+            cc = GetComponent<CharacterController>();
+        }
+
+        if (animator == null)
+        {
+            animator = GetComponent<Animator>();
+        }
+
+        if (myRenderer == null)
+        {
+            myRenderer = GetComponentInChildren<SkinnedMeshRenderer>();
+        }
+
+        if (runtimeMaterial == null && myRenderer != null)
+        {
+            runtimeMaterial = myRenderer.material;
+            CacheDefaultMaterialState();
+        }
+
+        StopHitAnimationLock();
+        StopDestroyCoroutine();
+
+        isDie = false;
+        isColorChange = false;
+        changeTime = 0f;
+        curIdleTime = 0f;
+        curAtkCd = 0f;
+        nextHitAnimationAllowedTime = 0f;
+        stateBeforeHit = EnemyState.Idle;
+        walkSpeed = baseWalkSpeed;
+
+        if (cc != null)
+        {
+            cc.enabled = true;
+        }
+
+        DisableAtk();
+        RestoreDefaultMaterialState();
+        ResetAnimatorForSpawn();
+        CachePatrolWorldPositions();
+
+        // 先恢复基础值，再按当前金库击破次数重新计算，避免池对象复用时带着上一轮难度/残血。
+        appliedVaultDestroyedCount = -1;
+        HpMax = baseHpMax;
+        AtkPower = baseAtkPower;
+        Exp = baseExp;
+        Hp = HpMax;
+        ChangeState(EnemyState.Idle);
+        ApplyVaultDifficulty(GetCurrentVaultDestroyedCount(), false);
+        UpDateHpBar();
+    }
+
+    /// <summary>
+    /// 对象池回收怪物前调用：清理运行中状态，避免下次复用时残留攻击碰撞、受击协程或死亡协程。
+    /// </summary>
+    public void PrepareRecycle()
+    {
+        reuseVersion++;
+        StopHitAnimationLock();
+        StopDestroyCoroutine();
+        DisableAtk();
+
+        isDie = false;
+        isColorChange = false;
+        changeTime = 0f;
+        curIdleTime = 0f;
+        curAtkCd = 0f;
+        nextHitAnimationAllowedTime = 0f;
+        stateBeforeHit = EnemyState.Idle;
+        walkSpeed = baseWalkSpeed;
+        target = null;
+
+        if (cc != null)
+        {
+            cc.enabled = true;
+        }
+
+        RestoreDefaultMaterialState();
+        ResetAnimatorForSpawn();
+        ChangeState(EnemyState.Idle);
     }
 
     // ---------- 每帧更新 ----------
@@ -306,7 +472,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         if (curIdleTime >= IdleTime)    // 闲置时间结束 -> 进入巡逻
         {
             curIdleTime = 0f;
-            enemyState = EnemyState.Patrol;
+            ChangeState(EnemyState.Patrol);
         }
     }
 
@@ -322,8 +488,94 @@ public class SlimeCo : MonoBehaviour, FighterInterface
 
         if (Vector3.Distance(target.position, transform.position) <= checkDistance)
         {
-            enemyState = EnemyState.Persuit;
+            ChangeState(EnemyState.Persuit);
         }
+    }
+
+    /// <summary>
+    /// 统一移动入口：在原本目标速度上叠加“水平分离速度”。
+    /// 这样既保留现有状态机和 CharacterController，又能减少小怪挤到玩家、箱子或彼此身体里的情况。
+    /// </summary>
+    private void MoveWithSeparation(Vector3 desiredVelocity)
+    {
+        if (cc == null || !cc.enabled)
+        {
+            return;
+        }
+
+        Vector3 velocity = desiredVelocity + CalculateSeparationVelocity();
+        cc.SimpleMove(velocity);
+    }
+
+    /// <summary>
+    /// 只在水平面计算推开方向，不给 Y 轴速度，避免把怪物“顶”到玩家头顶或箱子上。
+    /// </summary>
+    private Vector3 CalculateSeparationVelocity()
+    {
+        EnsureSeparationLayerMask();
+        if (separationStrength <= 0f || separationLayers.value == 0)
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 checkCenter = transform.position + Vector3.up * 0.6f;
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            checkCenter,
+            separationCheckRadius,
+            SeparationBuffer,
+            separationLayers,
+            QueryTriggerInteraction.Ignore);
+
+        Vector3 totalPush = Vector3.zero;
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider other = SeparationBuffer[i];
+            SeparationBuffer[i] = null;
+            if (other == null || other.transform == transform || other.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            Vector3 closestPoint = other.ClosestPoint(transform.position);
+            Vector3 away = transform.position - closestPoint;
+            away.y = 0f;
+            if (away.sqrMagnitude < 0.0001f)
+            {
+                away = transform.position - other.bounds.center;
+                away.y = 0f;
+            }
+
+            if (away.sqrMagnitude < 0.0001f)
+            {
+                away = -transform.forward;
+            }
+
+            float distance = Mathf.Max(0.001f, away.magnitude);
+            float weight = 1f - Mathf.Clamp01(distance / personalSpaceRadius);
+            if (weight <= 0f)
+            {
+                continue;
+            }
+
+            totalPush += away.normalized * weight;
+        }
+
+        if (totalPush.sqrMagnitude <= 0.0001f)
+        {
+            return Vector3.zero;
+        }
+
+        return totalPush.normalized * separationStrength;
+    }
+
+    private void EnsureSeparationLayerMask()
+    {
+        if (separationLayers.value != 0)
+        {
+            return;
+        }
+
+        separationLayers = LayerMask.GetMask("Player", "Enemy", "Box");
     }
 
     // ---------- 巡逻状态 ----------
@@ -332,27 +584,30 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         // 巡逻状态：朝当前巡逻点移动，到达后切到下一个点并回到闲置。
         CheckPlayer();  // 巡逻时也持续检测玩家
 
-        // 如果没有巡逻点或当前点无效，退回闲置
-        if (partrolTargets == null || partrolTargets.Length == 0 || partrolTargets[partrolIndex] == null)
+        // 如果没有可用的巡逻坐标，退回闲置。
+        if (patrolWorldPositions == null || patrolWorldPositions.Length == 0)
         {
-            enemyState = EnemyState.Idle;
+            ChangeState(EnemyState.Idle);
             return;
         }
 
-        // 朝向目标巡逻点（只旋转Y轴）
+        if (partrolIndex < 0 || partrolIndex >= patrolWorldPositions.Length)
+        {
+            partrolIndex = 0;
+        }
+
+        // 使用出生时缓存的坐标，巡逻目标不会再跟随怪物本体移动。
+        Vector3 cachedPatrolPosition = patrolWorldPositions[partrolIndex];
         Vector3 patrolTargetPosition = new Vector3(
-            partrolTargets[partrolIndex].position.x,
+            cachedPatrolPosition.x,
             transform.position.y,
-            partrolTargets[partrolIndex].position.z);
+            cachedPatrolPosition.z);
         Quaternion temp = Quaternion.LookRotation(patrolTargetPosition - transform.position);
         transform.rotation = Quaternion.Lerp(transform.rotation, temp, Time.deltaTime * rotateSpeed);
 
         // 向前移动
         Vector3 offset = transform.forward * walkSpeed;
-        if (cc != null)
-        {
-            cc.SimpleMove(offset);
-        }
+        MoveWithSeparation(offset);
 
         if (animator != null)
         {
@@ -362,8 +617,8 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         // 到达巡逻点 -> 切换到下一个点，状态转为闲置
         if (Vector3.Distance(patrolTargetPosition, transform.position) <= 0.1f)
         {
-            partrolIndex = (partrolIndex + 1) % partrolTargets.Length;
-            enemyState = EnemyState.Idle;
+            partrolIndex = (partrolIndex + 1) % patrolWorldPositions.Length;
+            ChangeState(EnemyState.Idle);
         }
     }
 
@@ -373,20 +628,37 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         // 追击状态：转向玩家并向玩家移动。
         if (target == null)
         {
-            enemyState = EnemyState.Idle;
+            ChangeState(EnemyState.Idle);
             return;
         }
 
         // 朝向玩家
         Vector3 targetPosition = new Vector3(target.position.x, transform.position.y, target.position.z);
-        Quaternion temp = Quaternion.LookRotation(targetPosition - transform.position);
-        transform.rotation = Quaternion.Lerp(transform.rotation, temp, Time.deltaTime * rotateSpeed);
+        Vector3 toTarget = targetPosition - transform.position;
+        float curDistance = toTarget.magnitude;
 
-        // 加速移动（1.5倍行走速度）
-        Vector3 offset = transform.forward * walkSpeed * 1.5f;
-        if (cc != null)
+        if (curDistance <= atkDistance)          // 已经进入攻击距离时先停步，避免继续挤进玩家身体。
         {
-            cc.SimpleMove(offset);
+            if (animator != null)
+            {
+                animator.SetBool("Move", false);
+            }
+
+            MoveWithSeparation(Vector3.zero);
+            ChangeState(EnemyState.Atk);
+            return;
+        }
+
+        if (curDistance >= maxPersuitDistance) // 超出最大追击距离 -> 放弃
+        {
+            ChangeState(EnemyState.Idle);
+            return;
+        }
+
+        if (toTarget.sqrMagnitude > 0.0001f)
+        {
+            Quaternion temp = Quaternion.LookRotation(toTarget);
+            transform.rotation = Quaternion.Lerp(transform.rotation, temp, Time.deltaTime * rotateSpeed);
         }
 
         if (animator != null)
@@ -394,15 +666,12 @@ public class SlimeCo : MonoBehaviour, FighterInterface
             animator.SetBool("Move", true);
         }
 
-        float curDistance = Vector3.Distance(targetPosition, transform.position);
-        if (curDistance <= atkDistance)          // 进入攻击距离
-        {
-            enemyState = EnemyState.Atk;
-        }
-        else if (curDistance >= maxPersuitDistance) // 超出最大追击距离 -> 放弃
-        {
-            enemyState = EnemyState.Idle;
-        }
+        // 限制本帧可前进速度，避免速度过高时一帧冲过攻击距离继续顶住玩家。
+        float desiredSpeed = walkSpeed * 1.5f;
+        float safeSpeed = Time.deltaTime > 0f
+            ? Mathf.Min(desiredSpeed, Mathf.Max(0f, (curDistance - atkDistance) / Time.deltaTime))
+            : desiredSpeed;
+        MoveWithSeparation(transform.forward * safeSpeed);
     }
 
     // ---------- 攻击状态 ----------
@@ -411,7 +680,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         // 攻击状态：停下来，冷却结束后根据距离决定攻击/追击/闲置。
         if (target == null)
         {
-            enemyState = EnemyState.Idle;
+            ChangeState(EnemyState.Idle);
             return;
         }
 
@@ -419,6 +688,8 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         {
             animator.SetBool("Move", false);
         }
+
+        MoveWithSeparation(Vector3.zero);
 
         curAtkCd -= Time.deltaTime;     // 攻击冷却递减
         float curDistance = Vector3.Distance(
@@ -433,11 +704,11 @@ public class SlimeCo : MonoBehaviour, FighterInterface
             {
                 if (curDistance <= checkDistance)
                 {
-                    enemyState = EnemyState.Persuit;
+                    ChangeState(EnemyState.Persuit);
                 }
                 else if (curDistance >= maxPersuitDistance)
                 {
-                    enemyState = EnemyState.Idle;
+                    ChangeState(EnemyState.Idle);
                 }
             }
             else    // 在攻击距离内，执行攻击
@@ -562,6 +833,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
                 cc.enabled = false; // 禁用角色控制器，防止死亡后仍被推动
             }
 
+            Died?.Invoke(this);
             ScheduleDestroy(); // 安排延迟销毁
             Reward();
         }
@@ -655,6 +927,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         baseHpMax = Mathf.Max(1, HpMax > 0 ? HpMax : Hp);
         baseAtkPower = Mathf.Max(0, AtkPower);
         baseExp = Mathf.Max(0, Exp);
+        baseWalkSpeed = Mathf.Max(0f, walkSpeed);
         baseStatsCached = true;
     }
 
@@ -681,7 +954,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         if (Hp <= 0)    // 生命归零 -> 死亡
         {
             Hp = 0;
-            enemyState = EnemyState.Die;
+            ChangeState(EnemyState.Die);
             DoDie();
             return;
         }
@@ -695,15 +968,16 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         ScheduleDestroy();
     }
 
-    // ---------- 延迟销毁协程 ----------
+    // ---------- 延迟回收协程 ----------
     IEnumerator DestorySelf()
     {
         yield return new WaitForSeconds(destroyDelay);
-        Destroy(gameObject);
+        destroyCoroutine = null;
+        FinishDeathLifecycle();
     }
 
     /// <summary>
-    /// 安排死亡后的延迟销毁，避免重复启动销毁协程。
+    /// 安排死亡后的延迟回收，避免重复启动协程。
     /// </summary>
     void ScheduleDestroy()
     {
@@ -713,7 +987,37 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         }
 
         destroyScheduled = true;
-        StartCoroutine(DestorySelf());
+        destroyCoroutine = StartCoroutine(DestorySelf());
+    }
+
+    /// <summary>
+    /// 死亡表现结束后的收尾。
+    /// 由对象池生成的怪物会回收到池子；非池化来源保留 Destroy 兜底，避免旧场景或测试 Prefab 出问题。
+    /// </summary>
+    void FinishDeathLifecycle()
+    {
+        if (ownerPool != null && sourcePrefab != null)
+        {
+            ownerPool.ReleaseMonster(sourcePrefab, this);
+            return;
+        }
+
+        Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// 停止死亡延迟销毁协程。
+    /// 对象池复用时不能让旧的 Destroy 协程继续跑，否则怪物刚被重新取出就可能被销毁。
+    /// </summary>
+    void StopDestroyCoroutine()
+    {
+        if (destroyCoroutine != null)
+        {
+            StopCoroutine(destroyCoroutine);
+            destroyCoroutine = null;
+        }
+
+        destroyScheduled = false;
     }
 
     // ---------- 材质颜色变化逻辑 ----------
@@ -962,14 +1266,14 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     {
         if (isDie || enemyState == EnemyState.Die || Hp <= 0)
         {
-            enemyState = EnemyState.Die;
+            ChangeState(EnemyState.Die);
             DoDie();
             return;
         }
 
         if (target == null)
         {
-            enemyState = stateBeforeHit == EnemyState.Patrol ? EnemyState.Patrol : EnemyState.Idle;
+            ChangeState(stateBeforeHit == EnemyState.Patrol ? EnemyState.Patrol : EnemyState.Idle);
             return;
         }
 
@@ -978,19 +1282,19 @@ public class SlimeCo : MonoBehaviour, FighterInterface
 
         if (curDistance <= atkDistance)
         {
-            enemyState = EnemyState.Atk;
+            ChangeState(EnemyState.Atk);
         }
         else if (curDistance <= checkDistance)
         {
-            enemyState = EnemyState.Persuit;
+            ChangeState(EnemyState.Persuit);
         }
         else if (stateBeforeHit == EnemyState.Patrol)
         {
-            enemyState = EnemyState.Patrol;
+            ChangeState(EnemyState.Patrol);
         }
         else
         {
-            enemyState = EnemyState.Idle;
+            ChangeState(EnemyState.Idle);
         }
     }
 
@@ -1072,6 +1376,32 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         {
             animator.ResetTrigger(triggerName);
         }
+    }
+
+    /// <summary>
+    /// 对象池复用时重置动画状态。
+    /// 死亡或攻击动画可能停留在上一轮状态里，重新取出前需要回到 Animator 默认状态。
+    /// </summary>
+    void ResetAnimatorForSpawn()
+    {
+        if (animator == null)
+        {
+            return;
+        }
+
+        ResetAnimatorTriggerIfExists("Atk1");
+        ResetAnimatorTriggerIfExists("Atk2");
+        ResetAnimatorTriggerIfExists("Atk");
+        ResetAnimatorTriggerIfExists("Die");
+        ResetAnimatorTriggerIfExists(hitTriggerName);
+
+        if (HasAnimatorParameter("Move", AnimatorControllerParameterType.Bool))
+        {
+            animator.SetBool("Move", false);
+        }
+
+        animator.Rebind();
+        animator.Update(0f);
     }
 
     /// <summary>

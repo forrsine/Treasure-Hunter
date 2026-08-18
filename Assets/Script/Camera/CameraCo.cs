@@ -17,8 +17,8 @@ public class CameraCo : MonoBehaviour
 
     [Header("Rotation")]
     // 鼠标横向/纵向移动转成镜头旋转的速度。
-    [SerializeField] private float xSpeed = 200f;
-    [SerializeField] private float ySpeed = 125f;
+    [SerializeField] private float xSpeed = 100f;
+    [SerializeField] private float ySpeed = 62.5f;
 
     // 当前镜头角度。x 是绕 Y 轴的水平角，y 是上下俯仰角。
     public float x = 20f;
@@ -52,6 +52,9 @@ public class CameraCo : MonoBehaviour
     [Tooltip("勾选后，摄像机避障会忽略带 BoxCo 的金库/箱子，解决箱子挡住视角导致镜头拉近的问题。")]
     [SerializeField] private bool ignoreBoxCollision = true;
 
+    /// <summary>
+    /// 开局处理鼠标锁定，并修正初始镜头距离。
+    /// </summary>
     private void Start()
     {
         // 开局如果没有新手弹窗，就隐藏并锁定鼠标，让鼠标移动控制镜头。
@@ -205,7 +208,7 @@ public class CameraCo : MonoBehaviour
             return true;
         }
 
-        if (hitTransform.GetComponentInParent<PlayerCo>() != null)
+        if (hitTransform.GetComponentInParent<PlayerRuntimeController>() != null)
         {
             return true;
         }

@@ -120,8 +120,8 @@ public class ReStartPanel : MonoBehaviour
         PersistCurrentScore();
         Time.timeScale = 0f;
 
-        // 游戏结束面板出现时会显示鼠标；放到左上角可以避免刚死亡时误点按钮。
-        CursorPopupUtility.ShowAtTopLeft();
+        // 游戏结束面板出现时会显示鼠标；放到上方偏中间的位置可以避免刚死亡时误点按钮。
+        CursorPopupUtility.ShowAtUpperCenterQuarter();
         RefreshSummary();
         gameObject.SetActive(true);
     }
@@ -344,8 +344,8 @@ public class ReStartPanel : MonoBehaviour
         // 保证退出/重开后时间恢复正常。
         Time.timeScale = 1f;
 
-        // 退出或重开前释放鼠标，也保持在左上角。
-        CursorPopupUtility.ShowAtTopLeft();
+        // 退出或重开前释放鼠标，也保持在上方偏中间的位置。
+        CursorPopupUtility.ShowAtUpperCenterQuarter();
     }
 
     /// <summary>

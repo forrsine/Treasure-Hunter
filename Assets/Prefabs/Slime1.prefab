@@ -489,6 +489,8 @@ GameObject:
   - component: {fileID: 2383935530608865771}
   - component: {fileID: 2324013692526108150}
   - component: {fileID: 2324013692526108145}
+  - component: {fileID: -6243467829187147548}
+  - component: {fileID: 220884203422484708}
   m_Layer: 7
   m_Name: Slime1
   m_TagString: Untagged
@@ -568,6 +570,12 @@ MonoBehaviour:
   maxPersuitDistance: 8
   atkDistance: 2
   rotateSpeed: 15
+  separationLayers:
+    serializedVersion: 2
+    m_Bits: 1216
+  separationCheckRadius: 0.9
+  personalSpaceRadius: 0.75
+  separationStrength: 2.4
   atkCollider: {fileID: 1867095374336219158}
   Hp: 40
   HpMax: 40
@@ -609,10 +617,40 @@ CharacterController:
   m_Height: 1.3
   m_Radius: 0.52
   m_SlopeLimit: 45
-  m_StepOffset: 0.3
+  m_StepOffset: 0.05
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 0.66, z: 0}
+--- !u!114 &-6243467829187147548
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2324013692526108151}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a3312dc1bb987a40bafd2d5da23dccd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  iconColor: {r: 1, g: 0, b: 0, a: 1}
+  iconSize: {x: 10, y: 10}
+--- !u!114 &220884203422484708
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2324013692526108151}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: af3b1fa81cddffd40a8b6eb15fdf942a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  inventoryDatabase: {fileID: 11400000, guid: 11411bcbb2caa7644ab5370af9d7d9e0, type: 2}
+  horizontalScatterRadius: 0.35
+  verticalOffset: 0.2
+  pickupLifetimeSeconds: 45
 --- !u!1 &2324421811997327179
 GameObject:
   m_ObjectHideFlags: 0

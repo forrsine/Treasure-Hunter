@@ -1,16 +1,23 @@
 using UnityEngine;
 
+/// <summary>
+/// 玩家移动组件：只处理位移、跳跃、翻滚和体力，不关心当前使用哪一个职业模型。
+/// 动画表现统一交给 PlayerPresentationComponent，从而让四个职业复用本组件。
+/// </summary>
 [DisallowMultipleComponent]
 public class PlayerMovementComponent : MonoBehaviour
 {
     private const float GroundedVerticalVelocity = -2f;
 
-    private PlayerCo owner;
+    private IPlayerStatsReadOnly stats;
+    private PlayerAudioComponent audioComponent;
     private CharacterController controller;
     private Animator animator;
+    private PlayerPresentationComponent presentation;
 
     [SerializeField] private float walkSpeed = 3f;
     [SerializeField] private float runSpeed = 5f;
+    [SerializeField] private float attackMoveSpeedLimit = 3f;
     [SerializeField] private float rollSpeed = 12f;
     [SerializeField] private float rollDuration = 0.5f;
     [SerializeField] private float jumpHeight = 2f;
@@ -44,26 +51,47 @@ public class PlayerMovementComponent : MonoBehaviour
     public bool IsWalk => isWalk;
     public float WalkSpeed => walkSpeed;
     public float RunSpeed => runSpeed;
+    public float AttackMoveSpeedLimit => Mathf.Max(0.01f, attackMoveSpeedLimit);
+    public float CurrentStamina => currentStamina;
+    public float MaxStamina => maxStamina;
     public float StaminaPercent => maxStamina > 0f ? Mathf.Clamp01(currentStamina / maxStamina) : 0f;
 
-    public void Initialize(PlayerCo player)
+    /// <summary>
+    /// 旧脚本兼容入口。
+    /// 现在真正的初始化仍然统一转给 PlayerRuntimeController，避免重新依赖旧的大脚本。
+    /// </summary>
+    public void Initialize(MonoBehaviour obsoleteOwner)
     {
-        owner = player;
-        controller = owner.CharacterController;
-        animator = owner.PlayerAnimator;
-        ImportLegacySettings();
-        InitializeStamina();
-        SyncOwnerState();
+        Initialize(GetComponent<PlayerRuntimeController>());
     }
 
+    /// <summary>
+    /// 新架构初始化入口。依赖来自明确的装配控制器，不再反向读取巨型玩家脚本。
+    /// </summary>
+    public void Initialize(PlayerRuntimeController player)
+    {
+        stats = player != null ? player.Stats : null;
+        controller = player != null ? player.CharacterController : GetComponent<CharacterController>();
+        presentation = player != null ? player.Presentation : GetComponent<PlayerPresentationComponent>();
+        animator = presentation != null ? presentation.Animator : null;
+        audioComponent = player != null ? player.Audio : GetComponent<PlayerAudioComponent>();
+        ImportRuntimeSettings();
+    }
+
+    /// <summary>
+    /// 供外部在运行时修改走路/跑步速度。
+    /// 做 Clamp 是为了防止配置错误把速度设成 0 或负数，导致 CharacterController 行为异常。
+    /// </summary>
     public void SetSpeeds(float newWalkSpeed, float newRunSpeed)
     {
         walkSpeed = Mathf.Max(0.01f, newWalkSpeed);
         runSpeed = Mathf.Max(walkSpeed, newRunSpeed);
-        owner.LegacyWalkSpeed = walkSpeed;
-        owner.LegacyRunSpeed = runSpeed;
     }
 
+    /// <summary>
+    /// 初始化体力参数。
+    /// 体力系统和血量系统分开维护，这样以后扩闪避、冲刺或技能耗蓝时更容易独立调整。
+    /// </summary>
     public void InitializeStamina()
     {
         maxStamina = Mathf.Max(1f, maxStamina);
@@ -75,16 +103,28 @@ public class PlayerMovementComponent : MonoBehaviour
 
         currentStamina = maxStamina;
         staminaConsumedThisFrame = false;
-        owner.LegacyCurrentStamina = currentStamina;
-        owner.LegacyMaxStamina = maxStamina;
     }
 
+    /// <summary>
+    /// 每帧开始时同步最终移动速度结果。
+    /// 移速升级发生在成长系统里，而移动组件每帧只读取最终结果，不参与升级公式。
+    /// </summary>
     public void BeginFrame()
     {
+        // 移速升级发生在 System 中，移动组件每帧只同步最终结果，不参与升级公式。
+        if (stats != null && stats.CurrentMoveSpeed > 0f)
+        {
+            walkSpeed = stats.CurrentMoveSpeed;
+            runSpeed = walkSpeed * Mathf.Max(1f, stats.RunSpeedMultiplier);
+        }
+
         staminaConsumedThisFrame = false;
-        SyncOwnerState();
     }
 
+    /// <summary>
+    /// 如果当前处于翻滚状态，则继续推进翻滚过程。
+    /// 返回 true 表示这一帧已经由翻滚接管了位移，外层不应再处理普通移动。
+    /// </summary>
     public bool TickRolling()
     {
         if (!isRolling)
@@ -93,33 +133,37 @@ public class PlayerMovementComponent : MonoBehaviour
         }
 
         HandleRoll();
-        SyncOwnerState();
         return true;
     }
 
+    /// <summary>
+    /// 尝试进入翻滚。
+    /// 这里会同时判断输入、攻击占用、当前状态和体力是否足够，
+    /// 保证翻滚是一个完整的状态切换，而不是单纯播一个动作。
+    /// </summary>
     public bool TryStartRoll(bool isAttacking)
     {
         IGameplayInput input = GameplayRuntime.Instance.CurrentInput;
-        if (input == null || isAttacking || isRolling || !Input.GetKeyDown(KeyCode.Mouse1))
+        if (input == null || isAttacking || isRolling || !input.RollDown)
         {
             return false;
         }
 
-        bool hasMoveInput =
-            Mathf.Abs(input.XInput) > 0.1f ||
-            Mathf.Abs(input.YInput) > 0.1f;
-
-        if (!hasMoveInput || !HasEnoughStamina(rollStaminaCost))
+        if (!HasEnoughStamina(rollStaminaCost))
         {
             return false;
         }
 
         StartRoll(input);
-        SyncOwnerState();
         return true;
     }
 
-    public void TickNormalMovement(bool movementBlocked)
+    /// <summary>
+    /// 处理普通状态下的移动。
+    /// movementBlocked 控制是否完全禁止水平移动；jumpBlocked 只限制起跳，用于“攻击时可移动但不可跳跃”的动作优先级。
+    /// horizontalSpeedLimit 用于攻击中限速，避免玩家一边播放攻击动作一边高速奔跑。
+    /// </summary>
+    public void TickNormalMovement(bool movementBlocked, bool jumpBlocked = false, float horizontalSpeedLimit = -1f)
     {
         UpdateJumpTimers();
         UpdateGroundedState();
@@ -127,8 +171,11 @@ public class PlayerMovementComponent : MonoBehaviour
         Vector3 horizontalVelocity = Vector3.zero;
         if (!movementBlocked)
         {
-            TryJump();
-            horizontalVelocity = Move();
+            if (!jumpBlocked)
+            {
+                TryJump();
+            }
+            horizontalVelocity = Move(horizontalSpeedLimit);
         }
         else
         {
@@ -145,9 +192,12 @@ public class PlayerMovementComponent : MonoBehaviour
 
         UpdateGroundedAnimationState();
         UpdateMovementAudio(movementBlocked);
-        SyncOwnerState();
     }
 
+    /// <summary>
+    /// 恢复体力。
+    /// 只有这一帧没有消耗体力且不在翻滚状态时，才允许自动回复。
+    /// </summary>
     public void ApplyStaminaRecovery()
     {
         if (staminaConsumedThisFrame || isRolling)
@@ -158,35 +208,34 @@ public class PlayerMovementComponent : MonoBehaviour
         if (currentStamina >= maxStamina)
         {
             currentStamina = maxStamina;
-            owner.LegacyCurrentStamina = currentStamina;
             return;
         }
 
         currentStamina = Mathf.Min(
             maxStamina,
             currentStamina + staminaRecoverPerSecond * Time.deltaTime);
-        owner.LegacyCurrentStamina = currentStamina;
     }
 
-    private void ImportLegacySettings()
+    /// <summary>
+    /// 从玩家运行时数据中导入基础移动参数。
+    /// 这样职业基础速度和升级后的移速都能反映到当前组件。
+    /// </summary>
+    private void ImportRuntimeSettings()
     {
-        walkSpeed = Mathf.Max(0.01f, owner.LegacyWalkSpeed);
-        runSpeed = Mathf.Max(walkSpeed, owner.LegacyRunSpeed);
-        rollSpeed = Mathf.Max(0f, owner.LegacyRollSpeed);
-        rollDuration = Mathf.Max(0.01f, owner.LegacyRollDuration);
-        jumpHeight = Mathf.Max(0f, owner.LegacyJumpHeight);
-        gravity = owner.LegacyGravity;
-        coyoteTime = Mathf.Max(0f, owner.LegacyCoyoteTime);
-        jumpBufferTime = Mathf.Max(0f, owner.LegacyJumpBufferTime);
-        maxStamina = Mathf.Max(1f, owner.LegacyMaxStamina);
-        currentStamina = Mathf.Clamp(owner.LegacyCurrentStamina, 0f, maxStamina);
-        jumpStaminaCost = owner.LegacyJumpStaminaCost;
-        rollStaminaCost = owner.LegacyRollStaminaCost;
-        runStaminaCostPerSecond = owner.LegacyRunStaminaCostPerSecond;
-        minimumStaminaToStartRun = owner.LegacyMinimumStaminaToStartRun;
-        staminaRecoverPerSecond = owner.LegacyStaminaRecoverPerSecond;
+        if (stats != null)
+        {
+            walkSpeed = Mathf.Max(0.01f, stats.CurrentMoveSpeed > 0f ? stats.CurrentMoveSpeed : stats.BaseMoveSpeed);
+            runSpeed = Mathf.Max(walkSpeed, walkSpeed * Mathf.Max(1f, stats.RunSpeedMultiplier));
+        }
+
+        maxStamina = Mathf.Max(1f, maxStamina);
+        currentStamina = maxStamina;
     }
 
+    /// <summary>
+    /// 处理跳跃缓冲。
+    /// 玩家就算提前一小段时间按下空格，也能在落地瞬间起跳，手感会更好。
+    /// </summary>
     private void UpdateJumpTimers()
     {
         if (Input.GetKeyDown(KeyCode.Space))
@@ -199,6 +248,10 @@ public class PlayerMovementComponent : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 同步 CharacterController 的落地状态，并维护土狼时间。
+    /// 土狼时间可以理解成“离地后一小段时间内仍允许起跳”，常用于提升平台动作手感。
+    /// </summary>
     private void UpdateGroundedState()
     {
         if (controller == null)
@@ -220,6 +273,10 @@ public class PlayerMovementComponent : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 尝试起跳。
+    /// 只有同时满足跳跃缓冲、土狼时间和体力条件时，才真正进入跳跃。
+    /// </summary>
     private void TryJump()
     {
         if (jumpBufferTimer <= 0f || coyoteTimer <= 0f)
@@ -239,7 +296,11 @@ public class PlayerMovementComponent : MonoBehaviour
         coyoteTimer = 0f;
         isJumping = true;
 
-        if (animator != null)
+        if (presentation != null)
+        {
+            presentation.PlayJump();
+        }
+        else if (animator != null)
         {
             animator.SetBool("IsGrounded", false);
             animator.SetTrigger("Jump");
@@ -247,13 +308,13 @@ public class PlayerMovementComponent : MonoBehaviour
 
         verticalVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
-        if (owner.AutoPlayActionSfx)
+        if (ShouldAutoPlayActions())
         {
-            owner.PlayJumpSfxEvent();
+            PlayJumpSfx();
         }
     }
 
-    private Vector3 Move()
+    private Vector3 Move(float horizontalSpeedLimit)
     {
         IGameplayInput input = GameplayRuntime.Instance.CurrentInput;
         if (input == null)
@@ -266,7 +327,8 @@ public class PlayerMovementComponent : MonoBehaviour
 
         float inputX = input.XInput;
         float inputY = input.YInput;
-        Vector3 direction = transform.TransformDirection(inputX, 0f, inputY);
+        Vector3 direction = Vector3.ClampMagnitude(transform.TransformDirection(inputX, 0f, inputY), 1f);
+        bool hasSpeedLimit = horizontalSpeedLimit > 0f;
 
         bool wantsRun = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         isWalk = direction.magnitude > 0.01f;
@@ -274,7 +336,7 @@ public class PlayerMovementComponent : MonoBehaviour
         if (!isWalk)
         {
             isRunning = false;
-            if (animator != null)
+            if (presentation == null && animator != null)
             {
                 animator.SetBool("IsRunning", false);
             }
@@ -287,19 +349,36 @@ public class PlayerMovementComponent : MonoBehaviour
         bool hasEnoughStaminaToStartRun = wasRunning
             ? currentStamina > 0f
             : currentStamina >= minimumStaminaToStartRun;
-        isRunning = wantsRun && hasEnoughStaminaToStartRun;
+        // 跑步属于地面移动状态，空中只能保留普通水平位移，避免跳跃时切进跑步动画。
+        bool canRunOnGround = controller == null || controller.isGrounded;
+        bool canRunUnderLimit = !hasSpeedLimit || runSpeed <= horizontalSpeedLimit;
+        isRunning = canRunOnGround && wantsRun && hasEnoughStaminaToStartRun && canRunUnderLimit;
         if (isRunning)
         {
             ConsumeStaminaAllowPartial(runStaminaCostPerSecond * Time.deltaTime);
         }
 
-        if (animator != null)
+        if (presentation != null)
+        {
+            presentation.SetMovement(inputX, inputY, isRunning, isWalk);
+        }
+        else if (animator != null)
         {
             animator.SetBool("IsRunning", isRunning);
         }
 
-        UpdateMoveAnimationParams(inputX, inputY);
-        return direction * (isRunning ? runSpeed : walkSpeed);
+        if (presentation == null)
+        {
+            UpdateMoveAnimationParams(inputX, inputY);
+        }
+
+        float targetSpeed = isRunning ? runSpeed : walkSpeed;
+        if (hasSpeedLimit)
+        {
+            targetSpeed = Mathf.Min(targetSpeed, horizontalSpeedLimit);
+        }
+
+        return direction * targetSpeed;
     }
 
     private void UpdateMoveAnimationParams(float inputX, float inputY)
@@ -322,6 +401,12 @@ public class PlayerMovementComponent : MonoBehaviour
 
     private void ResetMoveAnimationParams()
     {
+        if (presentation != null)
+        {
+            presentation.ResetMovement();
+            return;
+        }
+
         if (animator == null)
         {
             return;
@@ -344,9 +429,21 @@ public class PlayerMovementComponent : MonoBehaviour
         float inputX = input != null ? input.XInput : 0f;
         float inputY = input != null ? input.YInput : 0f;
         Vector3 localDirection = new Vector3(inputX, 0f, inputY);
+        if (localDirection.sqrMagnitude < 0.01f)
+        {
+            // 没有方向输入时默认向角色面朝方向翻滚，避免玩家按右键却完全没有反馈。
+            inputX = 0f;
+            inputY = 1f;
+            localDirection = Vector3.forward;
+        }
+
         rollDirection = transform.TransformDirection(localDirection).normalized;
 
-        if (animator != null)
+        if (presentation != null)
+        {
+            presentation.PlayRoll(inputX, inputY);
+        }
+        else if (animator != null)
         {
             animator.SetFloat("RollX", inputX);
             animator.SetFloat("RollY", inputY);
@@ -356,9 +453,9 @@ public class PlayerMovementComponent : MonoBehaviour
         isRunning = false;
         isWalk = false;
 
-        if (owner.AutoPlayActionSfx)
+        if (ShouldAutoPlayActions())
         {
-            owner.PlayRollSfxEvent();
+            PlayRollSfx();
         }
     }
 
@@ -405,7 +502,6 @@ public class PlayerMovementComponent : MonoBehaviour
         }
 
         currentStamina = Mathf.Max(0f, currentStamina - amount);
-        owner.LegacyCurrentStamina = currentStamina;
         staminaConsumedThisFrame = true;
         return true;
     }
@@ -418,13 +514,16 @@ public class PlayerMovementComponent : MonoBehaviour
         }
 
         currentStamina = Mathf.Max(0f, currentStamina - amount);
-        owner.LegacyCurrentStamina = currentStamina;
         staminaConsumedThisFrame = true;
     }
 
     private void UpdateGroundedAnimationState()
     {
-        if (controller != null && animator != null)
+        if (controller != null && presentation != null)
+        {
+            presentation.SetGrounded(controller.isGrounded);
+        }
+        else if (controller != null && animator != null)
         {
             animator.SetBool("IsGrounded", controller.isGrounded);
         }
@@ -434,7 +533,7 @@ public class PlayerMovementComponent : MonoBehaviour
 
     private void UpdateMovementAudio(bool movementBlocked)
     {
-        if (!owner.AutoPlayFootstepSfx || movementBlocked || controller == null)
+        if (!ShouldAutoPlayFootsteps() || movementBlocked || controller == null)
         {
             ResetFootstepLoop();
             return;
@@ -447,7 +546,11 @@ public class PlayerMovementComponent : MonoBehaviour
             return;
         }
 
-        float interval = Mathf.Max(0.05f, isRunning ? owner.RunFootstepInterval : owner.WalkFootstepInterval);
+        float interval = Mathf.Max(
+            0.05f,
+            isRunning
+                ? audioComponent != null ? audioComponent.RunFootstepInterval : 0.3f
+                : audioComponent != null ? audioComponent.WalkFootstepInterval : 0.7f);
         if (!footstepLoopActive)
         {
             footstepLoopActive = true;
@@ -465,11 +568,11 @@ public class PlayerMovementComponent : MonoBehaviour
 
         if (isRunning)
         {
-            owner.PlayRunFootstepSfxEvent();
+            PlayRunFootstepSfx();
         }
         else
         {
-            owner.PlayWalkFootstepSfxEvent();
+            PlayWalkFootstepSfx();
         }
 
         footstepTimer = interval;
@@ -481,12 +584,34 @@ public class PlayerMovementComponent : MonoBehaviour
         footstepTimer = 0f;
     }
 
-    private void SyncOwnerState()
+
+    private bool ShouldAutoPlayActions()
     {
-        owner.SetMovementRuntimeState(isRunning, isRolling, isWalk);
-        owner.LegacyCurrentStamina = currentStamina;
-        owner.LegacyMaxStamina = maxStamina;
-        owner.LegacyWalkSpeed = walkSpeed;
-        owner.LegacyRunSpeed = runSpeed;
+        return audioComponent != null && audioComponent.AutoPlayActions;
+    }
+
+    private bool ShouldAutoPlayFootsteps()
+    {
+        return audioComponent != null && audioComponent.AutoPlayFootsteps;
+    }
+
+    private void PlayJumpSfx()
+    {
+        if (audioComponent != null) audioComponent.PlayJump();
+    }
+
+    private void PlayRollSfx()
+    {
+        if (audioComponent != null) audioComponent.PlayRoll();
+    }
+
+    private void PlayRunFootstepSfx()
+    {
+        if (audioComponent != null) audioComponent.PlayRunFootstep();
+    }
+
+    private void PlayWalkFootstepSfx()
+    {
+        if (audioComponent != null) audioComponent.PlayWalkFootstep();
     }
 }

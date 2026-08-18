@@ -1,5 +1,9 @@
 namespace GameServer;
 
+/// <summary>
+/// 数据库角色记录，与 PlayerCharacters 表字段对应。
+/// 这是持久化层对象，不直接等同于客户端协议对象。
+/// </summary>
 public sealed class TCharacter
 {
     public long ID { get; set; }

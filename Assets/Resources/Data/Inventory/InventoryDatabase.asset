@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c5b5b4f2636a39d45bf7e467e2da411c, type: 3}
+  m_Name: InventoryDatabase
+  m_EditorClassIdentifier: 
+  capacity: 24
+  items:
+  - {fileID: 11400000, guid: ffbfbcad1362953488bf52b1a3320e9d, type: 2}
+  - {fileID: 11400000, guid: 716480cde7f786345b1a709652470c44, type: 2}
+  - {fileID: 11400000, guid: 39f1d39fd608eec41a3fd6690838c177, type: 2}
+  - {fileID: 11400000, guid: f89e6755762349243b20ce7754649336, type: 2}
+  - {fileID: 11400000, guid: 9b68d0c7f68b47e49b2c5f37ff8f3a91, type: 2}
+  vaultLootEntries: []
+  monsterDropChance: 0.1
+  monsterLootEntries:
+  - item: {fileID: 11400000, guid: ffbfbcad1362953488bf52b1a3320e9d, type: 2}
+    weight: 1
+  - item: {fileID: 11400000, guid: f89e6755762349243b20ce7754649336, type: 2}
+    weight: 1
+  worldPickupPrefab: {fileID: 4425850163247104261, guid: b79b922b60767b84d90f75be8dc6f13f, type: 3}
+  bossDropOrbCount: 3
+  bossLootEntries:
+  - item: {fileID: 11400000, guid: 716480cde7f786345b1a709652470c44, type: 2}
+    weight: 50
+    minAmount: 2
+    maxAmount: 4
+  - item: {fileID: 11400000, guid: 39f1d39fd608eec41a3fd6690838c177, type: 2}
+    weight: 35
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 9b68d0c7f68b47e49b2c5f37ff8f3a91, type: 2}
+    weight: 15
+    minAmount: 1
+    maxAmount: 1
+  bossLootOrbPrefab: {fileID: 100000, guid: dc3b93e4a91f40d68f50f68e622f2169, type: 3}

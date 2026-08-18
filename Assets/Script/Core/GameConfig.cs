@@ -5,7 +5,7 @@ using UnityEngine;
 /// 
 /// 新手阅读顺序：
 /// 1. 这个脚本一般挂在场景里的一个配置物体上。
-/// 2. PlayerCo、SlimeCo、BoxCo 等脚本会从 GameConfig.instance 读取统一数值。
+/// 2. 玩家业务 System、SlimeCo、BoxCo 等模块会从 GameConfig.instance 读取统一数值。
 /// 3. 想调平衡性时，优先改这里的 Inspector 数值，而不是到处改代码。
 /// 4. EnsureConfig 会给空数组和非法数值兜底，防止运行时出现 0 血量、负经验等问题。
 /// </summary>
@@ -44,8 +44,9 @@ public class GameConfig : MonoBehaviour
     public int defaultLevelCap = 999;
 
     [Header("Player Base Stats")]
-    // 玩家初始属性。PlayerCo.Start 时会读取这些值初始化自己。
+    // 玩家初始属性。PlayerModel 初始化时会读取这些值。
     public int playerBaseMaxHp = 150;
+    public int playerBaseMaxMp = 120;
     public int playerBaseAttack = 25;
     public float playerBaseMoveSpeed = 3f;
     [Range(0f, 1f)] public float playerBaseCritChance = 0f;
@@ -151,6 +152,15 @@ public class GameConfig : MonoBehaviour
     }
 
     /// <summary>
+    /// 获取玩家基础最大魔法值，作为职业配置缺失时的兜底。
+    /// 技能系统后续消耗蓝量时，会以 PlayerModel 中的运行时魔法值为准。
+    /// </summary>
+    public int GetPlayerBaseMaxMp()
+    {
+        return Mathf.Max(1, playerBaseMaxMp);
+    }
+
+    /// <summary>
     /// 获取玩家基础攻击力，避免返回 0 或负数。
     /// </summary>
     public int GetPlayerBaseAttack()
@@ -237,12 +247,12 @@ public class GameConfig : MonoBehaviour
 
     /// <summary>
     /// Text that describes the raw effect of one upgrade pick.
-    /// Player-specific previews are composed inside PlayerCo.
+    /// Player-specific previews are composed inside PlayerProgressionSystem.
     /// </summary>
     public string GetAttributeUpgradeEffectText(PlayerAttributeType attributeType)
     {
         // 这里描述“升级会增加什么”，比如 +30% 当前攻击力。
-        // PlayerCo 会再补上“当前值 -> 升级后值”的预览。
+        // PlayerProgressionSystem 会再补上“当前值 -> 升级后值”的预览。
         switch (attributeType)
         {
             case PlayerAttributeType.AttackPower:
@@ -383,6 +393,7 @@ public class GameConfig : MonoBehaviour
         // 下面是统一的数值夹取：把容易出错的负数、0、超过范围的值修回合理范围。
         defaultLevelCap = Mathf.Max(1, defaultLevelCap);
         playerBaseMaxHp = Mathf.Max(1, playerBaseMaxHp);
+        playerBaseMaxMp = Mathf.Max(1, playerBaseMaxMp);
         playerBaseAttack = Mathf.Max(1, playerBaseAttack);
         playerBaseMoveSpeed = Mathf.Max(0.01f, playerBaseMoveSpeed);
         playerCritDamageMultiplier = Mathf.Max(1f, playerCritDamageMultiplier);

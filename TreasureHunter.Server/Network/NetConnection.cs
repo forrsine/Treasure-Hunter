@@ -3,6 +3,10 @@ using System.Net.Sockets;
 
 namespace Network;
 
+/// <summary>
+/// 单个 TCP 客户端连接：封装异步接收、响应发送、断线通知和对应业务 Session。
+/// 每条连接拥有独立 PackageHandler，因此不同客户端的半包数据不会互相污染。
+/// </summary>
 public sealed class NetConnection<T> where T : INetSession
 {
     public delegate void DataReceivedCallback(NetConnection<T> sender, DataEventArgs e);
@@ -46,11 +50,17 @@ public sealed class NetConnection<T> where T : INetSession
 
     public T Session { get; }
 
+    /// <summary>
+    /// 主动断开当前连接。
+    /// </summary>
     public void Disconnect()
     {
         CloseConnection(_eventArgs);
     }
 
+    /// <summary>
+    /// 从 Session 中取出待发送响应并发给客户端。
+    /// </summary>
     public void SendResponse()
     {
         byte[]? data = Session.GetResponse();
@@ -62,6 +72,9 @@ public sealed class NetConnection<T> where T : INetSession
         SendData(data, 0, data.Length);
     }
 
+    /// <summary>
+    /// 底层字节发送入口。
+    /// </summary>
     private void SendData(byte[] data, int offset, int count)
     {
         State state = (State)_eventArgs.UserToken!;
@@ -85,6 +98,9 @@ public sealed class NetConnection<T> where T : INetSession
         }
     }
 
+    /// <summary>
+    /// 投递下一次异步接收。
+    /// </summary>
     private void BeginReceive(SocketAsyncEventArgs args)
     {
         State state = (State)args.UserToken!;
@@ -101,8 +117,13 @@ public sealed class NetConnection<T> where T : INetSession
         }
     }
 
+    /// <summary>
+    /// 一次异步接收完成后的回调。
+    /// 收到 0 字节或 Socket 错误都视为连接不可继续使用，统一进入断线清理。
+    /// </summary>
     private void ReceivedCompleted(object? sender, SocketAsyncEventArgs args)
     {
+        // 0 字节或 SocketError 都表示连接已无法继续读取，需要统一进入断线清理。
         if (args.BytesTransferred == 0 || args.SocketError != SocketError.Success)
         {
             CloseConnection(args);
@@ -123,6 +144,9 @@ public sealed class NetConnection<T> where T : INetSession
         BeginReceive(args);
     }
 
+    /// <summary>
+    /// 关闭连接并回调上层做业务清理。
+    /// </summary>
     private void CloseConnection(SocketAsyncEventArgs args)
     {
         State state = (State)args.UserToken!;

@@ -2,6 +2,7 @@ using ProtoBuf;
 
 namespace SkillBridge.Message;
 
+/// <summary>网络传输最外层消息，同一包通常只携带 Request 或 Response。</summary>
 [ProtoContract]
 public sealed class NetMessage
 {
@@ -12,6 +13,7 @@ public sealed class NetMessage
     public NetMessageResponse? Response { get; set; }
 }
 
+/// <summary>客户端请求集合，由具体非空字段决定业务类型。</summary>
 [ProtoContract]
 public sealed class NetMessageRequest
 {
@@ -31,6 +33,7 @@ public sealed class NetMessageRequest
     public UserGameLeaveRequest? gameLeave { get; set; }
 }
 
+/// <summary>服务端响应集合，ProtoMember 编号必须与客户端协议严格一致。</summary>
 [ProtoContract]
 public sealed class NetMessageResponse
 {
@@ -50,6 +53,7 @@ public sealed class NetMessageResponse
     public UserGameLeaveResponse? gameLeave { get; set; }
 }
 
+/// <summary>注册账号请求，密码不得写入日志。</summary>
 [ProtoContract]
 public sealed class UserRegisterRequest
 {
@@ -60,6 +64,7 @@ public sealed class UserRegisterRequest
     public string Password { get; set; } = "";
 }
 
+/// <summary>注册处理结果。</summary>
 [ProtoContract]
 public sealed class UserRegisterResponse
 {
@@ -70,6 +75,7 @@ public sealed class UserRegisterResponse
     public string Errormsg { get; set; } = "";
 }
 
+/// <summary>账号密码登录请求。</summary>
 [ProtoContract]
 public sealed class UserLoginRequest
 {
@@ -80,6 +86,7 @@ public sealed class UserLoginRequest
     public string Password { get; set; } = "";
 }
 
+/// <summary>登录结果及用户角色数据。</summary>
 [ProtoContract]
 public sealed class UserLoginResponse
 {
@@ -93,6 +100,7 @@ public sealed class UserLoginResponse
     public NUserInfo? Userinfo { get; set; }
 }
 
+/// <summary>在指定槽位创建职业角色的请求。</summary>
 [ProtoContract]
 public sealed class UserCreateCharacterRequest
 {
@@ -106,6 +114,7 @@ public sealed class UserCreateCharacterRequest
     public int SlotIndex { get; set; }
 }
 
+/// <summary>创建角色结果与最新角色列表。</summary>
 [ProtoContract]
 public sealed class UserCreateCharacterResponse
 {
@@ -119,6 +128,7 @@ public sealed class UserCreateCharacterResponse
     public List<NCharacterInfo> Characters { get; } = new();
 }
 
+/// <summary>选择账号角色列表中的下标进入游戏。</summary>
 [ProtoContract]
 public sealed class UserGameEnterRequest
 {
@@ -126,6 +136,7 @@ public sealed class UserGameEnterRequest
     public int characterIdx { get; set; }
 }
 
+/// <summary>进入游戏结果和角色同步数据。</summary>
 [ProtoContract]
 public sealed class UserGameEnterResponse
 {
@@ -139,11 +150,13 @@ public sealed class UserGameEnterResponse
     public NCharacterInfo? Character { get; set; }
 }
 
+/// <summary>离开当前游戏角色请求。</summary>
 [ProtoContract]
 public sealed class UserGameLeaveRequest
 {
 }
 
+/// <summary>离开游戏处理结果。</summary>
 [ProtoContract]
 public sealed class UserGameLeaveResponse
 {
@@ -154,6 +167,7 @@ public sealed class UserGameLeaveResponse
     public string Errormsg { get; set; } = "";
 }
 
+/// <summary>用户网络数据。</summary>
 [ProtoContract]
 public sealed class NUserInfo
 {
@@ -164,6 +178,7 @@ public sealed class NUserInfo
     public NPlayerInfo? Player { get; set; }
 }
 
+/// <summary>玩家账号和其角色集合。</summary>
 [ProtoContract]
 public sealed class NPlayerInfo
 {
@@ -174,6 +189,7 @@ public sealed class NPlayerInfo
     public List<NCharacterInfo> Characters { get; } = new();
 }
 
+/// <summary>客户端与服务端共享的角色基础同步数据。</summary>
 [ProtoContract]
 public sealed class NCharacterInfo
 {
@@ -208,6 +224,7 @@ public sealed class NCharacterInfo
     public int SlotIndex { get; set; }
 }
 
+/// <summary>通用业务结果。</summary>
 [ProtoContract(Name = "RESULT")]
 public enum Result
 {
@@ -218,6 +235,7 @@ public enum Result
     Failed = 1
 }
 
+/// <summary>网络实体类型。</summary>
 [ProtoContract(Name = "CHARACTER_TYPE")]
 public enum CharacterType
 {
@@ -229,6 +247,7 @@ public enum CharacterType
     Monster = 2
 }
 
+/// <summary>职业编号，数值同时用于协议、数据库和客户端职业配置。</summary>
 [ProtoContract(Name = "CHARACTER_CLASS")]
 public enum CharacterClass
 {

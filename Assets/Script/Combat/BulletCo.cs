@@ -6,7 +6,7 @@
 /// 新手阅读顺序：
 /// 1. SlimeCo.Shoot 生成子弹，并调用 Initialize 设置伤害、速度、寿命。
 /// 2. FixedUpdate 每个物理帧推动子弹向前飞。
-/// 3. OnTriggerEnter 碰到玩家后调用 PlayerCo.Hit 扣血。
+/// 3. OnTriggerEnter 碰到玩家后调用统一受击接口扣血。
 /// 4. 子弹命中或寿命结束都会 Destroy 自己。
 /// </summary>
 public class BulletCo : MonoBehaviour
@@ -58,6 +58,7 @@ public class BulletCo : MonoBehaviour
     /// <summary>
     /// 初始化子弹的完整版本。
     /// owner 用来避免打到发射者自己，bulletDamage 是本次伤害。
+    /// 以后如果改成对象池，这个函数也会继续是“每次发射前重置子弹状态”的统一入口。
     /// </summary>
     public void Initialize(Transform owner, int bulletDamage, float bulletSpeed, float bulletLifeTime)
     {
@@ -74,6 +75,7 @@ public class BulletCo : MonoBehaviour
 
     /// <summary>
     /// 处理子弹寿命倒计时，超时自动销毁。
+    /// 子弹寿命是远程攻击最基础的保护措施之一，避免子弹飞丢后永远留在场景里。
     /// </summary>
     void Update()
     {
@@ -93,6 +95,7 @@ public class BulletCo : MonoBehaviour
 
     /// <summary>
     /// 在物理帧里推进子弹位置，减少高速碰撞穿透概率。
+    /// 子弹移动放到 FixedUpdate 而不是 Update，是因为它依赖 Rigidbody 物理流程。
     /// </summary>
     void FixedUpdate()
     {
@@ -119,6 +122,7 @@ public class BulletCo : MonoBehaviour
 
     /// <summary>
     /// 命中玩家时结算伤害，并过滤发射者自身。
+    /// 这里故意只认实现了 FighterInterface 的目标，避免子弹和具体玩家脚本硬绑定。
     /// </summary>
     void OnTriggerEnter(Collider other)
     {
@@ -134,9 +138,10 @@ public class BulletCo : MonoBehaviour
             return;
         }
 
-        // 尝试在碰撞物或其父级上获取 PlayerCo 组件（玩家脚本）
-        PlayerCo player = other.GetComponentInParent<PlayerCo>();
-        if (player == null)
+        // 玩家生命组件实现统一受击接口，子弹不认识具体玩家控制类。
+        FighterInterface fighter = other.GetComponentInParent<FighterInterface>();
+        PlayerHealthComponent playerHealth = other.GetComponentInParent<PlayerHealthComponent>();
+        if (fighter == null || playerHealth == null)
         {
             return; // 不是玩家，忽略
         }
@@ -153,7 +158,7 @@ public class BulletCo : MonoBehaviour
 
         if (finalDamage > 0)
         {
-            player.Hit(finalDamage);
+            fighter.Hit(finalDamage);
         }
 
         Destroy(gameObject);
@@ -161,6 +166,7 @@ public class BulletCo : MonoBehaviour
 
     /// <summary>
     /// 确保子弹上挂载一个刚体组件，并设置为运动学（Kinematic）、禁用重力、启用连续碰撞检测与插值。
+    /// 这是对子弹 Prefab 的运行时兜底，防止漏挂 Rigidbody 后整套远程攻击直接失效。
     /// </summary>
     void EnsureRigidbody()
     {

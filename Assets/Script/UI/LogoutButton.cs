@@ -1,6 +1,9 @@
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>
+/// 登出按钮：清理客户端登录状态、当前选角数据并返回登录场景。
+/// </summary>
 public class LogoutButton : MonoBehaviour
 {
     [SerializeField] private Button logoutButton;

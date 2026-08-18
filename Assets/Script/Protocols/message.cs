@@ -4,6 +4,7 @@ using System.Xml.Linq;
 
 namespace SkillBridge.Message
 {
+    /// <summary>网络传输的最外层消息，同一包只使用 Request 或 Response。</summary>
     [ProtoContract]
     public class NetMessage
     {
@@ -14,6 +15,7 @@ namespace SkillBridge.Message
         public NetMessageResponse Response { get; set; }
     }
 
+    /// <summary>客户端发往服务端的请求集合，具体业务由非空字段决定。</summary>
     [ProtoContract]
     public class NetMessageRequest
     {
@@ -33,6 +35,7 @@ namespace SkillBridge.Message
         public UserGameLeaveRequest gameLeave { get; set; }
     }
 
+    /// <summary>服务端发往客户端的响应集合，字段编号必须与服务端协议保持一致。</summary>
     [ProtoContract]
     public class NetMessageResponse
     {
@@ -52,6 +55,7 @@ namespace SkillBridge.Message
         public UserGameLeaveResponse gameLeave { get; set; }
     }
 
+    /// <summary>注册账号请求。密码只用于本次传输，不应写入客户端日志。</summary>
     [ProtoContract]
     public class UserRegisterRequest
     {
@@ -62,6 +66,7 @@ namespace SkillBridge.Message
         public string Password { get; set; } = "";
     }
 
+    /// <summary>注册结果。</summary>
     [ProtoContract]
     public class UserRegisterResponse
     {
@@ -72,6 +77,7 @@ namespace SkillBridge.Message
         public string Errormsg { get; set; } = "";
     }
 
+    /// <summary>账号密码登录请求。</summary>
     [ProtoContract]
     public class UserLoginRequest
     {
@@ -82,6 +88,7 @@ namespace SkillBridge.Message
         public string Password { get; set; } = "";
     }
 
+    /// <summary>登录结果及玩家角色列表。</summary>
     [ProtoContract]
     public class UserLoginResponse
     {
@@ -95,6 +102,7 @@ namespace SkillBridge.Message
         public NUserInfo Userinfo { get; set; }
     }
 
+    /// <summary>在指定存档槽创建职业角色。</summary>
     [ProtoContract]
     public class UserCreateCharacterRequest
     {
@@ -108,6 +116,7 @@ namespace SkillBridge.Message
         public int SlotIndex { get; set; }
     }
 
+    /// <summary>创建角色结果，并返回最新角色列表。</summary>
     [ProtoContract]
     public class UserCreateCharacterResponse
     {
@@ -121,6 +130,7 @@ namespace SkillBridge.Message
         public List<NCharacterInfo> Characters { get; } = new List<NCharacterInfo>();
     }
 
+    /// <summary>请求让角色列表中指定下标的角色进入游戏。</summary>
     [ProtoContract]
     public class UserGameEnterRequest
     {
@@ -128,6 +138,7 @@ namespace SkillBridge.Message
         public int characterIdx { get; set; }
     }
 
+    /// <summary>进入游戏结果和当前角色网络数据。</summary>
     [ProtoContract]
     public class UserGameEnterResponse
     {
@@ -141,11 +152,13 @@ namespace SkillBridge.Message
         public NCharacterInfo Character { get; set; }
     }
 
+    /// <summary>离开当前游戏角色的请求。</summary>
     [ProtoContract]
     public class UserGameLeaveRequest
     {
     }
 
+    /// <summary>离开游戏结果。</summary>
     [ProtoContract]
     public class UserGameLeaveResponse
     {
@@ -156,6 +169,7 @@ namespace SkillBridge.Message
         public string Errormsg { get; set; } = "";
     }
 
+    /// <summary>登录用户的网络传输数据。</summary>
     [ProtoContract]
     public class NUserInfo
     {
@@ -166,6 +180,7 @@ namespace SkillBridge.Message
         public NPlayerInfo Player { get; set; }
     }
 
+    /// <summary>玩家账号下的角色集合。</summary>
     [ProtoContract]
     public class NPlayerInfo
     {
@@ -176,6 +191,7 @@ namespace SkillBridge.Message
         public List<NCharacterInfo> Characters { get; } = new List<NCharacterInfo>();
     }
 
+    /// <summary>单个角色在客户端与服务端之间传输的基础数据。</summary>
     [ProtoContract]
     public class NCharacterInfo
     {
@@ -210,6 +226,7 @@ namespace SkillBridge.Message
         public int SlotIndex { get; set; }
     }
 
+    /// <summary>通用业务处理结果。</summary>
     [ProtoContract(Name = "RESULT")]
     public enum Result
     {
@@ -220,6 +237,7 @@ namespace SkillBridge.Message
         Failed = 1
     }
 
+    /// <summary>网络实体类型。</summary>
     [ProtoContract(Name = "CHARACTER_TYPE")]
     public enum CharacterType
     {
@@ -231,6 +249,7 @@ namespace SkillBridge.Message
         Monster = 2
     }
 
+    /// <summary>可创建的职业编号；数值同时用于数据库和 CharacterDefine 配置。</summary>
     [ProtoContract(Name = "CHARACTER_CLASS")]
     public enum CharacterClass
     {

@@ -199,6 +199,9 @@ public class BoxCo : MonoBehaviour, FighterInterface
         UpdateHpUI();
     }
 
+    /// <summary>
+    /// 销毁时注销运行时金库引用。
+    /// </summary>
     private void OnDestroy()
     {
         GameplayRuntime.Instance.UnregisterVault(this);
@@ -310,6 +313,25 @@ public class BoxCo : MonoBehaviour, FighterInterface
     }
 
     /// <summary>
+    /// 开发者模式专用：直接完成一次宝箱击破。
+    /// 注意这里仍然复用正式 HandleDestroyed 流程，保证奖励、难度成长和 OnVaultDestroyed 事件都正常触发。
+    /// </summary>
+    public bool BreakOnceForDevelopment()
+    {
+        if (isRespawning || currentHp <= 0)
+        {
+            return false;
+        }
+
+        currentHp = 0;
+        RefreshScoreFromCurrentProgress();
+        UpdateHpUI();
+        NotifyVaultStatsChanged();
+        HandleDestroyed();
+        return true;
+    }
+
+    /// <summary>
     /// 外部如果需要重开或调试，可以直接把金库恢复到初始状态。
     /// </summary>
     public void ResetVault()
@@ -332,6 +354,39 @@ public class BoxCo : MonoBehaviour, FighterInterface
         SetInvincibleState(false);
         RestoreAnimationScale();
         RestoreHitFlashState();
+        UpdateHpUI();
+        NotifyVaultStatsChanged();
+    }
+
+    /// <summary>
+    /// 跨场景恢复宝箱进度。
+    /// 返回主场景时场景对象会重新生成，所以这里按保存的累计击破次数恢复宝箱等级、分数和当前血量。
+    /// 注意：这是“恢复数据”，不会重新发奖励，也不会广播 OnVaultDestroyed，避免重复触发 Boss 入口。
+    /// </summary>
+    public void RestoreProgress(int destroyedCount)
+    {
+        if (respawnRoutine != null)
+        {
+            StopCoroutine(respawnRoutine);
+            respawnRoutine = null;
+        }
+
+        gameObject.SetActive(true);
+        isRespawning = false;
+        vaultLevel = Mathf.Max(0, destroyedCount);
+        currentVaultDamage = 0;
+        currentVaultScore = 0;
+
+        ApplyVaultStatsForLevel(keepCurrentHp: false);
+        SetInvincibleState(false);
+        RestoreAnimationScale();
+        RestoreHitFlashState();
+
+        if (damageCollider != null)
+        {
+            damageCollider.enabled = true;
+        }
+
         UpdateHpUI();
         NotifyVaultStatsChanged();
     }

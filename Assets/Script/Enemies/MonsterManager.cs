@@ -84,4 +84,28 @@ public class MonsterManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Boss 入口开启时调用：停止本区域继续刷怪，并移除已经刷出来的普通怪。
+    /// 这个入口让 Boss 流程不用了解每个刷怪点内部怎么统计活怪，降低系统之间的耦合。
+    /// </summary>
+    public void StopSpawningAndClearAliveMonsters()
+    {
+        if (monsSpawners == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < monsSpawners.Length; i++)
+        {
+            MonsSpawner spawner = monsSpawners[i];
+            if (spawner == null)
+            {
+                continue;
+            }
+
+            spawner.StopSpawning();
+            spawner.ClearAliveMonsters();
+        }
+    }
+
 }

@@ -1,6 +1,7 @@
-using System;
+/*using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -50,6 +51,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
     // 最大连击段数。当前动画参数 ComboIndex 只设计了 1、2、3 段。
     private const int MaxCombo = 3;
+    private const string DirectionalAttackLayerName = "Attack Layer";
 
     // CharacterController 贴地时给一个小的负速度，避免角色在地面边缘抖动。
     private const float GroundedVerticalVelocity = -2f;
@@ -62,17 +64,40 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
     public static PlayerCo instance;
 
-    // 属性变化事件：属性面板订阅它，玩家数值变化时自动刷新 UI。
-    public event Action StatsChanged;
+    private PlayerRuntimeStats runtimeStats;
 
-    // 待选择升级数量变化事件：升级三选一面板订阅它。
-    public event Action<int> PendingUpgradeSelectionsChanged;
+    // 保留 PlayerCo 上的事件入口，内部实际转发到纯 C# 运行时属性模型。
+    // 这样现有 UI 不需要在同一次重构中全部改写。
+    public event Action StatsChanged
+    {
+        add => RuntimeStats.StatsChanged += value;
+        remove
+        {
+            if (runtimeStats != null)
+            {
+                runtimeStats.StatsChanged -= value;
+            }
+        }
+    }
+
+    public event Action<int> PendingUpgradeSelectionsChanged
+    {
+        add => RuntimeStats.PendingUpgradeSelectionsChanged += value;
+        remove
+        {
+            if (runtimeStats != null)
+            {
+                runtimeStats.PendingUpgradeSelectionsChanged -= value;
+            }
+        }
+    }
 
     [Header("Player Feature Components")]
     [SerializeField] private PlayerMovementComponent movementComponent;
     [SerializeField] private PlayerCombatComponent combatComponent;
     [SerializeField] private PlayerProgressionComponent progressionComponent;
     [SerializeField] private PlayerHealthComponent healthComponent;
+    [SerializeField] private PlayerPresentationComponent presentationComponent;
 
     [Header("Component References")]
     // CharacterController 负责移动和碰撞，不使用 Rigidbody 推玩家。
@@ -176,7 +201,8 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
     // 整套攻击超时保护：避免动画事件漏掉导致永远卡在攻击状态。
     public float fullAttackTimeout = 4f;
-    public int AtkPower = 25;
+    [FormerlySerializedAs("AtkPower")]
+    [SerializeField] private int legacyAttackPower = 25;
 
     // 连击运行时状态：当前段数、计时器、是否正在攻击、是否允许接下一段。
     private int currentCombo;
@@ -215,12 +241,18 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
     [Header("Progression")]
     // 玩家生命、等级、经验。
-    public int Hp;
-    public int Hpmax;
-    public int Lv = 1;
-    public int Lvmax = 999;
-    public int curExp;
-    public int curExpMax;
+    [FormerlySerializedAs("Hp")]
+    [SerializeField] private int legacyCurrentHp;
+    [FormerlySerializedAs("Hpmax")]
+    [SerializeField] private int legacyMaxHp;
+    [FormerlySerializedAs("Lv")]
+    [SerializeField] private int legacyLevel = 1;
+    [FormerlySerializedAs("Lvmax")]
+    [SerializeField] private int legacyLevelCap = 999;
+    [FormerlySerializedAs("curExp")]
+    [SerializeField] private int legacyCurrentExp;
+    [FormerlySerializedAs("curExpMax")]
+    [SerializeField] private int legacyExpToNextLevel;
 
     [Header("Player Attributes")]
     // 下面是完整属性系统。base 表示基础值，bonus 表示额外加成。
@@ -264,24 +296,41 @@ public class PlayerCo : MonoBehaviour, FighterInterface
     public GameObject ReStartPanel;
 
     // 对外只读属性面板数据，避免其他脚本直接改内部字段。
-    public float CritChance => critChance;
-    public float CritDamageMultiplier => critDamageMultiplier;
-    public float DodgeChance => dodgeChance;
-    public float HealthRegenPerSecond => healthRegenPerSecond;
-    public float DamageReduction => damageReduction;
-    public float LifeSteal => lifeSteal;
+    public int Hp { get => RuntimeStats.CurrentHp; set => RuntimeStats.CurrentHp = value; }
+    public int Hpmax { get => RuntimeStats.MaxHp; set => RuntimeStats.MaxHp = value; }
+    public int Lv { get => RuntimeStats.Level; set => RuntimeStats.Level = value; }
+    public int Lvmax { get => RuntimeStats.LevelCap; set => RuntimeStats.LevelCap = value; }
+    public int curExp { get => RuntimeStats.CurrentExp; set => RuntimeStats.CurrentExp = value; }
+    public int curExpMax { get => RuntimeStats.ExpToNextLevel; set => RuntimeStats.ExpToNextLevel = value; }
+    public int AtkPower { get => RuntimeStats.AttackPower; set => RuntimeStats.AttackPower = value; }
+
+    public float CritChance => RuntimeStats.CritChance;
+    public float CritDamageMultiplier => RuntimeStats.CritDamageMultiplier;
+    public float DodgeChance => RuntimeStats.DodgeChance;
+    public float HealthRegenPerSecond => RuntimeStats.HealthRegenPerSecond;
+    public float DamageReduction => RuntimeStats.DamageReduction;
+    public float LifeSteal => RuntimeStats.LifeSteal;
     public float WalkSpeed => Speed;
     public float RunSpeed => runSpeed;
     public int BaseMaxHp => GetLevelBaseMaxHp(Lv);
-    public int BonusMaxHp => bonusMaxHp;
-    public int PendingUpgradeSelectionCount => pendingUpgradeSelectionCount;
-    public bool IsUpgradeSelectionActive => isUpgradeSelectionActive;
+    public int BonusMaxHp => RuntimeStats.BonusMaxHp;
+    public int PendingUpgradeSelectionCount => RuntimeStats.PendingUpgradeSelectionCount;
+    public bool IsUpgradeSelectionActive => RuntimeStats.IsUpgradeSelectionActive;
     public NCharacter EntryCharacterSave => entryCharacterSave;
     public CharacterDefine EntryCharacterDefine => entryCharacterDefine;
 
     internal CharacterController CharacterController => cc;
     internal Animator PlayerAnimator => animator;
     internal SphereCollider PlayerWeaponCollider => WeaponCollider;
+    internal PlayerPresentationComponent PlayerPresentation => presentationComponent;
+    internal PlayerRuntimeStats RuntimeStats
+    {
+        get
+        {
+            EnsureRuntimeStats();
+            return runtimeStats;
+        }
+    }
     internal bool AutoPlayFootstepSfx => autoPlayFootstepSfx;
     internal bool AutoPlayActionSfx => autoPlayActionSfx;
     internal float WalkFootstepInterval => walkFootstepInterval;
@@ -309,46 +358,75 @@ public class PlayerCo : MonoBehaviour, FighterInterface
     internal float LegacyRunStaminaCostPerSecond { get => runStaminaCostPerSecond; set => runStaminaCostPerSecond = value; }
     internal float LegacyMinimumStaminaToStartRun { get => minimumStaminaToStartRun; set => minimumStaminaToStartRun = value; }
     internal float LegacyStaminaRecoverPerSecond { get => staminaRecoverPerSecond; set => staminaRecoverPerSecond = value; }
-    internal int BaseMaxHpValue { get => baseMaxHp; set => baseMaxHp = value; }
-    internal int BonusMaxHpValue { get => bonusMaxHp; set => bonusMaxHp = value; }
-    internal int BaseAttackPowerValue { get => baseAttackPower; set => baseAttackPower = value; }
-    internal float BaseMoveSpeedValue { get => baseMoveSpeed; set => baseMoveSpeed = value; }
-    internal float RunSpeedMultiplierValue { get => runSpeedMultiplier; set => runSpeedMultiplier = value; }
-    internal float CritChanceValue { get => critChance; set => critChance = value; }
-    internal float CritDamageMultiplierValue { get => critDamageMultiplier; set => critDamageMultiplier = value; }
-    internal float DodgeChanceValue { get => dodgeChance; set => dodgeChance = value; }
-    internal float HealthRegenPerSecondValue { get => healthRegenPerSecond; set => healthRegenPerSecond = value; }
-    internal float DamageReductionValue { get => damageReduction; set => damageReduction = value; }
-    internal float LifeStealValue { get => lifeSteal; set => lifeSteal = value; }
-    internal int HealthRegenUpgradeCountValue { get => healthRegenUpgradeCount; set => healthRegenUpgradeCount = value; }
-    internal int PendingUpgradeSelectionCountValue { get => pendingUpgradeSelectionCount; set => pendingUpgradeSelectionCount = value; }
-    internal bool IsUpgradeSelectionActiveValue { get => isUpgradeSelectionActive; set => isUpgradeSelectionActive = value; }
+    internal int BaseMaxHpValue { get => RuntimeStats.BaseMaxHp; set => RuntimeStats.BaseMaxHp = value; }
+    internal int BonusMaxHpValue { get => RuntimeStats.BonusMaxHp; set => RuntimeStats.BonusMaxHp = value; }
+    internal int BaseAttackPowerValue { get => RuntimeStats.BaseAttackPower; set => RuntimeStats.BaseAttackPower = value; }
+    internal float BaseMoveSpeedValue { get => RuntimeStats.BaseMoveSpeed; set => RuntimeStats.BaseMoveSpeed = value; }
+    internal float RunSpeedMultiplierValue { get => RuntimeStats.RunSpeedMultiplier; set => RuntimeStats.RunSpeedMultiplier = value; }
+    internal float CritChanceValue { get => RuntimeStats.CritChance; set => RuntimeStats.CritChance = value; }
+    internal float CritDamageMultiplierValue { get => RuntimeStats.CritDamageMultiplier; set => RuntimeStats.CritDamageMultiplier = value; }
+    internal float DodgeChanceValue { get => RuntimeStats.DodgeChance; set => RuntimeStats.DodgeChance = value; }
+    internal float HealthRegenPerSecondValue { get => RuntimeStats.HealthRegenPerSecond; set => RuntimeStats.HealthRegenPerSecond = value; }
+    internal float DamageReductionValue { get => RuntimeStats.DamageReduction; set => RuntimeStats.DamageReduction = value; }
+    internal float LifeStealValue { get => RuntimeStats.LifeSteal; set => RuntimeStats.LifeSteal = value; }
+    internal int HealthRegenUpgradeCountValue { get => RuntimeStats.HealthRegenUpgradeCount; set => RuntimeStats.HealthRegenUpgradeCount = value; }
+    internal int PendingUpgradeSelectionCountValue { get => RuntimeStats.PendingUpgradeSelectionCount; set => RuntimeStats.PendingUpgradeSelectionCount = value; }
+    internal bool IsUpgradeSelectionActiveValue { get => RuntimeStats.IsUpgradeSelectionActive; set => RuntimeStats.IsUpgradeSelectionActive = value; }
 
 #if UNITY_EDITOR
     private bool editorUiEnsureQueued;
 #endif
 
+    /// <summary>
+    /// 用旧 Prefab 上已经序列化的数据创建运行时属性模型。
+    /// FormerlySerializedAs 会负责接住旧字段名称，因此升级工程后不会突然丢失 Inspector 数值。
+    /// </summary>
+    private void EnsureRuntimeStats()
+    {
+        if (runtimeStats != null)
+        {
+            return;
+        }
+
+        runtimeStats = new PlayerRuntimeStats
+        {
+            CurrentHp = legacyCurrentHp,
+            MaxHp = legacyMaxHp,
+            Level = Mathf.Max(1, legacyLevel),
+            LevelCap = Mathf.Max(1, legacyLevelCap),
+            CurrentExp = Mathf.Max(0, legacyCurrentExp),
+            ExpToNextLevel = Mathf.Max(0, legacyExpToNextLevel),
+            AttackPower = Mathf.Max(1, legacyAttackPower),
+            BaseMaxHp = Mathf.Max(1, baseMaxHp),
+            BonusMaxHp = Mathf.Max(0, bonusMaxHp),
+            BaseAttackPower = Mathf.Max(1, baseAttackPower),
+            BaseMoveSpeed = Mathf.Max(0.01f, baseMoveSpeed),
+            RunSpeedMultiplier = Mathf.Max(1f, runSpeedMultiplier),
+            CritChance = critChance,
+            CritDamageMultiplier = Mathf.Max(1f, critDamageMultiplier),
+            DodgeChance = dodgeChance,
+            HealthRegenPerSecond = Mathf.Max(0f, healthRegenPerSecond),
+            DamageReduction = damageReduction,
+            LifeSteal = lifeSteal,
+            HealthRegenUpgradeCount = Mathf.Max(0, healthRegenUpgradeCount),
+            PendingUpgradeSelectionCount = Mathf.Max(0, pendingUpgradeSelectionCount),
+            IsUpgradeSelectionActive = isUpgradeSelectionActive
+        };
+    }
+
     private void Awake()
     {
-        // 单例赋值，方便武器、子弹、怪物、UI 找到玩家。
+        // 先注册运行时玩家，再补齐功能组件。四个职业共用同一个 PlayerRuntime，
+        // 职业模型会在生成器中随后绑定到 presentationComponent。
         instance = this;
-        instance = this;
+        EnsureRuntimeStats();
         GameplayRuntime.Instance.RegisterPlayer(this);
-        CacheComponents();
         EnsurePlayerFeatureComponents();
-        InitializePlayerFeatureComponents();
-        EnsureRuntimeUiComponents();
-
-        // 缓存 CharacterController、Animator、AudioSource 等常用组件。
         CacheComponents();
-
-        // 记录默认材质颜色，用于受击变红后恢复。
-        CacheHitEffectRenderer();
-
-        // 记录哪些 Renderer 需要在闪避无敌时闪烁。
-        CacheDodgeFlickerRenderers();
-
-        // 自动补齐属性面板、升级面板、暂停/结束 UI。
+        if (animator != null)
+        {
+            InitializePlayerFeatureComponents();
+        }
         EnsureRuntimeUiComponents();
     }
 
@@ -404,6 +482,21 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         UpdateLvUI();
         NotifyStatsChanged();
         NotifyPendingUpgradeSelectionsChanged();
+    }
+
+    /// <summary>
+    /// 绑定本次选择的职业模型。
+    /// 玩家规则仍然保留在 PlayerRuntime 根对象，模型只提供 Animator 和 Renderer，
+    /// 因此战士、法师、弓箭手和刺客可以复用同一套玩家组件。
+    /// </summary>
+    public void BindCharacterVisual(GameObject visualObject, CharacterDefine define)
+    {
+        presentationComponent = EnsureFeatureComponent(presentationComponent);
+        presentationComponent.BindVisual(visualObject, define);
+
+        // Awake 发生在模型实例化之前，模型装入后必须重新缓存并初始化一次表现引用。
+        CacheComponents();
+        InitializePlayerFeatureComponents();
     }
 
     private void Start()
@@ -555,7 +648,8 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         }
 
         combatComponent.Tick();
-        movementComponent.TickNormalMovement(combatComponent.IsAttacking);
+        // 攻击时允许水平移动，只限制起跳，和 PlayerRuntimeController 保持一致。
+        movementComponent.TickNormalMovement(false, combatComponent.IsAttacking);
         healthComponent.ApplyHealthRegen();
         movementComponent.ApplyStaminaRecovery();
         UpdateStaminaUI();
@@ -572,9 +666,22 @@ public class PlayerCo : MonoBehaviour, FighterInterface
             cc = GetComponent<CharacterController>();
         }
 
-        if (animator == null)
+        if (presentationComponent != null && presentationComponent.Animator != null)
         {
-            animator = GetComponent<Animator>();
+            animator = presentationComponent.Animator;
+        }
+        else if (animator == null)
+        {
+            animator = GetComponentInChildren<Animator>(true);
+        }
+
+        if (WeaponCollider == null)
+        {
+            WeaponCo weapon = GetComponentInChildren<WeaponCo>(true);
+            if (weapon != null)
+            {
+                WeaponCollider = weapon.GetComponent<SphereCollider>();
+            }
         }
 
         EnsureAudioSource();
@@ -584,7 +691,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
             Debug.LogError("Player is missing CharacterController.", this);
         }
 
-        if (animator == null)
+        if (animator == null && presentationComponent == null)
         {
             Debug.LogError("Player is missing Animator.", this);
         }
@@ -615,7 +722,11 @@ public class PlayerCo : MonoBehaviour, FighterInterface
     private void CacheHitEffectRenderer()
     {
         // 找到玩家模型的 SkinnedMeshRenderer，用于受击闪红。
-        if (myRenderer == null)
+        if (presentationComponent != null && presentationComponent.PrimaryRenderer != null)
+        {
+            myRenderer = presentationComponent.PrimaryRenderer;
+        }
+        else if (myRenderer == null)
         {
             myRenderer = GetComponentInChildren<SkinnedMeshRenderer>();
         }
@@ -662,6 +773,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
     private void EnsurePlayerFeatureComponents()
     {
+        presentationComponent = EnsureFeatureComponent(presentationComponent);
         movementComponent = EnsureFeatureComponent(movementComponent);
         combatComponent = EnsureFeatureComponent(combatComponent);
         progressionComponent = EnsureFeatureComponent(progressionComponent);
@@ -1154,6 +1266,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
         if (animator != null)
         {
+            SetDirectionalAttackLayerWeight(1f);
             animator.SetInteger("ComboIndex", currentCombo);
         }
     }
@@ -1169,6 +1282,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
 
         if (animator != null)
         {
+            SetDirectionalAttackLayerWeight(1f);
             animator.SetInteger("ComboIndex", currentCombo);
         }
     }
@@ -1226,13 +1340,32 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         if (animator != null)
         {
             animator.SetInteger("ComboIndex", 0);
+            SetDirectionalAttackLayerWeight(0f);
+        }
+    }
+
+    /// <summary>
+    /// 兼容旧 PlayerCo 直接控制 Animator 的流程。
+    /// 攻击动画现在在独立 Attack Layer 上，旧流程只写 ComboIndex 不打开层权重时，画面上会看不到攻击动画。
+    /// </summary>
+    private void SetDirectionalAttackLayerWeight(float weight)
+    {
+        if (animator == null)
+        {
+            return;
+        }
+
+        int layerIndex = animator.GetLayerIndex(DirectionalAttackLayerName);
+        if (layerIndex >= 0)
+        {
+            animator.SetLayerWeight(layerIndex, Mathf.Clamp01(weight));
         }
     }
 
     /// <summary>
     /// 动画事件调用：启用武器碰撞盒。
     /// </summary>
-    private void WeaponEnable()
+    public void WeaponEnable()
     {
         if (combatComponent != null)
         {
@@ -1255,7 +1388,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
     /// <summary>
     /// 动画事件调用：关闭武器碰撞盒。
     /// </summary>
-    private void WeaponDisable()
+    public void WeaponDisable()
     {
         if (combatComponent != null)
         {
@@ -2622,7 +2755,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         // 记录旧血量百分比，最大血量变化后尽量保持当前血量比例。
         float hpPercent = previousMaxHp > 0 ? (float)Hp / previousMaxHp : 1f;
 
-        Hpmax = Mathf.Max(1, GetLevelBaseMaxHp(Lv) + bonusMaxHp);
+        Hpmax = Mathf.Max(1, GetLevelBaseMaxHp(Lv) + RuntimeStats.BonusMaxHp);
 
         if (fillCurrentHp)
         {
@@ -2664,7 +2797,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
             return Mathf.Max(1, config.getMaxHp(level));
         }
 
-        return Mathf.Max(1, baseMaxHp);
+        return Mathf.Max(1, RuntimeStats.BaseMaxHp);
     }
 
     /// <summary>
@@ -2731,13 +2864,13 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         AddAttributePanelEntry(results, overviewGroup, "move_speed", moveSpeedName, FormatDecimal(Speed));
 
         AddAttributePanelEntry(results, combatGroup, "attack_power", attackName, AtkPower.ToString());
-        AddAttributePanelEntry(results, combatGroup, "crit_chance", critChanceName, FormatPercent(critChance));
-        AddAttributePanelEntry(results, combatGroup, "crit_damage", "\u66b4\u51fb\u4f24\u5bb3", $"{critDamageMultiplier:0.00}x");
+        AddAttributePanelEntry(results, combatGroup, "crit_chance", critChanceName, FormatPercent(CritChance));
+        AddAttributePanelEntry(results, combatGroup, "crit_damage", "\u66b4\u51fb\u4f24\u5bb3", $"{CritDamageMultiplier:0.00}x");
 
-        AddAttributePanelEntry(results, survivalGroup, "dodge_chance", dodgeChanceName, FormatPercent(dodgeChance));
-        AddAttributePanelEntry(results, survivalGroup, "health_regen", healthRegenName, $"{healthRegenPerSecond:0.##}/s");
-        AddAttributePanelEntry(results, survivalGroup, "damage_reduction", damageReductionName, FormatPercent(damageReduction));
-        AddAttributePanelEntry(results, survivalGroup, "life_steal", lifeStealName, FormatPercent(lifeSteal));
+        AddAttributePanelEntry(results, survivalGroup, "dodge_chance", dodgeChanceName, FormatPercent(DodgeChance));
+        AddAttributePanelEntry(results, survivalGroup, "health_regen", healthRegenName, $"{HealthRegenPerSecond:0.##}/s");
+        AddAttributePanelEntry(results, survivalGroup, "damage_reduction", damageReductionName, FormatPercent(DamageReduction));
+        AddAttributePanelEntry(results, survivalGroup, "life_steal", lifeStealName, FormatPercent(LifeSteal));
     }
 
     /// <summary>
@@ -2752,12 +2885,12 @@ public class PlayerCo : MonoBehaviour, FighterInterface
             $"\u6700\u5927\u751f\u547d\uff1a{Hpmax}\n" +
             $"\u653b\u51fb\u529b\uff1a{AtkPower}\n" +
             $"\u79fb\u52a8\u901f\u5ea6\uff1a{FormatDecimal(Speed)}\n" +
-            $"\u66b4\u51fb\u7387\uff1a{FormatPercent(critChance)}\n" +
-            $"\u66b4\u51fb\u4f24\u5bb3\uff1a{critDamageMultiplier:0.00}x\n" +
-            $"\u95ea\u907f\u7387\uff1a{FormatPercent(dodgeChance)}\n" +
-            $"\u751f\u547d\u6062\u590d\uff1a{healthRegenPerSecond:0.##}/s\n" +
-            $"\u4f24\u5bb3\u51cf\u514d\uff1a{FormatPercent(damageReduction)}\n" +
-            $"\u5438\u8840\uff1a{FormatPercent(lifeSteal)}";
+            $"\u66b4\u51fb\u7387\uff1a{FormatPercent(CritChance)}\n" +
+            $"\u66b4\u51fb\u4f24\u5bb3\uff1a{CritDamageMultiplier:0.00}x\n" +
+            $"\u95ea\u907f\u7387\uff1a{FormatPercent(DodgeChance)}\n" +
+            $"\u751f\u547d\u6062\u590d\uff1a{HealthRegenPerSecond:0.##}/s\n" +
+            $"\u4f24\u5bb3\u51cf\u514d\uff1a{FormatPercent(DamageReduction)}\n" +
+            $"\u5438\u8840\uff1a{FormatPercent(LifeSteal)}";
     }
 
     /// <summary>
@@ -2789,8 +2922,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
     /// </summary>
     internal void NotifyStatsChanged()
     {
-        // 通知所有订阅者：玩家属性变了。
-        StatsChanged?.Invoke();
+        RuntimeStats.NotifyStatsChanged();
     }
 
     /// <summary>
@@ -2799,7 +2931,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
     internal void NotifyPendingUpgradeSelectionsChanged()
     {
         // 通知升级面板：还有几次升级选择没有完成。
-        PendingUpgradeSelectionsChanged?.Invoke(pendingUpgradeSelectionCount);
+        RuntimeStats.NotifyPendingUpgradeSelectionsChanged();
     }
 
     // Debug shortcut for quick local verification of level-up flow.
@@ -2811,3 +2943,4 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         }
     }
 }
+*/

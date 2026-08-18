@@ -3,7 +3,7 @@
 /// 
 /// 新手理解：
 /// 1. enum 是“固定选项列表”，比直接写字符串更安全。
-/// 2. PlayerCo 负责真正改数值，GameConfig 负责配置每种属性的显示文本和成长幅度，
+/// 2. PlayerProgressionSystem 负责真正改数值，GameConfig 负责配置每种属性的显示文本和成长幅度，
 ///    PlayerLevelUpPanel 负责把这些选项显示成按钮。
 /// 3. 每个枚举值后面的数字不是必须写，但写出来可以让存档或调试时更稳定。
 /// </summary>

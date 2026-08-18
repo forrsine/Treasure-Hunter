@@ -9,23 +9,24 @@ using UnityEngine;
 /// 作用：
 /// 当暂停菜单、升级面板、游戏结束面板出现时，游戏会把鼠标从“锁定隐藏”改成“显示出来”。
 /// Unity 默认经常会把刚显示出来的鼠标放在屏幕中间，容易误点中间按钮。
-/// 所以所有需要“显示鼠标”的地方，都统一调用 ShowAtTopLeft，让鼠标出现在窗口左上角。
+/// 所以所有需要“显示鼠标”的地方，都统一调用 ShowAtUpperCenterQuarter，让鼠标出现在窗口上方偏中间的位置。
 /// </summary>
 public static class CursorPopupUtility
 {
-    // 鼠标不要贴死左上角，稍微留一点距离，看起来更自然，也不容易跑到窗口外。
-    private const int TopLeftPaddingPixels = 16;
+    // 弹窗出现时，鼠标统一放到窗口横向中心、从上往下四分之一处，避免压在中间按钮上。
+    private const float PopupTargetXRatio = 0.5f;
+    private const float PopupTargetYRatio = 0.25f;
 
     // 这是一个隐藏的小组件，用来启动协程。
     // static 工具类本身不能直接 StartCoroutine，所以需要一个 MonoBehaviour 帮忙。
     private static CursorPopupPositioner positioner;
 
     /// <summary>
-    /// 显示鼠标，并把鼠标移动到游戏窗口左上角。
+    /// 显示鼠标，并把鼠标移动到游戏窗口横向中心、从上往下四分之一处。
     /// 
     /// 以后如果还有地方需要“弹出鼠标”，直接调用这个方法就行。
     /// </summary>
-    public static void ShowAtTopLeft()
+    public static void ShowAtUpperCenterQuarter()
     {
         // 先解除鼠标锁定，否则鼠标还被游戏镜头控制着，移动位置也看不到效果。
         Cursor.lockState = CursorLockMode.None;
@@ -33,8 +34,8 @@ public static class CursorPopupUtility
         // 再把鼠标显示出来。
         Cursor.visible = true;
 
-        // 立刻移动一次，尽量让玩家马上看到鼠标在左上角。
-        MoveToTopLeftNow();
+        // 立刻移动一次，尽量让玩家马上看到鼠标在预期的弹窗操作区域。
+        MoveToUpperCenterQuarterNow();
 
         if (Application.isPlaying)
         {
@@ -45,15 +46,15 @@ public static class CursorPopupUtility
     }
 
     /// <summary>
-    /// 立即把系统鼠标移动到游戏窗口左上角。
+    /// 立即把系统鼠标移动到游戏窗口横向中心、从上往下四分之一处。
     /// </summary>
-    internal static void MoveToTopLeftNow()
+    internal static void MoveToUpperCenterQuarterNow()
     {
         // 这个移动鼠标的方法只在 Windows 编辑器和 Windows 打包版本里启用。
         // 其它平台不会编译这里的代码，也就不会因为 user32.dll 报错。
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        // 先算出“游戏窗口左上角附近”对应的屏幕坐标。
-        Vector2Int targetPosition = GetTopLeftTargetPosition();
+        // 先算出“游戏窗口上方偏中间”对应的屏幕坐标。
+        Vector2Int targetPosition = GetUpperCenterQuarterTargetPosition();
 
         // 调用 Windows 系统接口，真正把系统鼠标移动过去。
         SetCursorPos(targetPosition.x, targetPosition.y);
@@ -100,7 +101,7 @@ public static class CursorPopupUtility
     }
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-    private static Vector2Int GetTopLeftTargetPosition()
+    private static Vector2Int GetUpperCenterQuarterTargetPosition()
     {
         // 获取当前最前面的窗口。
         // 游戏运行时，一般就是 Unity 的 Game 窗口或打包后的游戏窗口。
@@ -108,24 +109,30 @@ public static class CursorPopupUtility
         if (windowHandle != IntPtr.Zero)
         {
             // 这里的坐标先按“窗口内部坐标”写：
-            // X = 16 表示离窗口左边 16 像素。
-            // Y = 16 表示离窗口上边 16 像素。
-            POINT topLeft = new POINT
-            {
-                X = TopLeftPaddingPixels,
-                Y = TopLeftPaddingPixels
-            };
+            // X = Screen.width * 0.5 表示窗口横向中心。
+            // Y = Screen.height * 0.25 表示从窗口上边往下四分之一。
+            POINT targetPoint = GetDefaultPopupClientPoint();
 
             // Windows 的 SetCursorPos 需要“整个屏幕坐标”，不是“窗口内部坐标”。
             // ClientToScreen 就是把窗口内部坐标转换成屏幕坐标。
-            if (ClientToScreen(windowHandle, ref topLeft))
+            if (ClientToScreen(windowHandle, ref targetPoint))
             {
-                return new Vector2Int(topLeft.X, topLeft.Y);
+                return new Vector2Int(targetPoint.X, targetPoint.Y);
             }
         }
 
-        // 如果没拿到窗口，就退一步，放到整个屏幕左上角附近。
-        return new Vector2Int(TopLeftPaddingPixels, TopLeftPaddingPixels);
+        // 如果没拿到窗口，就退一步，仍然使用同一个比例点。
+        POINT fallbackPoint = GetDefaultPopupClientPoint();
+        return new Vector2Int(fallbackPoint.X, fallbackPoint.Y);
+    }
+
+    private static POINT GetDefaultPopupClientPoint()
+    {
+        return new POINT
+        {
+            X = Mathf.RoundToInt(Screen.width * PopupTargetXRatio),
+            Y = Mathf.RoundToInt(Screen.height * PopupTargetYRatio)
+        };
     }
 
     // 下面几个 DllImport 是在调用 Windows 自带的 user32.dll。
@@ -162,7 +169,7 @@ public sealed class CursorPopupPositioner : MonoBehaviour
     private Coroutine moveRoutine;
 
     /// <summary>
-    /// 接下来几帧继续把鼠标放到左上角。
+    /// 接下来几帧继续把鼠标放到窗口上方偏中间的位置。
     /// 
     /// 原因：
     /// 鼠标从 Locked 变成 None 的时候，Unity/系统可能会在下一帧重新调整鼠标位置。
@@ -190,13 +197,13 @@ public sealed class CursorPopupPositioner : MonoBehaviour
         yield return null;
 
         // 第一帧后，再移动一次。
-        CursorPopupUtility.MoveToTopLeftNow();
+        CursorPopupUtility.MoveToUpperCenterQuarterNow();
 
         // 再等到这一帧真正结束。
         yield return new WaitForEndOfFrame();
 
         // 帧结束时再移动一次，进一步防止鼠标回到中心。
-        CursorPopupUtility.MoveToTopLeftNow();
+        CursorPopupUtility.MoveToUpperCenterQuarterNow();
 
         // 协程结束，把记录清空。
         moveRoutine = null;

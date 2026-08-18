@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d78dfce684b1eb4e937e0f1b1ff7389, type: 3}
+  m_Name: AncientScroll
+  m_EditorClassIdentifier: 
+  itemId: ancient_scroll
+  displayName: "\u53E4\u4EE3\u5377\u8F74"
+  category: 2
+  rarity: 2
+  icon: {fileID: 21300000, guid: 163223f2298315d40b6bc0643acdd50c, type: 3}
+  description: "\u8BB0\u5F55\u7740\u9057\u8FF9\u6587\u5B57\u7684\u7A00\u6709\u5377\u8F74\u3002\u540E\u7EED\u53EF\u7528\u4E8E\u4EFB\u52A1\u63D0\u4EA4\u6216\u89E3\u9501\u7279\u6B8A\u6280\u80FD\u3002"
+  maxStack: 10
+  useEffect: 0
+  restorePercent: 0
+  displayTint: {r: 1, g: 0.72, b: 0.25, a: 1}

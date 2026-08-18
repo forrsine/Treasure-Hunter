@@ -1,0 +1,132 @@
+using QFramework;
+using UnityEngine;
+
+/// <summary>
+/// 背包规则系统：负责堆叠、占用空格、满包结算和会话重置。
+/// 世界掉落、UI 和网络层都只能通过 Command 调用这里，避免出现多套不一致的加物品规则。
+/// </summary>
+public sealed class InventorySystem : AbstractSystem
+{
+    private InventoryModel model;
+
+    public InventoryDatabase Database { get; private set; }
+
+    protected override void OnInit()
+    {
+        model = this.GetModel<InventoryModel>();
+        ConfigureDatabase(Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath));
+    }
+
+    /// <summary>
+    /// 应用背包数据库。公开该入口主要用于 EditMode 测试和以后切换职业专属背包配置。
+    /// </summary>
+    public void ConfigureDatabase(InventoryDatabase database)
+    {
+        Database = database;
+        model.ConfigureCapacity(database != null ? database.Capacity : InventoryModel.DefaultCapacity);
+    }
+
+    public InventoryAddResult TryAddItem(InventoryItemDefinition item, int amount)
+    {
+        if (item == null || amount <= 0)
+        {
+            return new InventoryAddResult(item, amount, 0);
+        }
+
+        int remaining = amount;
+
+        // 先填已有堆叠，避免背包里出现多个未满的同类格子。
+        for (int i = 0; i < model.Slots.Count && remaining > 0; i++)
+        {
+            InventorySlotData slot = model.Slots[i];
+            if (!slot.IsEmpty && slot.Item.IsSameItem(item))
+            {
+                remaining -= slot.AddUpToStackLimit(item, remaining);
+            }
+        }
+
+        // 还有剩余时再依次占用空格，支持一次加入数量超过单格上限的情况。
+        for (int i = 0; i < model.Slots.Count && remaining > 0; i++)
+        {
+            InventorySlotData slot = model.Slots[i];
+            if (slot.IsEmpty)
+            {
+                remaining -= slot.AddUpToStackLimit(item, remaining);
+            }
+        }
+
+        int added = amount - remaining;
+        InventoryAddResult result = new InventoryAddResult(item, amount, added);
+        if (result.AddedAnything)
+        {
+            this.SendEvent(new InventoryChangedEvent());
+        }
+
+        if (remaining > 0)
+        {
+            this.SendEvent(new InventoryFullEvent(item, remaining));
+        }
+
+        // 部分成功时把“获得数量 + 未加入数量”的组合提示放在最后，
+        // 避免单独的满包提示覆盖更完整的结算信息。
+        if (result.AddedAnything)
+        {
+            this.SendEvent(new InventoryItemAddedEvent(item, added, remaining));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 查询当前背包最多还能接收多少个指定物品，不修改数据也不广播事件。
+    /// 地面拾取物用它做低频重试，避免背包已满时每个物理帧重复发送提示。
+    /// </summary>
+    public int GetAddableAmount(InventoryItemDefinition item, int amount)
+    {
+        if (item == null || amount <= 0)
+        {
+            return 0;
+        }
+
+        int available = 0;
+        for (int i = 0; i < model.Slots.Count && available < amount; i++)
+        {
+            InventorySlotData slot = model.Slots[i];
+            if (slot.IsEmpty)
+            {
+                available += item.MaxStack;
+            }
+            else if (slot.Item.IsSameItem(item))
+            {
+                available += Mathf.Max(0, item.MaxStack - slot.Count);
+            }
+        }
+
+        return Mathf.Min(amount, available);
+    }
+
+    /// <summary>
+    /// 从指定格子移除物品。消耗、丢弃和装备入口都应复用这里，不能让 UI 直接修改 Slot。
+    /// </summary>
+    public int TryRemoveItemAt(int slotIndex, int amount)
+    {
+        if (slotIndex < 0 || slotIndex >= model.Slots.Count || amount <= 0)
+        {
+            return 0;
+        }
+
+        int removed = model.Slots[slotIndex].Remove(amount);
+        if (removed > 0)
+        {
+            this.SendEvent(new InventoryChangedEvent());
+        }
+
+        return removed;
+    }
+
+    public void ResetInventory()
+    {
+        model.Clear();
+        this.SendEvent(new InventoryChangedEvent());
+    }
+}

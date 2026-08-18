@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 772276579447595883}
   - component: {fileID: 772276579447595880}
   - component: {fileID: 9095483702356301523}
+  - component: {fileID: -2845784421162468873}
   m_Layer: 10
   m_Name: Box
   m_TagString: Untagged
@@ -65,6 +66,13 @@ MonoBehaviour:
   hpGrowthPerDestroy: 1.6
   difficultyGrowthPerDestroy: 1.1
   invincibleDuration: 3
+  breakAnimationDuration: 0.6
+  respawnDelay: 0.2
+  respawnAnimationDuration: 0.6
+  keepColliderEnabledDuringRespawn: 1
+  playScaleFallbackAnimation: 1
+  animationRoot: {fileID: 0}
+  destroyedScale: 0.05
   baseDestroyExpReward: 100
   expRewardStep: 20
   scoreDamagePerPoint: 20
@@ -82,9 +90,13 @@ MonoBehaviour:
   breakVfxPrefab: {fileID: 0}
   respawnVfxPrefab: {fileID: 0}
   effectSpawnPoint: {fileID: 0}
-  hpBillboard: {fileID: 0}
+  hpBillboard: {fileID: 877278627372655843}
   hpBar: {fileID: 4243781431060975240}
   hpText: {fileID: 0}
+  hitFlashColor: {r: 1, g: 0.26, b: 0.26, a: 1}
+  hitFlashDuration: 0.12
+  hitFlashRenderers: []
+  invincibleTintColor: {r: 1, g: 0.88, b: 0.05, a: 1}
   vaultLevel: 0
   score: 0
   currentVaultDamage: 0
@@ -93,6 +105,7 @@ MonoBehaviour:
   maxHp: 200
   isInvincible: 0
   invincibleTimer: 0
+  isRespawning: 0
 --- !u!54 &9095483702356301523
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -109,6 +122,20 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 0
   m_CollisionDetection: 0
+--- !u!114 &-2845784421162468873
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 772276579447595881}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a3312dc1bb987a40bafd2d5da23dccd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  iconColor: {r: 1, g: 0.91491306, b: 0, a: 1}
+  iconSize: {x: 14, y: 14}
 --- !u!1 &1408035780603406653
 GameObject:
   m_ObjectHideFlags: 0
