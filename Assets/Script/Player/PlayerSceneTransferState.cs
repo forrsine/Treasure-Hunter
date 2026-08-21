@@ -84,6 +84,23 @@ public sealed class PlayerSceneTransferSnapshot
         save.classId = save.classId > 0 ? save.classId : ClassId;
         save.level = Mathf.Max(1, Stats.Level);
         save.exp = Mathf.Max(0, Stats.CurrentExp);
+        save.pendingAttributeUpgradeCount = Mathf.Max(0, Stats.PendingUpgradeSelectionCount);
+        save.attributeUpgrades.Clear();
+        for (int typeValue = (int)PlayerAttributeType.AttackPower;
+             typeValue <= (int)PlayerAttributeType.LifeSteal;
+             typeValue++)
+        {
+            int count = Stats.GetAttributeUpgradeCount((PlayerAttributeType)typeValue);
+            if (count > 0)
+            {
+                save.attributeUpgrades.Add(new NAttributeUpgradeSave
+                {
+                    attributeType = typeValue,
+                    upgradeCount = count
+                });
+            }
+        }
+
         return save;
     }
 
@@ -94,15 +111,7 @@ public sealed class PlayerSceneTransferSnapshot
             return null;
         }
 
-        return new NCharacter
-        {
-            id = source.id,
-            slotIndex = source.slotIndex,
-            name = source.name,
-            classId = source.classId,
-            level = source.level,
-            exp = source.exp
-        };
+        return source.Clone();
     }
 
     private static List<PlayerSkillTransferData> CloneSkillList(List<PlayerSkillTransferData> source)
@@ -218,15 +227,7 @@ public static class PlayerSceneTransferState
             return null;
         }
 
-        return new NCharacter
-        {
-            id = source.id,
-            slotIndex = source.slotIndex,
-            name = source.name,
-            classId = source.classId,
-            level = source.level,
-            exp = source.exp
-        };
+        return source.Clone();
     }
 
     private static List<PlayerSkillTransferData> CreateSkillSnapshot(PlayerSkillModel skillModel)

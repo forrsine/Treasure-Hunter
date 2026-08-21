@@ -195,7 +195,7 @@ MonoBehaviour:
   enemyState: 1
   slimeType: 1
   IdleTime: 2
-  checkDistance: 5
+  checkDistance: 7
   target: {fileID: 0}
   partrolTargets:
   - {fileID: 4000983777557246263}
@@ -203,10 +203,10 @@ MonoBehaviour:
   - {fileID: 100414486128732395}
   - {fileID: 4044731826502432261}
   animator: {fileID: 0}
-  walkSpeed: 3
+  walkSpeed: 3.2
   cc: {fileID: 0}
-  maxPersuitDistance: 8
-  atkDistance: 4
+  maxPersuitDistance: 11
+  atkDistance: 6.5
   rotateSpeed: 15
   separationLayers:
     serializedVersion: 2
@@ -214,9 +214,10 @@ MonoBehaviour:
   separationCheckRadius: 0.9
   personalSpaceRadius: 0.75
   separationStrength: 2.4
+  attackCooldown: 2.2
   atkCollider: {fileID: 0}
-  Hp: 30
-  HpMax: 30
+  Hp: 70
+  HpMax: 70
   myRenderer: {fileID: 0}
   hitColor: {r: 1, g: 1, b: 1, a: 1}
   defaultColor: {r: 1, g: 1, b: 1, a: 1}
@@ -230,16 +231,16 @@ MonoBehaviour:
   hitAnimationFallbackDuration: 0.6
   Bullet: {fileID: 5260695165009701578, guid: a63af097ecf66974f8849fd2bd65a3a6, type: 3}
   shootPos: {fileID: 2220452513844683019}
-  bulletSpeed: 8
-  bulletLifeTime: 2
+  bulletSpeed: 10
+  bulletLifeTime: 2.5
   sfxSource: {fileID: 0}
   meleeAttackClip: {fileID: 8300000, guid: 32d4b1811dda14a6cb9e059ee8ad17d2, type: 3}
   rangedShootClip: {fileID: 8300000, guid: 29bde6326b4c34ad8a12da475f79b50a, type: 3}
   hitClip: {fileID: 8300000, guid: 7e9ee6dc04a5d40d1a5dfc4beb9865e7, type: 3}
   attackVolume: 1
   hitVolume: 1
-  Exp: 12
-  AtkPower: 4
+  Exp: 16
+  AtkPower: 14
   HpBar: {fileID: 4871426819660696035}
 --- !u!143 &5498641845009169258
 CharacterController:

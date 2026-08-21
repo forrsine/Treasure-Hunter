@@ -16,6 +16,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     [SerializeField] private PlayerHealthComponent health;
     [SerializeField] private PlayerProgressionComponent progression;
     [SerializeField] private PlayerAudioComponent audioComponent;
+    [SerializeField] private PlayerRangedAttackComponent rangedAttack;
     [SerializeField] private PlayerSkillCastComponent skillCaster;
     [SerializeField] private PlayerDeveloperModeComponent developerMode;
 
@@ -26,6 +27,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     public CharacterController CharacterController => characterController;
     public PlayerPresentationComponent Presentation => presentation;
     public PlayerAudioComponent Audio => audioComponent;
+    public PlayerRangedAttackComponent RangedAttack => rangedAttack;
     public IPlayerStatsReadOnly Stats => this.GetModel<PlayerModel>().Stats;
     public NCharacter EntrySave => entrySave;
     public CharacterDefine EntryDefine => entryDefine;
@@ -144,6 +146,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     }
 
     public void AddExp(int amount) => this.SendCommand(new AddPlayerExpCommand(amount));
+    public int Heal(int amount, bool showFloatingText = false) => this.SendCommand(new HealPlayerCommand(amount, showFloatingText));
     public void FullHeal() => this.SendCommand(new FullHealPlayerCommand());
     public bool CanSpendMana(int amount) => this.SendQuery(new CanSpendPlayerManaQuery(amount));
     public bool TrySpendMana(int amount) => this.SendCommand(new TrySpendPlayerManaCommand(amount));
@@ -184,6 +187,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
         health = EnsureComponent(health);
         progression = EnsureComponent(progression);
         audioComponent = EnsureComponent(audioComponent);
+        rangedAttack = EnsureComponent(rangedAttack);
         skillCaster = EnsureComponent(skillCaster);
         developerMode = EnsureComponent(developerMode);
     }
@@ -196,6 +200,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     {
         movement.Initialize(this);
         combat.Initialize(this);
+        rangedAttack.Initialize(this);
         health.Initialize(this);
         progression.Initialize(this);
         skillCaster.Initialize(this);

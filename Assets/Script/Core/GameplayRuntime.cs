@@ -22,12 +22,13 @@ public sealed class GameplayRuntime
 
     private int cachedScore;
     private int cachedVaultDestroyedCount;
+    private int bonusScore;
 
     public event Action<PlayerRuntimeController> CurrentPlayerChanged;
     public event Action<BoxCo> CurrentVaultChanged;
     public event Action<IGameplayInput> CurrentInputChanged;
 
-    public int CurrentScore => CurrentVault != null ? CurrentVault.Score : cachedScore;
+    public int CurrentScore => (CurrentVault != null ? CurrentVault.Score : cachedScore) + bonusScore;
     public int CurrentVaultDestroyedCount => CurrentVault != null ? CurrentVault.DestroyedCount : cachedVaultDestroyedCount;
 
     /// <summary>
@@ -127,6 +128,19 @@ public sealed class GameplayRuntime
     {
         cachedScore = 0;
         cachedVaultDestroyedCount = 0;
+        bonusScore = 0;
+    }
+
+    /// <summary>
+    /// 增加宝箱伤害分以外的局内奖励分，例如 Boss 击杀分。
+    /// 独立保存可以避免主场景与 Boss 场景切换时覆盖 BoxCo 自己计算的伤害分。
+    /// </summary>
+    public void AddScoreBonus(int amount)
+    {
+        if (amount > 0)
+        {
+            bonusScore += amount;
+        }
     }
 
     private void CacheVaultProgress(BoxCo vault)
@@ -203,5 +217,19 @@ public sealed class GameplayRuntime
         }
 
         CurrentPlayer.FullHeal();
+    }
+
+    /// <summary>
+    /// 按最大生命百分比治疗当前玩家，金库奖励通过这里走正式治疗事件与 HUD 刷新流程。
+    /// </summary>
+    public void HealCurrentPlayerByMaxHpPercent(float percent)
+    {
+        if (CurrentPlayer == null || percent <= 0f)
+        {
+            return;
+        }
+
+        int amount = Mathf.CeilToInt(CurrentPlayer.Stats.MaxHp * Mathf.Clamp01(percent));
+        CurrentPlayer.Heal(amount, false);
     }
 }

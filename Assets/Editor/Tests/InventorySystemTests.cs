@@ -270,12 +270,12 @@ public sealed class InventoryPrefabStructureTests
         Assert.That(database.Capacity, Is.EqualTo(24));
         Assert.That(database.Items, Has.Length.EqualTo(5));
         Assert.That(database.VaultLootEntries, Is.Empty);
-        Assert.That(database.MonsterDropChance, Is.EqualTo(0.1f));
+        Assert.That(database.MonsterDropChance, Is.EqualTo(0.12f));
         Assert.That(database.MonsterLootEntries, Has.Length.EqualTo(2));
-        Assert.That(database.MonsterLootEntries[0].Weight, Is.EqualTo(1f));
-        Assert.That(database.MonsterLootEntries[1].Weight, Is.EqualTo(1f));
+        Assert.That(database.MonsterLootEntries[0].Weight, Is.EqualTo(55f));
+        Assert.That(database.MonsterLootEntries[1].Weight, Is.EqualTo(45f));
         Assert.That(database.WorldPickupPrefab, Is.Not.Null);
-        Assert.That(database.BossDropOrbCount, Is.EqualTo(3));
+        Assert.That(database.BossDropOrbCount, Is.EqualTo(2));
         Assert.That(database.BossLootEntries, Has.Length.EqualTo(3));
         Assert.That(database.BossLootOrbPrefab, Is.Not.Null);
 
@@ -285,14 +285,14 @@ public sealed class InventoryPrefabStructureTests
     }
 
     [Test]
-    public void MonsterLootRoll_UsesTenPercentGateAndEqualPotionWeights()
+    public void MonsterLootRoll_UsesTwelvePercentGateAndApprovedPotionWeights()
     {
         InventoryDatabase database = AssetDatabase.LoadAssetAtPath<InventoryDatabase>(
             "Assets/Resources/Data/Inventory/InventoryDatabase.asset");
 
-        Assert.That(database.TryRollMonsterLoot(0.1f, 0f, out _), Is.False);
-        Assert.That(database.TryRollMonsterLoot(0.0999f, 0.49f, out InventoryItemDefinition health), Is.True);
-        Assert.That(database.TryRollMonsterLoot(0.0999f, 0.5f, out InventoryItemDefinition mana), Is.True);
+        Assert.That(database.TryRollMonsterLoot(0.12f, 0f, out _), Is.False);
+        Assert.That(database.TryRollMonsterLoot(0.1199f, 0.5499f, out InventoryItemDefinition health), Is.True);
+        Assert.That(database.TryRollMonsterLoot(0.1199f, 0.55f, out InventoryItemDefinition mana), Is.True);
         Assert.That(health.UseEffect, Is.EqualTo(InventoryItemUseEffect.RestoreHealth));
         Assert.That(mana.UseEffect, Is.EqualTo(InventoryItemUseEffect.RestoreMana));
     }

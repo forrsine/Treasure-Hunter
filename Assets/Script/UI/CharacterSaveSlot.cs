@@ -52,13 +52,27 @@ public class CharacterSaveSlot : MonoBehaviour
 
         nameText.text = save.name;
         classText.text = define != null ? define.name : "未知职业";
-        levelText.text = $"Lv.{save.level}";
+        levelText.text = BuildProgressSummary(save);
 
         button.onClick.RemoveAllListeners();
         button.onClick.AddListener(() =>
         {
             onClick?.Invoke(slotIndex);
         });
+    }
+
+    /// <summary>统一生成角色槽摘要，避免四个槽位各自拼接出不同格式。</summary>
+    public static string BuildProgressSummary(NCharacter save)
+    {
+        if (save == null)
+        {
+            return string.Empty;
+        }
+
+        int level = Mathf.Max(1, save.level);
+        int expToNextLevel = GameConfig.GetNextExpForDisplay(level);
+        return $"Lv.{level}  经验 {Mathf.Max(0, save.exp)}/{expToNextLevel}\n" +
+               $"Boss {Mathf.Max(0, save.completedBossCount)}轮 · 宝箱 {Mathf.Max(0, save.vaultDestroyedCount)}次";
     }
 
     /// <summary>

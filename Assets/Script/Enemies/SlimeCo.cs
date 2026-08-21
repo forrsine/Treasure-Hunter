@@ -68,7 +68,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     [SerializeField, Min(0f), Tooltip("距离过近时额外推开的速度。")]
     private float separationStrength = 2.4f;
 
-    private float atkCd = 1f;                   // 攻击冷却时间
+    [SerializeField] private float attackCooldown = 1.4f; // 两次攻击之间的基础间隔，由近战/远程 Prefab 分别配置。
     private float curAtkCd = 0f;                // 当前攻击冷却计时
     public Collider atkCollider;                // 攻击碰撞体（近战用）
     public int Hp = 5;                          // 生命值
@@ -186,6 +186,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         CacheHitAnimationHashes();
         hitAnimationCooldown = Mathf.Max(0f, hitAnimationCooldown);
         hitAnimationFallbackDuration = Mathf.Max(0.05f, hitAnimationFallbackDuration);
+        attackCooldown = Mathf.Max(0.05f, attackCooldown);
         separationCheckRadius = Mathf.Max(0.1f, separationCheckRadius);
         personalSpaceRadius = Mathf.Max(0.1f, personalSpaceRadius);
         separationStrength = Mathf.Max(0f, separationStrength);
@@ -713,7 +714,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
             }
             else    // 在攻击距离内，执行攻击
             {
-                curAtkCd = atkCd;
+                curAtkCd = attackCooldown;
                 Attack();
             }
         }
@@ -862,16 +863,17 @@ public class SlimeCo : MonoBehaviour, FighterInterface
 
         CacheBaseStats();
         destroyedVaultCount = Mathf.Max(0, destroyedVaultCount);
+        int defeatedBossCount = Mathf.Max(0, BossRunProgressState.CompletedBossCount);
 
         float hpMultiplier = GameConfig.instance != null
-            ? GameConfig.instance.GetMonsterHpMultiplier(destroyedVaultCount)
-            : Mathf.Pow(1.1f, destroyedVaultCount);
+            ? GameConfig.instance.GetMonsterHpMultiplier(destroyedVaultCount, defeatedBossCount)
+            : 1f + 0.08f * destroyedVaultCount + 0.2f * defeatedBossCount;
         float atkMultiplier = GameConfig.instance != null
-            ? GameConfig.instance.GetMonsterAtkMultiplier(destroyedVaultCount)
-            : Mathf.Pow(1.1f, destroyedVaultCount);
+            ? GameConfig.instance.GetMonsterAtkMultiplier(destroyedVaultCount, defeatedBossCount)
+            : 1f + 0.035f * destroyedVaultCount + 0.1f * defeatedBossCount;
         float expMultiplier = GameConfig.instance != null
-            ? GameConfig.instance.GetMonsterExpMultiplier(destroyedVaultCount)
-            : 1f + 0.05f * destroyedVaultCount;
+            ? GameConfig.instance.GetMonsterExpMultiplier(destroyedVaultCount, defeatedBossCount)
+            : 1f + 0.06f * destroyedVaultCount + 0.15f * defeatedBossCount;
 
         // 先记住旧血量百分比，再按基础值重新计算新数值。
         float hpPercent = HpMax > 0 ? Mathf.Clamp01((float)Hp / HpMax) : 1f;

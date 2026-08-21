@@ -20,6 +20,7 @@ public sealed class UserService : Singleton<UserService>
         MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserCreateCharacterRequest>(OnCreateCharacter);
         MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserGameEnterRequest>(OnGameEnter);
         MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserGameLeaveRequest>(OnGameLeave);
+        MessageDistributer<NetConnection<NetSession>>.Instance.Subscribe<UserSaveCharacterProgressRequest>(OnSaveCharacterProgress);
     }
 
     public void Init()
@@ -218,7 +219,13 @@ public sealed class UserService : Singleton<UserService>
             return;
         }
 
-        if (request.characterIdx < 0 || request.characterIdx >= user.Player.Characters.Count)
+        TCharacter? dbCharacter = request.CharacterId > 0
+            ? user.Player.Characters.Find(character => character.ID == request.CharacterId)
+            : request.characterIdx >= 0 && request.characterIdx < user.Player.Characters.Count
+                ? user.Player.Characters[request.characterIdx]
+                : null;
+
+        if (dbCharacter == null)
         {
             sender.Session.Response.gameEnter.Result = Result.Failed;
             sender.Session.Response.gameEnter.Errormsg = "角色不存在";
@@ -226,8 +233,13 @@ public sealed class UserService : Singleton<UserService>
             return;
         }
 
-        TCharacter dbCharacter = user.Player.Characters[request.characterIdx];
         Log.InfoFormat("UserGameEnterRequest: characterID:{0}:{1}", dbCharacter.ID, dbCharacter.Name);
+
+        if (sender.Session.Character != null)
+        {
+            CharacterLeave(sender.Session.Character);
+            sender.Session.PostResponser = null;
+        }
 
         Character character = CharacterManager.Instance.AddCharacter(dbCharacter);
         sender.Session.Character = character;
@@ -238,6 +250,126 @@ public sealed class UserService : Singleton<UserService>
         sender.Session.Response.gameEnter.Character = character.Info;
 
         sender.SendResponse();
+    }
+
+    /// <summary>
+    /// 保存当前在线角色。服务端只使用 Session.Character，客户端不能指定其他角色 ID。
+    /// </summary>
+    private void OnSaveCharacterProgress(
+        NetConnection<NetSession> sender,
+        UserSaveCharacterProgressRequest request)
+    {
+        sender.Session.Response.saveCharacterProgress = new UserSaveCharacterProgressResponse();
+
+        TUser? user = sender.Session.User;
+        Character? onlineCharacter = sender.Session.Character;
+        if (user == null || onlineCharacter == null)
+        {
+            sender.Session.Response.saveCharacterProgress.Result = Result.Failed;
+            sender.Session.Response.saveCharacterProgress.Errormsg = "请先进入角色";
+            sender.SendResponse();
+            return;
+        }
+
+        if (!TryValidateCharacterProgress(request, onlineCharacter.Data, out Dictionary<int, int> upgrades, out string error))
+        {
+            sender.Session.Response.saveCharacterProgress.Result = Result.Failed;
+            sender.Session.Response.saveCharacterProgress.Errormsg = error;
+            sender.SendResponse();
+            return;
+        }
+
+        try
+        {
+            TCharacter saved = DBService.Instance.SaveCharacterProgress(
+                user.ID,
+                onlineCharacter.Id,
+                request.Level,
+                request.Exp,
+                request.PendingAttributeUpgradeCount,
+                request.VaultDestroyedCount,
+                request.CompletedBossCount,
+                upgrades);
+
+            int characterIndex = user.Player.Characters.FindIndex(character => character.ID == saved.ID);
+            if (characterIndex >= 0)
+            {
+                user.Player.Characters[characterIndex] = saved;
+            }
+
+            onlineCharacter.ApplyPersistedData(saved);
+            sender.Session.Response.saveCharacterProgress.Result = Result.Success;
+            sender.Session.Response.saveCharacterProgress.Errormsg = "None";
+            sender.Session.Response.saveCharacterProgress.Character = BuildCharacterInfo(saved);
+        }
+        catch (Exception ex)
+        {
+            Log.ErrorFormat("Save character progress failed: {0}", ex);
+            sender.Session.Response.saveCharacterProgress.Result = Result.Failed;
+            sender.Session.Response.saveCharacterProgress.Errormsg = "角色存档保存失败";
+        }
+
+        sender.SendResponse();
+    }
+
+    private static bool TryValidateCharacterProgress(
+        UserSaveCharacterProgressRequest request,
+        TCharacter current,
+        out Dictionary<int, int> upgrades,
+        out string error)
+    {
+        upgrades = new Dictionary<int, int>();
+        error = "";
+
+        if (request.Level < 1 || request.Level > 999 || request.Exp < 0)
+        {
+            error = "等级或经验数据非法";
+            return false;
+        }
+
+        if (request.PendingAttributeUpgradeCount < 0 ||
+            request.VaultDestroyedCount < 0 ||
+            request.CompletedBossCount < 0 ||
+            request.CompletedBossCount > request.VaultDestroyedCount)
+        {
+            error = "角色进度数据非法";
+            return false;
+        }
+
+        if (request.Level < current.Level ||
+            (request.Level == current.Level && request.Exp < current.Exp) ||
+            request.VaultDestroyedCount < current.VaultDestroyedCount ||
+            request.CompletedBossCount < current.CompletedBossCount)
+        {
+            error = "不能用旧进度覆盖服务器存档";
+            return false;
+        }
+
+        long totalUpgradeCount = request.PendingAttributeUpgradeCount;
+        foreach (NAttributeUpgradeInfo upgrade in request.AttributeUpgrades)
+        {
+            if (upgrade.AttributeType < 1 || upgrade.AttributeType > 8 || upgrade.UpgradeCount < 0)
+            {
+                error = "属性强化数据非法";
+                return false;
+            }
+
+            if (!upgrades.TryAdd(upgrade.AttributeType, upgrade.UpgradeCount))
+            {
+                error = "属性强化类型重复";
+                return false;
+            }
+
+            totalUpgradeCount += upgrade.UpgradeCount;
+        }
+
+        if (totalUpgradeCount > Math.Max(0, request.Level - 1))
+        {
+            error = "属性强化次数超过当前等级可获得数量";
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -253,6 +385,7 @@ public sealed class UserService : Singleton<UserService>
         {
             CharacterLeave(character);
             sender.Session.Character = null;
+            sender.Session.PostResponser = null;
         }
 
         sender.Session.Response.gameLeave.Result = Result.Success;
@@ -300,7 +433,7 @@ public sealed class UserService : Singleton<UserService>
     /// </summary>
     private static NCharacterInfo BuildCharacterInfo(TCharacter character)
     {
-        return new NCharacterInfo
+        var info = new NCharacterInfo
         {
             Id = checked((int)character.ID),
             ConfigId = character.TID,
@@ -309,9 +442,24 @@ public sealed class UserService : Singleton<UserService>
             Type = CharacterType.Player,
             Class = (CharacterClass)character.Class,
             Level = character.Level,
+            Exp = character.Exp,
+            PendingAttributeUpgradeCount = character.PendingAttributeUpgradeCount,
+            VaultDestroyedCount = character.VaultDestroyedCount,
+            CompletedBossCount = character.CompletedBossCount,
             mapId = character.MapID,
             Gold = character.Gold,
             SlotIndex = character.SlotIndex
         };
+
+        foreach ((int attributeType, int upgradeCount) in character.AttributeUpgradeCounts)
+        {
+            info.AttributeUpgrades.Add(new NAttributeUpgradeInfo
+            {
+                AttributeType = attributeType,
+                UpgradeCount = upgradeCount
+            });
+        }
+
+        return info;
     }
 }

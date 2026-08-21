@@ -40,7 +40,6 @@ public sealed class GameplayStartupGuidePopup : MonoBehaviour
     [SerializeField] private Text titleText;
     [SerializeField] private Text bodyText;
     [SerializeField] private Button closeButton;
-    [SerializeField] private Text closeButtonText;
 
     [Header("Behaviour")]
     [SerializeField] private bool editorPreviewVisible = true;
@@ -74,7 +73,6 @@ public sealed class GameplayStartupGuidePopup : MonoBehaviour
         }
 
         ApplyContent();
-        closeButtonText.text = "X";
         closeButton.onClick.RemoveListener(ClosePopup);
 
         if (!Application.isPlaying)
@@ -124,7 +122,6 @@ public sealed class GameplayStartupGuidePopup : MonoBehaviour
         if (!Application.isPlaying && ValidatePrefabReferences(false))
         {
             ApplyContent();
-            closeButtonText.text = "X";
             popupRoot.SetActive(editorPreviewVisible);
         }
     }
@@ -185,7 +182,6 @@ public sealed class GameplayStartupGuidePopup : MonoBehaviour
         else if (titleText == null) missing = nameof(titleText);
         else if (bodyText == null) missing = nameof(bodyText);
         else if (closeButton == null) missing = nameof(closeButton);
-        else if (closeButtonText == null) missing = nameof(closeButtonText);
 
         if (missing == null)
         {

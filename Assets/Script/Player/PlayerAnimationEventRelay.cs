@@ -38,8 +38,11 @@ public sealed class PlayerAnimationEventRelay : MonoBehaviour
     public void EnableAtk() => WeaponEnable();
     public void DisableAtk() => WeaponDisable();
 
-    // 远程职业后续会在该动画事件中发送“生成投射物”Command。
-    public void shoot() { }
+    /// <summary>
+    /// 弓箭手和法师的攻击动画释放点。
+    /// 事件只通知战斗组件，由战斗组件负责去重、校验攻击状态并从对象池发射投射物。
+    /// </summary>
+    public void shoot() => combat?.TryReleaseRangedBasicAttack();
     public void Dead() { }
 
     public void PlayWalkFootstepSfxEvent() => audioComponent?.PlayWalkFootstep();

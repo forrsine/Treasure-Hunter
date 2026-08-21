@@ -160,11 +160,11 @@ MonoBehaviour:
   bossBattleMusicVolume: 0.8
   loopBossBattleMusic: 1
   playBossBattleMusicOnStart: 1
-  bossHpGrowthPerRound: 0.35
-  bossDamageGrowthPerRound: 0.18
-  bossMoveSpeedGrowthPerRound: 0.08
-  bossCooldownReductionPerRound: 0.06
-  bossMinimumCooldownMultiplier: 0.65
+  bossHpGrowthPerRound: 0.3
+  bossDamageGrowthPerRound: 0.12
+  bossMoveSpeedGrowthPerRound: 0.05
+  bossCooldownReductionPerRound: 0.05
+  bossMinimumCooldownMultiplier: 0.75
 --- !u!4 &439956671
 Transform:
   m_ObjectHideFlags: 0
@@ -762,52 +762,64 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 21fe66e37dce3df4685bce5a96885f4f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  Lv_NextExp: 320000003c0000004b0000005f0000006e0000007d0000008c0000009b000000aa000000b9000000c8000000d7000000e6000000f5000000040100001301000022010000310100004a01000040010000
+  Lv_NextExp: 3c000000500000006900000087000000aa000000d2000000ff0000003101000068010000a4010000e50100002b02000076020000c60200001b03000075030000d403000038040000a1040000
   Lv_Hpmax: 96000000b4000000c8000000dc000000f50000000e01000027010000400100005e0100007c0100009f010000c2010000ea010000120200003f0200006c0200009e020000d0020000070300003e030000
-  defaultLevelCap: 999
-  playerBaseMaxHp: 150
-  playerBaseMaxMp: 120
-  playerBaseAttack: 25
-  playerBaseMoveSpeed: 3
+  defaultLevelCap: 20
+  playerBaseMaxHp: 300
+  playerBaseMaxMp: 180
+  playerBaseAttack: 38
+  playerBaseMoveSpeed: 5
   playerBaseCritChance: 0
-  playerCritDamageMultiplier: 1.5
+  playerCritDamageMultiplier: 1.75
   playerBaseDodgeChance: 0
   playerBaseHpRegenPerSecond: 0
-  playerBaseDamageReduction: 0
+  playerBaseDamageReduction: 0.1
   playerBaseLifeSteal: 0
   playerRunSpeedMultiplier: 1.6666667
-  playerAttackUpgradePercent: 0.3
-  playerMaxHpUpgradeFlat: 50
-  playerMoveSpeedUpgradePercent: 0.15
-  playerMoveSpeedUpgradeCapPercent: 0.6
-  playerCritChanceUpgrade: 0.1
-  playerCritChanceCap: 0.8
-  playerDodgeChanceUpgrade: 0.1
-  playerDodgeChanceCap: 0.5
-  playerHpRegenUpgrade: 1
-  playerHpRegenCap: 32
-  playerDamageReductionUpgrade: 0.1
-  playerDamageReductionCap: 0.7
-  playerLifeStealUpgrade: 0.05
-  playerLifeStealCap: 0.5
+  playerAttackUpgradePercent: 0.12
+  playerMaxHpUpgradeFlat: 30
+  playerMoveSpeedUpgradePercent: 0.05
+  playerMoveSpeedUpgradeCapPercent: 0.2
+  playerCritChanceUpgrade: 0.05
+  playerCritChanceCap: 0.35
+  playerDodgeChanceUpgrade: 0.04
+  playerDodgeChanceCap: 0.2
+  playerHpRegenUpgrade: 1.5
+  playerHpRegenCap: 6
+  playerDamageReductionUpgrade: 0.04
+  playerDamageReductionCap: 0.4
+  playerLifeStealUpgrade: 0.025
+  playerLifeStealCap: 0.1
+  attackUpgradeMaxCount: 6
+  maxHpUpgradeMaxCount: 6
+  moveSpeedUpgradeMaxCount: 4
+  critUpgradeMaxCount: 7
+  dodgeUpgradeMaxCount: 5
+  hpRegenUpgradeMaxCount: 4
+  damageReductionUpgradeMaxCount: 5
+  lifeStealUpgradeMaxCount: 4
   attackUpgradeWeight: 1
   maxHpUpgradeWeight: 1
-  moveSpeedUpgradeWeight: 0.8
-  critUpgradeWeight: 0.7
-  dodgeUpgradeWeight: 0.7
-  hpRegenUpgradeWeight: 0.6
-  damageReductionUpgradeWeight: 0.6
-  lifeStealUpgradeWeight: 0.4
-  levelUpHealPercent: 0.3
-  minimumLevelUpHeal: 30
-  fullHealPlayerOnVaultDestroy: 1
+  moveSpeedUpgradeWeight: 0.65
+  critUpgradeWeight: 0.8
+  dodgeUpgradeWeight: 0.65
+  hpRegenUpgradeWeight: 0.55
+  damageReductionUpgradeWeight: 0.65
+  lifeStealUpgradeWeight: 0.45
+  levelUpHealPercent: 0.15
+  minimumLevelUpHeal: 20
+  fullHealPlayerOnVaultDestroy: 0
+  vaultDestroyHealPercent: 0.2
   backgroundMusic: {fileID: 0}
   backgroundMusicVolume: 0.6
   loopBackgroundMusic: 1
   backgroundMusicSource: {fileID: 0}
-  monsterHpGrowthPerVaultDestroy: 1.1
-  monsterAtkGrowthPerVaultDestroy: 1.1
-  monsterExpGrowthPerVaultDestroy: 0.05
+  monsterHpGrowthPerVaultDestroy: 0.08
+  monsterHpGrowthPerBossDefeat: 0.2
+  monsterAtkGrowthPerVaultDestroy: 0.035
+  monsterAtkGrowthPerBossDefeat: 0.1
+  monsterExpGrowthPerVaultDestroy: 0.06
+  monsterExpGrowthPerBossDefeat: 0.15
 --- !u!4 &1091456707
 Transform:
   m_ObjectHideFlags: 0

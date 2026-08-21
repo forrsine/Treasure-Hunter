@@ -15,7 +15,12 @@ public class MiniMapCameraController : MonoBehaviour
     [SerializeField] private float orthographicSize = 25f;
     [SerializeField] private bool rotateWithPlayer = false;
 
+    [Header("Rendering Performance")]
+    [SerializeField, Range(1f, 30f)] private float refreshRate = 10f;
+
     private Camera miniMapCamera;
+    private float nextRenderTime;
+    private bool forceRender = true;
 
     /// <summary>
     /// Awake 只缓存自身组件，并设置小地图相机为正交相机。
@@ -26,6 +31,10 @@ public class MiniMapCameraController : MonoBehaviour
         miniMapCamera = GetComponent<Camera>();
         miniMapCamera.orthographic = true;
         miniMapCamera.orthographicSize = orthographicSize;
+
+        // 小地图背景不需要跟主画面一样每帧刷新。
+        // 关闭 Camera 的自动渲染后，由本组件按 refreshRate 主动调用 Render，减少重复绘制密集场景的开销。
+        miniMapCamera.enabled = false;
     }
 
     /// <summary>
@@ -34,6 +43,16 @@ public class MiniMapCameraController : MonoBehaviour
     /// </summary>
     private void OnEnable()
     {
+        if (miniMapCamera == null)
+        {
+            miniMapCamera = GetComponent<Camera>();
+        }
+
+        // 即使场景配置被误改为启用，也要保证运行时不会恢复成每帧自动渲染。
+        miniMapCamera.enabled = false;
+        forceRender = true;
+        nextRenderTime = 0f;
+
         GameplayRuntime.Instance.CurrentPlayerChanged += HandleCurrentPlayerChanged;
 
         if (GameplayRuntime.Instance.CurrentPlayer != null)
@@ -48,6 +67,11 @@ public class MiniMapCameraController : MonoBehaviour
     private void OnDisable()
     {
         GameplayRuntime.Instance.CurrentPlayerChanged -= HandleCurrentPlayerChanged;
+
+        if (miniMapCamera != null)
+        {
+            miniMapCamera.enabled = false;
+        }
     }
 
     /// <summary>
@@ -71,6 +95,33 @@ public class MiniMapCameraController : MonoBehaviour
         {
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         }
+
+        TryRenderMiniMap();
+    }
+
+    /// <summary>
+    /// 按固定刷新率手动渲染小地图背景。
+    /// 使用 unscaledTime，避免暂停或升级界面把 Time.timeScale 设为 0 后计时状态异常。
+    /// UI 图标由 MiniMapIconRenderer 每帧更新，因此降低背景刷新率不会降低图标操作反馈。
+    /// </summary>
+    private void TryRenderMiniMap()
+    {
+        if (miniMapCamera == null)
+        {
+            return;
+        }
+
+        float currentTime = Time.unscaledTime;
+        if (!forceRender && currentTime < nextRenderTime)
+        {
+            return;
+        }
+
+        miniMapCamera.Render();
+
+        forceRender = false;
+        float safeRefreshRate = Mathf.Max(1f, refreshRate);
+        nextRenderTime = currentTime + 1f / safeRefreshRate;
     }
 
     /// <summary>
@@ -79,10 +130,20 @@ public class MiniMapCameraController : MonoBehaviour
     public void SetTarget(Transform newTarget)
     {
         target = newTarget;
+
+        // 切换角色或场景传送后立即刷新一次，避免 RenderTexture 暂时保留旧位置的画面。
+        forceRender = true;
     }
 
     private void HandleCurrentPlayerChanged(PlayerRuntimeController player)
     {
         SetTarget(player != null ? player.transform : null);
+    }
+
+    private void OnValidate()
+    {
+        followHeight = Mathf.Max(1f, followHeight);
+        orthographicSize = Mathf.Max(1f, orthographicSize);
+        refreshRate = Mathf.Clamp(refreshRate, 1f, 30f);
     }
 }

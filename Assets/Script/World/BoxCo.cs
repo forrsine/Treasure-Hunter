@@ -50,8 +50,6 @@ public class BoxCo : MonoBehaviour, FighterInterface
     private const string Color01Property = "_Color01";
     private const string Color02Property = "_Color02";
     private const string Color03Property = "_Color03";
-    private const float DestroyExpRewardExponent = 1.2f;
-
     /// <summary>
     /// 方便其他系统快速访问当前场景中的金库。
     /// </summary>
@@ -65,16 +63,19 @@ public class BoxCo : MonoBehaviour, FighterInterface
 
     [Header("基础数值")]
     // 第 1 个金库的基础生命。
-    [SerializeField] private int baseMaxHp = 200;
+    [SerializeField] private int baseMaxHp = 250;
 
-    // 每击破一次，下一轮金库生命按这个倍率增长。
-    [SerializeField] private float hpGrowthPerDestroy = 1.6f;
+    // 金库采用线性成长，0.18 表示每次击破在基础生命上增加 18%。
+    [SerializeField] private float hpGrowthPerDestroy = 0.18f;
+
+    // 每击败一个 Boss，金库在基础生命上额外增加 25%。
+    [SerializeField] private float hpGrowthPerBossDefeat = 0.25f;
 
     // 对外暴露的难度倍率，其他系统可以用它做扩展。
-    [SerializeField] private float difficultyGrowthPerDestroy = 1.1f;
+    [SerializeField] private float difficultyGrowthPerDestroy = 0.18f;
 
     // 金库重生后无敌多久，防止刚出现就被连击瞬间打爆。
-    [SerializeField] private float invincibleDuration = 3f;
+    [SerializeField] private float invincibleDuration = 2f;
 
     [Header("击破/重生流程")]
     [Tooltip("击破反馈持续时间。没有 Animator 动画时，会作为缩小消失动画的时长。")]
@@ -100,13 +101,17 @@ public class BoxCo : MonoBehaviour, FighterInterface
 
     [Header("奖励设置")]
     // 击破金库给玩家的基础经验。
-    [SerializeField] private int baseDestroyExpReward = 100;
+    [SerializeField] private int baseDestroyExpReward = 70;
 
-    // 击破次数成长奖励的系数。实际公式：基础经验 + 系数 * 当前击破次数 ^ 1.2。
-    [SerializeField] private int expRewardStep = 20;
+    // 击破经验 = 基础经验 + 15 * 已击破数 + 30 * 已击败 Boss 数。
+    [SerializeField] private int expRewardStep = 15;
+    [SerializeField] private int expRewardPerBossDefeat = 30;
 
     // 造成多少点伤害换算成 1 分。
-    [SerializeField] private int scoreDamagePerPoint = 20;
+    [SerializeField] private int scoreDamagePerPoint = 10;
+    [SerializeField] private int destroyScoreBase = 100;
+    [SerializeField] private int destroyScorePerVault = 25;
+    [SerializeField] private int destroyScorePerBoss = 100;
     [SerializeField] private bool fullHealPlayerOnDestroy = false;
     [SerializeField] private GameObject extraExpPickupPrefab;
     [SerializeField] private int extraExpPickupReward = 20;
@@ -169,7 +174,9 @@ public class BoxCo : MonoBehaviour, FighterInterface
     /// <summary>
     /// 当前难度倍率。击破次数越高，返回值越大。
     /// </summary>
-    public float DifficultyMultiplier => Mathf.Pow(difficultyGrowthPerDestroy, vaultLevel);
+    public float DifficultyMultiplier => 1f +
+                                         difficultyGrowthPerDestroy * vaultLevel +
+                                         hpGrowthPerBossDefeat * BossRunProgressState.CompletedBossCount;
 
     /// <summary>
     /// 初始化金库单例、组件引用、物理设置和当前层级血量。
@@ -239,8 +246,9 @@ public class BoxCo : MonoBehaviour, FighterInterface
         // OnValidate 在编辑器里改 Inspector 数值时执行。
         // 这里把不合理的负数/0 修正掉，避免运行时出错。
         baseMaxHp = Mathf.Max(1, baseMaxHp);
-        hpGrowthPerDestroy = Mathf.Max(1f, hpGrowthPerDestroy);
-        difficultyGrowthPerDestroy = Mathf.Max(1f, difficultyGrowthPerDestroy);
+        hpGrowthPerDestroy = Mathf.Max(0f, hpGrowthPerDestroy);
+        hpGrowthPerBossDefeat = Mathf.Max(0f, hpGrowthPerBossDefeat);
+        difficultyGrowthPerDestroy = Mathf.Max(0f, difficultyGrowthPerDestroy);
         invincibleDuration = Mathf.Max(0f, invincibleDuration);
         breakAnimationDuration = Mathf.Max(0f, breakAnimationDuration);
         respawnDelay = Mathf.Max(0f, respawnDelay);
@@ -248,7 +256,11 @@ public class BoxCo : MonoBehaviour, FighterInterface
         destroyedScale = Mathf.Clamp(destroyedScale, 0f, 1f);
         baseDestroyExpReward = Mathf.Max(0, baseDestroyExpReward);
         expRewardStep = Mathf.Max(0, expRewardStep);
+        expRewardPerBossDefeat = Mathf.Max(0, expRewardPerBossDefeat);
         scoreDamagePerPoint = Mathf.Max(1, scoreDamagePerPoint);
+        destroyScoreBase = Mathf.Max(0, destroyScoreBase);
+        destroyScorePerVault = Mathf.Max(0, destroyScorePerVault);
+        destroyScorePerBoss = Mathf.Max(0, destroyScorePerBoss);
         extraExpPickupReward = Mathf.Max(0, extraExpPickupReward);
         hitFlashDuration = Mathf.Max(0f, hitFlashDuration);
         vaultLevel = Mathf.Max(0, vaultLevel);
@@ -393,13 +405,15 @@ public class BoxCo : MonoBehaviour, FighterInterface
 
     /// <summary>
     /// 读取当前层级对应的击破经验奖励。
-    /// 这里按“击破前已有次数”结算：奖励 = 100 + 20 * 当前击破次数 ^ 1.2。
+    /// 这里按“击破前已有次数”结算：奖励 = 70 + 15V + 30B。
     /// </summary>
     public int GetCurrentDestroyExpReward()
     {
         int destroyedCount = Mathf.Max(0, vaultLevel);
+        int defeatedBossCount = Mathf.Max(0, BossRunProgressState.CompletedBossCount);
         return baseDestroyExpReward +
-               Mathf.RoundToInt(expRewardStep * Mathf.Pow(destroyedCount, DestroyExpRewardExponent));
+               expRewardStep * destroyedCount +
+               expRewardPerBossDefeat * defeatedBossCount;
     }
 
     /// <summary>
@@ -415,7 +429,8 @@ public class BoxCo : MonoBehaviour, FighterInterface
     /// </summary>
     public int GetCurrentVaultFullScore()
     {
-        return CalculateScoreFromDamage(maxHp);
+        return CalculateScoreFromDamage(maxHp) +
+               CalculateDestroyScore(vaultLevel, BossRunProgressState.CompletedBossCount);
     }
 
     /// <summary>
@@ -947,18 +962,21 @@ public class BoxCo : MonoBehaviour, FighterInterface
             GameplayRuntime.Instance.AddExpToCurrentPlayer(destroyExpReward);
         }
 
-        // The design doc wants a full heal on vault break.
-        // The per-vault checkbox still works, but the central GameConfig can force the reward globally.
+        // 默认按最大生命的 20% 治疗；保留旧的“回满”开关只用于兼容已有测试场景。
         bool shouldFullHealPlayer =
             fullHealPlayerOnDestroy ||
             (GameConfig.instance != null && GameConfig.instance.fullHealPlayerOnVaultDestroy);
 
-        if (!shouldFullHealPlayer)
+        if (shouldFullHealPlayer)
         {
+            GameplayRuntime.Instance.FullHealCurrentPlayer();
             return;
         }
 
-        GameplayRuntime.Instance.FullHealCurrentPlayer();
+        float healPercent = GameConfig.instance != null
+            ? GameConfig.instance.vaultDestroyHealPercent
+            : 0.2f;
+        GameplayRuntime.Instance.HealCurrentPlayerByMaxHpPercent(healPercent);
     }
 
     /// <summary>
@@ -1012,13 +1030,15 @@ public class BoxCo : MonoBehaviour, FighterInterface
     }
 
     /// <summary>
-    /// 按基础生命和成长倍率计算指定层级的金库最大生命。
+    /// 按基础生命、金库击破数和 Boss 击败数计算指定层级的金库最大生命。
     /// </summary>
     private int CalculateMaxHp(int level)
     {
-        // 每层血量 = 基础血量 * 成长倍率 ^ 层级。
-        float scaledHp = baseMaxHp * Mathf.Pow(hpGrowthPerDestroy, Mathf.Max(0, level));
-        return Mathf.Max(1, Mathf.CeilToInt(scaledHp));
+        int defeatedBossCount = GetHistoricalBossCountForVaultLevel(level);
+        float multiplier = 1f +
+                           hpGrowthPerDestroy * Mathf.Max(0, level) +
+                           hpGrowthPerBossDefeat * defeatedBossCount;
+        return Mathf.Max(1, Mathf.RoundToInt(baseMaxHp * multiplier));
     }
 
     /// <summary>
@@ -1027,6 +1047,24 @@ public class BoxCo : MonoBehaviour, FighterInterface
     private int CalculateScoreFromDamage(int damageAmount)
     {
         return Mathf.Max(0, damageAmount) / scoreDamagePerPoint;
+    }
+
+    private int CalculateDestroyScore(int destroyedCountBeforeBreak, int defeatedBossCount)
+    {
+        return destroyScoreBase +
+               destroyScorePerVault * Mathf.Max(0, destroyedCountBeforeBreak) +
+               destroyScorePerBoss * Mathf.Max(0, defeatedBossCount);
+    }
+
+    /// <summary>
+    /// 重建历史金库分数时，按“每 5 个金库完成一轮 Boss”还原当时的 B 值，
+    /// 避免当前 Boss 数反向抬高已经结算过的旧金库生命和分数。
+    /// </summary>
+    private int GetHistoricalBossCountForVaultLevel(int level)
+    {
+        int completedBossCount = Mathf.Max(0, BossRunProgressState.CompletedBossCount);
+        int vaultsPerBoss = Mathf.Max(1, BossRunProgressState.VaultsPerBoss);
+        return Mathf.Min(completedBossCount, Mathf.Max(0, level) / vaultsPerBoss);
     }
 
     /// <summary>
@@ -1038,7 +1076,9 @@ public class BoxCo : MonoBehaviour, FighterInterface
 
         for (int i = 0; i < Mathf.Max(0, level); i++)
         {
+            int historicalBossCount = GetHistoricalBossCountForVaultLevel(i);
             totalScore += CalculateScoreFromDamage(CalculateMaxHp(i));
+            totalScore += CalculateDestroyScore(i, historicalBossCount);
         }
 
         return totalScore;

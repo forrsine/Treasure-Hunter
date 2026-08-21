@@ -9,6 +9,7 @@ using System;
 /// </summary>
 public sealed class PlayerRuntimeStats : IPlayerStatsReadOnly
 {
+    private readonly int[] attributeUpgradeCounts = new int[9];
     // 生存与成长状态：会在一局游戏中持续变化，并由 UI 事件驱动显示。
     public int CurrentHp { get; internal set; }
     public int MaxHp { get; internal set; }
@@ -40,6 +41,38 @@ public sealed class PlayerRuntimeStats : IPlayerStatsReadOnly
     public int HealthRegenUpgradeCount { get; internal set; }
     public int PendingUpgradeSelectionCount { get; internal set; }
     public bool IsUpgradeSelectionActive { get; internal set; }
+
+    /// <summary>读取某种属性已经强化的次数，供恢复公式和存档快照使用。</summary>
+    public int GetAttributeUpgradeCount(PlayerAttributeType attributeType)
+    {
+        int index = (int)attributeType;
+        return index > 0 && index < attributeUpgradeCounts.Length
+            ? attributeUpgradeCounts[index]
+            : 0;
+    }
+
+    internal void ResetAttributeUpgradeCounts()
+    {
+        Array.Clear(attributeUpgradeCounts, 0, attributeUpgradeCounts.Length);
+        HealthRegenUpgradeCount = 0;
+    }
+
+    internal int IncrementAttributeUpgradeCount(PlayerAttributeType attributeType)
+    {
+        int index = (int)attributeType;
+        if (index <= 0 || index >= attributeUpgradeCounts.Length)
+        {
+            return 0;
+        }
+
+        attributeUpgradeCounts[index]++;
+        if (attributeType == PlayerAttributeType.HealthRegen)
+        {
+            HealthRegenUpgradeCount = attributeUpgradeCounts[index];
+        }
+
+        return attributeUpgradeCounts[index];
+    }
 
     /// <summary>
     /// 核心属性变化事件。UI 只在收到事件时刷新，避免每帧主动查询全部数据。

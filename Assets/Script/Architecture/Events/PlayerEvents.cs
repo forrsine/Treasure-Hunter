@@ -15,6 +15,19 @@ public readonly struct PlayerExperienceGainedEvent
     public int Amount { get; }
 }
 
+/// <summary>一次属性强化已经真正应用，用于触发存档而不是监听所有属性刷新。</summary>
+public readonly struct PlayerAttributeUpgradedEvent
+{
+    public PlayerAttributeUpgradedEvent(PlayerAttributeType attributeType, int upgradeCount)
+    {
+        AttributeType = attributeType;
+        UpgradeCount = upgradeCount;
+    }
+
+    public PlayerAttributeType AttributeType { get; }
+    public int UpgradeCount { get; }
+}
+
 /// <summary>玩家实际受到伤害后的领域事件。</summary>
 public readonly struct PlayerDamagedEvent
 {

@@ -13,7 +13,20 @@ public class LoginPanelController : MonoBehaviour
     [SerializeField] private InputField passwordInput;
     [SerializeField] private Button loginButton;
     [SerializeField] private Button registerButton;
+    [SerializeField] private Button guestButton;
     [SerializeField] private Text messageText;
+
+    /// <summary>
+    /// 登录面板启用时明确进入 UI 鼠标模式。
+    /// Cursor 是全局状态，如果玩法场景曾锁定鼠标，切回登录场景后不会自动按场景恢复。
+    /// </summary>
+    private void OnEnable()
+    {
+        if (Application.isPlaying)
+        {
+            UiCursorStateUtility.EnsureVisibleAndUnlocked();
+        }
+    }
 
     /// <summary>
     /// Awake 只做本地初始化与按钮绑定。
@@ -29,6 +42,7 @@ public class LoginPanelController : MonoBehaviour
         // Awake 时绑定一次按钮事件；面板不会跨场景保留，销毁时 Unity 会一起清理按钮监听。
         loginButton.onClick.AddListener(Login);
         registerButton.onClick.AddListener(Register);
+        guestButton.onClick.AddListener(LoginAsGuest);
         StartCoroutine(TryAutoLogin());
     }
 
@@ -104,6 +118,32 @@ public class LoginPanelController : MonoBehaviour
     }
 
     /// <summary>
+    /// 游客模式不读取账号密码，也不会连接服务端；成功加载电脑上的游客档案后进入选角场景。
+    /// </summary>
+    private void LoginAsGuest()
+    {
+        if (apiClient == null)
+        {
+            SetMessage("游客存档服务未初始化。");
+            return;
+        }
+
+        SetMessage("正在读取游客存档...");
+        SetButtonsInteractable(false);
+
+        StartCoroutine(apiClient.LoginAsGuest((success, message) =>
+        {
+            SetButtonsInteractable(true);
+            SetMessage(string.IsNullOrEmpty(message) ? "游客模式进入失败。" : message);
+
+            if (success)
+            {
+                SceneFlowService.LoadCharacterSelectScene();
+            }
+        }));
+    }
+
+    /// <summary>
     /// 统一读取并校验输入框内容。
     /// </summary>
     private bool TryReadInputs(out string username, out string password)
@@ -144,6 +184,11 @@ public class LoginPanelController : MonoBehaviour
         if (registerButton != null)
         {
             registerButton.interactable = interactable;
+        }
+
+        if (guestButton != null)
+        {
+            guestButton.interactable = interactable;
         }
     }
 

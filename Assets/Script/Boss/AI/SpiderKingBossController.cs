@@ -13,10 +13,10 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
 {
     [Header("基础数值")]
     [SerializeField] private string bossName = "Spider King";
-    [SerializeField] private int maxHp = 1200;
-    [SerializeField] private int biteDamage = 28;
-    [SerializeField] private int clawDamage = 34;
-    [SerializeField] private int spellDamage = 24;
+    [SerializeField] private int maxHp = 4000;
+    [SerializeField] private int biteDamage = 30;
+    [SerializeField] private int clawDamage = 36;
+    [SerializeField] private int spellDamage = 26;
 
     [Header("AI 范围")]
     [SerializeField] private float detectRange = 22f;
@@ -29,12 +29,13 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
     [SerializeField] private float overlapSeparationDistance = 1.55f;
 
     [Header("移动与节奏")]
-    [SerializeField] private float moveSpeed = 3.1f;
+    [SerializeField] private float moveSpeed = 3f;
+    [SerializeField] private float maximumRoundScaledMoveSpeed = 4.2f;
     // 只在过近分离时使用，速度略高于普通移动，防止卡在玩家碰撞体里。
     [SerializeField] private float overlapSeparationSpeed = 3.8f;
     [SerializeField] private float rotateSpeed = 540f;
     [SerializeField] private float meleeCooldown = 2.1f;
-    [SerializeField] private float spellCooldown = 4.2f;
+    [SerializeField] private float spellCooldown = 4.5f;
     [SerializeField] private float meleeActionLockDuration = 0.95f;
     [SerializeField] private float spellActionLockDuration = 1.25f;
     [SerializeField] private float meleeHitDelay = 0.42f;
@@ -42,9 +43,9 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
 
     [Header("狂暴阶段")]
     [SerializeField] [Range(0.05f, 0.95f)] private float enragedHpPercent = 0.35f;
-    [SerializeField] private float enragedMoveSpeedMultiplier = 1.25f;
-    [SerializeField] private float enragedDamageMultiplier = 1.35f;
-    [SerializeField] private float enragedCooldownMultiplier = 0.78f;
+    [SerializeField] private float enragedMoveSpeedMultiplier = 1.18f;
+    [SerializeField] private float enragedDamageMultiplier = 1.25f;
+    [SerializeField] private float enragedCooldownMultiplier = 0.85f;
 
     [Header("动画状态名")]
     [SerializeField] private string idleStateName = "Idle 0";
@@ -198,6 +199,7 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
         chaseStopDistance = Mathf.Clamp(chaseStopDistance, 0.5f, meleeRange);
         overlapSeparationDistance = Mathf.Clamp(overlapSeparationDistance, 0.1f, chaseStopDistance);
         moveSpeed = Mathf.Max(0.01f, moveSpeed);
+        maximumRoundScaledMoveSpeed = Mathf.Max(moveSpeed, maximumRoundScaledMoveSpeed);
         overlapSeparationSpeed = Mathf.Max(0.01f, overlapSeparationSpeed);
         rotateSpeed = Mathf.Max(1f, rotateSpeed);
         meleeCooldown = Mathf.Max(0.05f, meleeCooldown);
@@ -327,7 +329,7 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
         biteDamage = Mathf.Max(1, Mathf.RoundToInt(baseBiteDamage * damageMultiplier));
         clawDamage = Mathf.Max(1, Mathf.RoundToInt(baseClawDamage * damageMultiplier));
         spellDamage = Mathf.Max(1, Mathf.RoundToInt(baseSpellDamage * damageMultiplier));
-        moveSpeed = Mathf.Max(0.01f, baseMoveSpeed * speedMultiplier);
+        moveSpeed = Mathf.Clamp(baseMoveSpeed * speedMultiplier, 0.01f, maximumRoundScaledMoveSpeed);
         overlapSeparationSpeed = Mathf.Max(0.01f, baseOverlapSeparationSpeed * speedMultiplier);
         meleeCooldown = Mathf.Max(0.05f, baseMeleeCooldown * cooldownMultiplier);
         spellCooldown = Mathf.Max(0.05f, baseSpellCooldown * cooldownMultiplier);

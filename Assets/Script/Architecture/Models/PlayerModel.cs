@@ -71,7 +71,21 @@ public sealed class PlayerModel : AbstractModel
         mutableStats.DamageReduction = Mathf.Clamp(snapshot.DamageReduction, 0f, 0.95f);
         mutableStats.LifeSteal = Mathf.Clamp01(snapshot.LifeSteal);
 
-        mutableStats.HealthRegenUpgradeCount = Mathf.Max(0, snapshot.HealthRegenUpgradeCount);
+        // 最终属性直接来自场景快照，但强化次数也必须同步恢复。
+        // 否则从主场景进入 Boss 房间后再自动保存，会把除回血外的强化次数错误写成 0。
+        mutableStats.ResetAttributeUpgradeCounts();
+        for (int typeValue = (int)PlayerAttributeType.AttackPower;
+             typeValue <= (int)PlayerAttributeType.LifeSteal;
+             typeValue++)
+        {
+            PlayerAttributeType attributeType = (PlayerAttributeType)typeValue;
+            int count = Mathf.Max(0, snapshot.GetAttributeUpgradeCount(attributeType));
+            for (int i = 0; i < count; i++)
+            {
+                mutableStats.IncrementAttributeUpgradeCount(attributeType);
+            }
+        }
+
         mutableStats.PendingUpgradeSelectionCount = Mathf.Max(0, snapshot.PendingUpgradeSelectionCount);
 
         // 进入 Boss 房间后应恢复正常操控；待升级次数保留，但不把旧场景的弹窗激活状态带过来。
@@ -92,35 +106,39 @@ public sealed class PlayerModel : AbstractModel
 
         GameConfig config = GameConfig.instance;
         mutableStats.Level = save != null ? Mathf.Max(1, save.level) : define != null ? Mathf.Max(1, define.initLevel) : 1;
-        mutableStats.LevelCap = config != null ? Mathf.Max(mutableStats.Level, config.GetDefaultLevelCap()) : 999;
+        mutableStats.LevelCap = config != null ? Mathf.Max(mutableStats.Level, config.GetDefaultLevelCap()) : Mathf.Max(mutableStats.Level, 20);
         mutableStats.CurrentExp = save != null ? Mathf.Max(0, save.exp) : 0;
         mutableStats.ExpToNextLevel = GetNextExpForLevel(mutableStats.Level);
 
         mutableStats.BaseMaxHp = define != null && define.hp > 0f
             ? Mathf.Max(1, Mathf.RoundToInt(define.hp))
-            : config != null ? config.GetPlayerBaseMaxHp() : 150;
+            : config != null ? config.GetPlayerBaseMaxHp() : 300;
         mutableStats.BonusMaxHp = 0;
         mutableStats.BaseMaxMp = define != null && define.mp > 0f
             ? Mathf.Max(1, Mathf.RoundToInt(define.mp))
-            : config != null ? config.GetPlayerBaseMaxMp() : 120;
+            : config != null ? config.GetPlayerBaseMaxMp() : 180;
         mutableStats.BonusMaxMp = 0;
         mutableStats.BaseAttackPower = define != null && define.attack > 0f
             ? Mathf.Max(1, Mathf.RoundToInt(define.attack))
-            : config != null ? config.GetPlayerBaseAttack() : 25;
+            : config != null ? config.GetPlayerBaseAttack() : 38;
         mutableStats.AttackPower = mutableStats.BaseAttackPower;
         mutableStats.BaseMoveSpeed = define != null && define.moveSpeed > 0f
             ? Mathf.Max(0.01f, define.moveSpeed)
-            : config != null ? config.GetPlayerBaseMoveSpeed() : 3f;
+            : config != null ? config.GetPlayerBaseMoveSpeed() : 5f;
         mutableStats.CurrentMoveSpeed = mutableStats.BaseMoveSpeed;
         mutableStats.RunSpeedMultiplier = config != null ? config.GetPlayerRunSpeedMultiplier() : 5f / 3f;
 
         mutableStats.CritChance = config != null ? config.playerBaseCritChance : 0f;
-        mutableStats.CritDamageMultiplier = config != null ? Mathf.Max(1f, config.playerCritDamageMultiplier) : 1.5f;
+        mutableStats.CritDamageMultiplier = config != null ? Mathf.Max(1f, config.playerCritDamageMultiplier) : 1.75f;
         mutableStats.DodgeChance = config != null ? config.playerBaseDodgeChance : 0f;
         mutableStats.HealthRegenPerSecond = config != null ? Mathf.Max(0f, config.playerBaseHpRegenPerSecond) : 0f;
-        mutableStats.DamageReduction = config != null ? config.playerBaseDamageReduction : 0f;
+        // 职业配置里的 defense 使用百分比数值：20 代表 20% 基础减伤。
+        // 有职业配置时以职业差异为准；开发场景没有职业配置时才回退到 GameConfig。
+        mutableStats.DamageReduction = define != null
+            ? Mathf.Clamp(define.defense / 100f, 0f, 0.95f)
+            : config != null ? Mathf.Clamp(config.playerBaseDamageReduction, 0f, 0.95f) : 0.1f;
         mutableStats.LifeSteal = config != null ? config.playerBaseLifeSteal : 0f;
-        mutableStats.HealthRegenUpgradeCount = 0;
+        mutableStats.ResetAttributeUpgradeCounts();
         mutableStats.PendingUpgradeSelectionCount = 0;
         mutableStats.IsUpgradeSelectionActive = false;
 

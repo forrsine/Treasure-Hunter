@@ -30,6 +30,7 @@ public interface IPlayerStatsReadOnly
     int HealthRegenUpgradeCount { get; }
     int PendingUpgradeSelectionCount { get; }
     bool IsUpgradeSelectionActive { get; }
+    int GetAttributeUpgradeCount(PlayerAttributeType attributeType);
 }
 
 /// <summary>
@@ -65,6 +66,15 @@ public readonly struct PlayerStatsSnapshot : IPlayerStatsReadOnly
         HealthRegenUpgradeCount = source.HealthRegenUpgradeCount;
         PendingUpgradeSelectionCount = source.PendingUpgradeSelectionCount;
         IsUpgradeSelectionActive = source.IsUpgradeSelectionActive;
+
+        attributeUpgradeCounts = new int[9];
+        for (int typeValue = (int)PlayerAttributeType.AttackPower;
+             typeValue <= (int)PlayerAttributeType.LifeSteal;
+             typeValue++)
+        {
+            attributeUpgradeCounts[typeValue] =
+                source.GetAttributeUpgradeCount((PlayerAttributeType)typeValue);
+        }
     }
 
     public int CurrentHp { get; }
@@ -93,4 +103,17 @@ public readonly struct PlayerStatsSnapshot : IPlayerStatsReadOnly
     public int HealthRegenUpgradeCount { get; }
     public int PendingUpgradeSelectionCount { get; }
     public bool IsUpgradeSelectionActive { get; }
+
+    private readonly int[] attributeUpgradeCounts;
+
+    /// <summary>
+    /// 读取跨场景快照中的强化次数。数组仅在构造时复制，外部无法取得可写引用。
+    /// </summary>
+    public int GetAttributeUpgradeCount(PlayerAttributeType attributeType)
+    {
+        int index = (int)attributeType;
+        return attributeUpgradeCounts != null && index > 0 && index < attributeUpgradeCounts.Length
+            ? attributeUpgradeCounts[index]
+            : 0;
+    }
 }

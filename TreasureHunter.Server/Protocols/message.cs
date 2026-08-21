@@ -31,6 +31,9 @@ public sealed class NetMessageRequest
 
     [ProtoMember(5)]
     public UserGameLeaveRequest? gameLeave { get; set; }
+
+    [ProtoMember(6)]
+    public UserSaveCharacterProgressRequest? saveCharacterProgress { get; set; }
 }
 
 /// <summary>服务端响应集合，ProtoMember 编号必须与客户端协议严格一致。</summary>
@@ -51,6 +54,9 @@ public sealed class NetMessageResponse
 
     [ProtoMember(5)]
     public UserGameLeaveResponse? gameLeave { get; set; }
+
+    [ProtoMember(6)]
+    public UserSaveCharacterProgressResponse? saveCharacterProgress { get; set; }
 }
 
 /// <summary>注册账号请求，密码不得写入日志。</summary>
@@ -134,6 +140,9 @@ public sealed class UserGameEnterRequest
 {
     [ProtoMember(1, Name = "characterIdx")]
     public int characterIdx { get; set; }
+
+    [ProtoMember(2, Name = "character_id")]
+    public int CharacterId { get; set; }
 }
 
 /// <summary>进入游戏结果和角色同步数据。</summary>
@@ -165,6 +174,43 @@ public sealed class UserGameLeaveResponse
 
     [ProtoMember(2, Name = "errormsg")]
     public string Errormsg { get; set; } = "";
+}
+
+/// <summary>保存当前 Session 已进入角色的长期成长数据。</summary>
+[ProtoContract]
+public sealed class UserSaveCharacterProgressRequest
+{
+    [ProtoMember(1, Name = "level")]
+    public int Level { get; set; }
+
+    [ProtoMember(2, Name = "exp")]
+    public int Exp { get; set; }
+
+    [ProtoMember(3, Name = "pending_attribute_upgrade_count")]
+    public int PendingAttributeUpgradeCount { get; set; }
+
+    [ProtoMember(4, Name = "vault_destroyed_count")]
+    public int VaultDestroyedCount { get; set; }
+
+    [ProtoMember(5, Name = "completed_boss_count")]
+    public int CompletedBossCount { get; set; }
+
+    [ProtoMember(6, Name = "attribute_upgrades")]
+    public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new();
+}
+
+/// <summary>成长保存结果以及数据库确认后的角色数据。</summary>
+[ProtoContract]
+public sealed class UserSaveCharacterProgressResponse
+{
+    [ProtoMember(1, Name = "result")]
+    public Result Result { get; set; }
+
+    [ProtoMember(2, Name = "errormsg")]
+    public string Errormsg { get; set; } = "";
+
+    [ProtoMember(3, Name = "character")]
+    public NCharacterInfo? Character { get; set; }
 }
 
 /// <summary>用户网络数据。</summary>
@@ -222,6 +268,32 @@ public sealed class NCharacterInfo
 
     [ProtoMember(10, Name = "slot_index")]
     public int SlotIndex { get; set; }
+
+    [ProtoMember(11, Name = "exp")]
+    public int Exp { get; set; }
+
+    [ProtoMember(12, Name = "pending_attribute_upgrade_count")]
+    public int PendingAttributeUpgradeCount { get; set; }
+
+    [ProtoMember(13, Name = "vault_destroyed_count")]
+    public int VaultDestroyedCount { get; set; }
+
+    [ProtoMember(14, Name = "completed_boss_count")]
+    public int CompletedBossCount { get; set; }
+
+    [ProtoMember(15, Name = "attribute_upgrades")]
+    public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new();
+}
+
+/// <summary>某种属性强化的持久化次数。</summary>
+[ProtoContract]
+public sealed class NAttributeUpgradeInfo
+{
+    [ProtoMember(1, Name = "attribute_type")]
+    public int AttributeType { get; set; }
+
+    [ProtoMember(2, Name = "upgrade_count")]
+    public int UpgradeCount { get; set; }
 }
 
 /// <summary>通用业务结果。</summary>

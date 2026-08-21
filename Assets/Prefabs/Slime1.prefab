@@ -557,7 +557,7 @@ MonoBehaviour:
   enemyState: 1
   slimeType: 0
   IdleTime: 2
-  checkDistance: 5
+  checkDistance: 6
   target: {fileID: 0}
   partrolTargets:
   - {fileID: 1867095374983421577}
@@ -565,10 +565,10 @@ MonoBehaviour:
   - {fileID: 1867095373322269930}
   - {fileID: 1867095374873538434}
   animator: {fileID: 0}
-  walkSpeed: 4
+  walkSpeed: 3.6
   cc: {fileID: 0}
-  maxPersuitDistance: 8
-  atkDistance: 2
+  maxPersuitDistance: 10
+  atkDistance: 1.8
   rotateSpeed: 15
   separationLayers:
     serializedVersion: 2
@@ -576,9 +576,10 @@ MonoBehaviour:
   separationCheckRadius: 0.9
   personalSpaceRadius: 0.75
   separationStrength: 2.4
+  attackCooldown: 1.4
   atkCollider: {fileID: 1867095374336219158}
-  Hp: 40
-  HpMax: 40
+  Hp: 90
+  HpMax: 90
   myRenderer: {fileID: 0}
   hitColor: {r: 1, g: 1, b: 1, a: 1}
   defaultColor: {r: 1, g: 1, b: 1, a: 1}
@@ -600,8 +601,8 @@ MonoBehaviour:
   hitClip: {fileID: 8300000, guid: 7e9ee6dc04a5d40d1a5dfc4beb9865e7, type: 3}
   attackVolume: 1
   hitVolume: 1
-  Exp: 15
-  AtkPower: 6
+  Exp: 18
+  AtkPower: 18
   HpBar: {fileID: 3786086962984480512}
 --- !u!143 &2324013692526108145
 CharacterController:

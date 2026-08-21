@@ -3640,3 +3640,1238 @@ Prefab 是背包界面的资源源头，场景中的 `GameplayUiRoot` 只是它�
 - 编辑状态预览与运行时初始化
 - 数据装配和表现资源解耦
 - 破坏性编辑器菜单的二次确认
+
+## 功能名称：场景异步加载界面与同步进度条
+
+### 1. 实现目标
+
+给登录、选角、主场景、Boss 房、重开和登出等正式场景跳转加入统一加载界面。玩家触发跳转后先进入轻量 `LoadingScene`，进度条根据 Unity 真实异步加载进度更新，避免加载体量较大的主场景时画面卡住或没有反馈。
+
+### 2. 涉及脚本
+
+- `SceneFlowService`：保存待加载目标、阻止重复请求，并把所有正式跳转统一转到 `LoadingScene`。
+- `LoadingSceneController`：调用 `LoadSceneAsync`，换算真实进度，平滑刷新 Slider 和百分比文本，最后激活目标场景。
+- `GameSceneNames`：集中保存 `LoadingScene` 场景名称，避免散落字符串。
+- `BossScenePortal`：保留玩家快照和 Boss 流程，只把最后的直接场景加载改为统一入口。
+- `LoadingSceneSetupTool`：在编辑器中生成加载界面、绑定引用并维护 Build Settings。
+- `LoadingSceneConfigurationTests`：验证 Loading 场景、Canvas、进度 UI、默认参数和 Build Settings 配置。
+
+### 3. 调用流程
+
+选角进入游戏：`CharacterSelectPanelController -> SceneFlowService.StartGameplay -> LoadSceneWithLoading(MainScene) -> LoadingScene -> LoadingSceneController -> LoadSceneAsync(MainScene)`
+
+进入 Boss 房：`BossScenePortal -> 保存玩家快照 -> SceneFlowService.LoadBossRoomScene -> 缓存宝箱进度 -> LoadSceneWithLoading(BossRoomScene) -> LoadingSceneController -> BossRoomScene`
+
+返回或重开：`GameSessionUi / BossScenePortal -> SceneFlowService -> LoadingSceneController -> 目标场景`
+
+### 4. 核心原理
+
+可以把场景流程理解成中转站：原来的按钮和传送门不再直接进入目标场景，而是先把“下一站是哪里”交给 `SceneFlowService`，然后进入很轻的 `LoadingScene`。加载场景拿到目标名称后，在后台异步准备真正的目标场景，同时把进度显示给玩家。
+
+当 `allowSceneActivation` 为 `false` 时，Unity 会在目标场景准备完成后把 `AsyncOperation.progress` 停在 `0.9`。因此 UI 使用 `progress / 0.9f` 把它换算成 0%-100%，等显示进度到达 100% 且加载界面至少显示 0.8 秒后，再允许 Unity 激活目标场景。
+
+进度显示使用 `Mathf.MoveTowards` 追赶真实进度，并记录已经出现过的最高真实进度。这样进度条不会倒退，也不会跑到真实加载进度前面。计时和动画使用 `Time.unscaledDeltaTime`，即使上一个场景处于暂停状态，加载界面仍然可以正常刷新。
+
+场景切换前原有的数据处理没有移动：选角仍会设置当前角色和重置新会话，进入 Boss 房仍会先保存玩家快照和宝箱进度，登出仍会先清理登录和运行时数据。新功能只统一“最后如何加载场景”，因此不会把 UI 表现和玩法数据强耦合。
+
+### 5. Unity 测试方式
+
+1. 在 Build Settings 中确认顺序为 `LoginScene`、`CharacterSelectScene`、`LoadingScene`、`MainScene`、`BossRoomScene`，并且全部启用。
+2. 从 `LoginScene` 登录，确认出现加载界面后进入选角场景。
+3. 在选角场景分别测试返回登录、选择角色进入主场景。
+4. 主场景击破要求数量的宝箱并进入 Boss 传送门，确认经过加载界面进入 Boss 房。
+5. 击败 Boss 后从胜利传送门返回，确认玩家状态和主场景流程正常恢复。
+6. 测试暂停菜单重开、死亡后重开和退出登录，确认都经过加载界面。
+7. 观察进度条只前进不倒退，百分比到 100% 后才进入目标场景。
+8. 直接打开 `LoadingScene` 运行，确认 Console 提示没有目标场景，并自动回到登录场景。
+9. 在 EditMode Test Runner 中运行 `LoadingSceneConfigurationTests`，确认两项配置测试通过。
+
+### 6. 面试表达
+
+这个项目的主场景资源比较多，直接用同步 `LoadScene` 时玩家看不到加载反馈，所以我增加了一个独立的轻量 Loading 场景。所有跳转入口仍然通过 `SceneFlowService`，服务只保存目标场景并进入 Loading 场景；`LoadingSceneController` 再使用 `LoadSceneAsync` 后台加载目标。因为 Unity 禁止激活场景时进度最大只到 0.9，我会除以 0.9 转成 UI 的 100%，显示值只平滑追赶真实进度，不会虚报。目标准备完成、进度显示到 100% 且满足最低展示时间后才允许激活。这样场景流程入口统一，加载表现和选角、背包、Boss 数据也保持解耦。
+
+### 7. 面试追问
+
+1. **为什么要增加独立 Loading 场景？** 它自身资源很少，可以快速显示 UI，再异步加载体量更大的目标场景，流程也比在每个旧场景重复放遮罩更统一。
+2. **为什么进度要除以 0.9？** `allowSceneActivation` 为 false 时，Unity 会在场景准备完成后把异步进度停在 0.9，剩余阶段属于场景激活，所以需要归一化给 UI 使用。
+3. **为什么不直接把进度条设成真实值？** 小场景的真实进度可能瞬间跳变，视觉上像闪屏；平滑值只追赶真实值且不超过它，可以改善观感又不虚报。
+4. **怎么防止玩家连续点击触发多次加载？** `SceneFlowService` 在请求开始时设置跳转锁，后续请求会被忽略；目标即将激活或加载失败时再解除锁。
+5. **加载界面会不会破坏玩家跨场景数据？** 不会。待传递的数据保存在现有静态运行时状态和架构 Model 中，场景对象引用不会被保存；快照和清理仍在原业务入口执行，Loading 场景只负责加载表现。
+
+### 8. 本次涉及知识点
+
+- `SceneManager.LoadSceneAsync`
+- `AsyncOperation.progress` 与 `allowSceneActivation`
+- 协程和逐帧进度刷新
+- `Time.unscaledDeltaTime`
+- 静态跨场景请求状态与重复请求保护
+- Legacy uGUI `Canvas`、`CanvasScaler`、`Slider`、`Text`
+- Build Settings 场景管理
+- Editor 场景生成工具和序列化引用
+- EditMode 场景配置测试
+- 场景表现层与玩法数据层解耦
+
+## 功能名称：角色属性与关卡进度数据库存档
+
+### 1. 实现目标
+
+为同一账号的四个角色槽位提供相互隔离的 SQL Server 存档。每个角色保存等级、经验、待选择属性次数、8 类属性强化次数、累计宝箱击破数和已完成 Boss 轮数；重新登录或重新选角后恢复成长数值并回满生命、魔法。死亡或主动重开只清空本局属性强化和待选择次数，长期等级、经验、宝箱和 Boss 进度继续保留。
+
+### 2. 涉及脚本
+
+- `message.cs`、`MessageDispatch`：客户端和服务端同步追加角色进度字段、进入角色 ID 与保存请求/响应。
+- `DBService`、`TCharacter`、`Character`、`UserService`：幂等迁移数据库、事务保存进度、校验账号角色归属和数值范围。
+- `GameApiClient`：提供进入角色、保存角色进度、离开角色三个协程接口，并用服务端返回值刷新本地角色缓存。
+- `PlayerRuntimeStats`、`PlayerModel`、`PlayerProgressionSystem`：统一记录 8 类强化次数，并按职业基础数据、等级和正式强化公式恢复最终属性。
+- `CharacterProgressSaveService`：监听成长事件，使用真实时间防抖、版本号和串行协程合并保存请求；重开时强制等待数据库确认。
+- `BossRunProgressState`、`BossPortalUnlockController`：恢复长期宝箱/Boss 进度和入口状态，不重复发放奖励。
+- `CharacterSaveSlot`、`CharacterSelectPanelController`、`GameSessionUi`、`ReStartPanel`、`LogoutButton`：展示角色摘要，并把进入、重开、退出、登出接入保存流程。
+- `CharacterProgressPersistenceTests`：覆盖属性恢复、跨场景次数、重开清理、Boss 进度、槽位摘要和协议序列化。
+
+### 3. 调用流程
+
+进入角色：`CharacterSaveSlot -> CharacterSelectPanelController -> GameApiClient.EnterCharacter -> UserService -> 校验账号归属 -> SceneFlowService.StartGameplay -> PlayerProgressionSystem.InitializePlayer`
+
+自动保存：`经验/强化/宝箱/Boss 事件 -> CharacterProgressSaveService -> 1 秒真实时间防抖 -> GetPlayerProgressSaveDataQuery -> GameApiClient.SaveCharacterProgress -> UserService 校验 -> DBService 事务更新 -> 服务端权威角色返回客户端`
+
+死亡或重开：`PlayerDiedEvent / 重开按钮 -> CharacterProgressSaveService.FlushNow(clearUpgrades: true) -> 清空待选择次数和 8 类强化保存负载 -> 数据库确认成功 -> SceneFlowService.RestartGameplay`
+
+### 4. 核心原理
+
+角色的最终攻击力、最大生命、移速等浮点数没有直接写进数据库，数据库只保存“某种强化选过几次”。读取时先按职业和等级建立基础属性，再循环调用正式强化公式。这样以后修改职业基础值或数值平衡时，旧存档不会保存一份已经过期的最终面板值，也能避免客户端和数据库各维护一套公式。
+
+数据库把角色的单值进度放在 `PlayerCharacters`，把 8 类可重复数据放在 `CharacterAttributeUpgrades`。强化表使用 `(CharacterId, AttributeType)` 联合主键，一种强化对一个角色最多一行。保存时主表更新与强化表删除、重建在同一个事务中完成，任何一步失败都会回滚，避免只保存了一半。
+
+服务端不接受客户端指定任意待保存角色，而是使用当前网络会话已经进入的 `Session.Character`。进入角色时先验证角色属于登录账号；保存时再验证负数、重复强化类型、非法类型、进度倒退，以及“强化次数 + 待选择次数不能超过升级可获得次数”。当前仍是客户端权威原型，但至少防止跨账号写角色和明显异常数据。
+
+自动保存使用 1 秒 `realtimeSinceStartup` 防抖。多个经验或进度变化只生成一个请求，请求之间严格串行，并用变化版本号判断保存期间是否又有新数据，避免旧响应覆盖新状态。强制保存失败时不切场景，让玩家可以在服务恢复后重试。
+
+### 5. Unity 测试方式
+
+1. 启动 SQL Server，再运行 `TreasureHunter.Server`。
+2. 从 `LoginScene` 登录并创建角色，选中槽位进入主场景。
+3. 获得经验、升级并选择多类强化，再击破宝箱、击败 Boss；等待约 1 秒自动保存。
+4. 正常退出登录后重新登录，确认角色槽两行摘要显示正确等级、经验、Boss 轮数和宝箱次数。
+5. 重新进入角色，检查属性面板恢复强化结果，生命和魔法为满值；已满足门槛时 Boss 入口应恢复，但不重复发经验或掉落。
+6. 让角色死亡或点击主动重开，确认保存成功后才重载；等级、经验、宝箱和 Boss 保留，8 类强化与待选择次数归零。
+7. 保存期间关闭服务端，确认界面显示失败并停留在当前场景；恢复服务端后再次操作可以重试。
+8. 覆盖已有角色槽，确认新角色为 1 级、0 经验、0 强化、0 关卡进度。
+9. 在 Test Runner 运行全部 EditMode 测试，确认 `CharacterProgressPersistenceTests` 7 项以及项目原有测试全部通过。
+
+### 6. 面试表达
+
+这个存档系统我分成了运行时数据、网络协议和数据库三层。客户端不保存容易过期的最终攻击力等数值，而是保存 8 类属性分别强化了几次，读档时先按职业和等级初始化，再复用正式强化公式重算，因此调整平衡配置后旧存档仍能工作。经验、强化、宝箱和 Boss 事件会通知一个常驻存档服务，它用 1 秒防抖合并请求，并保证请求串行。服务端只保存当前会话已经进入的角色，会校验账号归属和数值范围，再用 SQL 事务同时更新角色主表和强化明细表。死亡或主动重开会先把强化清零写入数据库，确认成功后才切场景，避免客户端看起来重开成功但数据库还是旧数据。
+
+### 7. 面试追问
+
+1. **为什么保存强化次数而不是最终属性？** 最终属性依赖职业、等级和配置公式，保存次数可以在配置变化后重新计算，减少冗余和版本兼容问题。
+2. **为什么强化要单独建表？** 它是一对多数据，规范化表便于增加属性类型、加联合主键防重复，也避免主表不断增加 8 个甚至更多字段。
+3. **怎么避免频繁经验事件造成大量数据库请求？** 客户端用一秒真实时间防抖合并变化，并串行发送；保存期间的新变化通过版本号触发下一轮请求。
+4. **怎么防止玩家保存其他账号的角色？** 请求不携带可任意写入的角色 ID，服务端只使用登录会话中已校验的 `Session.Character`。
+5. **为什么重开失败时不能直接切场景？** 如果先切场景但清零写库失败，下次登录会恢复旧强化；因此强制保存是场景跳转的前置条件。
+
+### 8. 本次涉及知识点
+
+- SQL Server 幂等表结构迁移、联合主键、外键与事务
+- Protobuf 向后兼容字段追加
+- 客户端/服务端会话与账号归属校验
+- 数据快照、深拷贝和服务端权威响应
+- 防抖、协程串行请求、脏标记与版本号
+- QFramework Event / Query / System 分层
+- 属性公式重放与派生数据恢复
+- Unity 跨场景状态和静态进度恢复
+- 事件驱动 UI 与角色槽摘要
+- EditMode 数值、协议和场景流程测试
+
+## 功能名称：ESC 暂停界面保存并返回角色选择
+
+### 1. 实现目标
+
+把 ESC 暂停界面的退出按钮改成“保存并退出”。玩家点击后先保存当前角色成长并通知服务端离开角色，成功后返回角色选择界面；账号登录态继续保留，不退出到登录场景，也不关闭游戏。死亡结算界面的“退出游戏”保持原行为。
+
+### 2. 涉及脚本
+
+- `GameSessionUi`：修改暂停按钮文案与回调，保存期间显示状态、禁用按钮，失败时留在原界面。
+- `SceneFlowService`：新增保留登录态的 `ReturnToCharacterSelect`，集中清理当前角色的局内状态。
+- `CharacterProgressPersistenceTests`：验证暂停和死亡界面的文案边界，以及返回选角不会清除登录会话。
+
+### 3. 调用流程
+
+`ESC -> GameSessionUi.ShowPauseMenu -> 保存并退出 -> PersistCurrentScore -> CharacterProgressSaveService.FlushAndLeave(false) -> GameApiClient.SaveCharacterProgress -> GameApiClient.LeaveCharacter -> SceneFlowService.ReturnToCharacterSelect -> LoadingScene -> CharacterSelectScene`
+
+### 4. 核心原理
+
+“离开角色”和“退出账号”是两个不同层级。`FlushAndLeave(false)` 会保存当前角色并清理服务端在线角色，但不会删除登录信息；`ReturnToCharacterSelect` 只清理背包、Boss 状态、当前选角和跨场景快照。原有 `LogoutToLogin` 才会调用 `ClearSession` 删除账号登录态。
+
+保存失败时不能先切场景，否则玩家会误以为进度已成功落库。因此按钮会等待保存和离场都成功后才进入 LoadingScene；失败时恢复按钮并显示错误，玩家可以在服务恢复后重试。
+
+### 5. Unity 测试方式
+
+1. 登录并进入 `MainScene`，获得经验、强化和宝箱进度。
+2. 按 ESC，确认次按钮显示“保存并退出”。
+3. 点击后确认出现“正在保存并返回角色选择...”，随后返回选角界面。
+4. 确认账号仍然登录，角色槽显示最新进度；再次进入后强化仍保留。
+5. 关闭服务端再点击，确认不会切场景，暂停界面显示失败信息并允许重试。
+6. 让玩家死亡，确认结算界面按钮仍显示“退出游戏”。
+
+### 6. 面试表达
+
+我把角色离场和账号登出拆成了两个场景流程。ESC 的“保存并退出”会先强制保存角色，再发送离开角色请求，只有两步都成功才返回角色选择；返回时保留账号和最新角色缓存，只清理当前角色的局内状态。这样玩家可以直接切换角色，同时避免保存失败却已经切走，或者误把正常退出当成死亡重开清掉强化。
+
+### 7. 面试追问
+
+1. **为什么不能直接加载角色选择场景？** 必须先等待保存和服务端离场，否则可能丢进度或残留在线角色。
+2. **为什么不复用 LogoutToLogin？** 它会清除账号登录态和角色缓存，与“返回选角”语义不同。
+3. **为什么传 `clearUpgrades: false`？** 正常离场要保留强化，只有死亡和主动重开才清零。
+4. **保存失败怎么处理？** 不切场景，恢复按钮并显示错误，让玩家重试。
+5. **返回选角需要清理哪些状态？** 当前选角、背包、Boss/宝箱局内状态、玩家跨场景快照和新手引导会话状态。
+
+### 8. 本次涉及知识点
+
+- 账号会话与角色会话分层
+- 强制保存与服务端离场顺序
+- 协程异步流程和失败回退
+- 场景切换前运行时状态清理
+- Unity UI 动态文案和按钮事件
+- EditMode Prefab 与源代码边界测试
+
+## 功能名称：战士角色完整可玩化
+
+### 1. 实现目标
+
+让战士复用现有玩家运行时架构，具备移动、奔跑、跳跃、冲刺、普通攻击、两个公共技能、受伤减伤和公共音效。由于 Human Pack 没有独立走路与翻滚动作，走路使用原速 `Human Run`，奔跑和冲刺使用 2 倍速 `Human Run`；普通攻击为不可续接连击的单段剑击。
+
+### 2. 涉及脚本
+
+- `PlayerPresentationComponent`：把通用移动、攻击、技能和冲刺指令转换为战士 Animator 参数；缺少 Roll 参数时切到快速跑步表现。
+- `PlayerCombatComponent`：为没有动画事件的战士按攻击时长计算前摇和有效帧，只开启一次公共攻击盒。
+- `PlayerModel`、`CharacterDefine`：把职业 `defense` 解释为百分比基础减伤，战士的 20 对应 20% 减伤。
+- `WarriorAnimatorControllerSetupTool`：用 UnityEditor API 生成项目自有战士 Animator、上半身 AvatarMask，并绑定战士游戏/预览 Prefab。
+- `WarriorPlayableTests`：验证职业数值、20% 减伤、Animator 参数与 2 倍速动画，以及 Prefab 控制器引用。
+- `Warrior.controller`、`WarriorUpperBody.mask`：分别负责战士移动/动作状态机和攻击上半身覆盖范围。
+
+### 3. 调用流程
+
+移动：`PlayerRuntimeController -> PlayerMovementComponent -> PlayerPresentationComponent.SetMovement -> Warrior.controller Locomotion BlendTree`
+
+冲刺：`右键输入 -> PlayerMovementComponent.StartRoll/HandleRoll -> CharacterController 快速位移 -> PlayerPresentationComponent.PlayRoll -> Speed=1 的 2 倍速跑步动作 -> PlayerAudioComponent.PlayRoll`
+
+普攻：`左键输入 -> PlayerCombatComponent -> PlayerPresentationComponent.SetCombo(1) -> Attack Trigger -> 单段剑击 -> 前摇计时 -> AttackHitbox 开启一次 -> WeaponCo -> 敌人受伤`
+
+技能：`技能输入 -> PlayerSkillComponent -> PlayerPresentationComponent.PlaySkill -> Skill Trigger -> 剑击占位动作 + 原公共技能效果/音效`
+
+受伤：`TakePlayerDamageCommand -> PlayerCombatSystem -> CharacterDefine.defense / 100 -> DamageReduction -> 扣除实际生命`
+
+### 4. 核心原理
+
+战士没有复制一套玩家控制代码。`PlayerRuntime.prefab` 继续负责输入、位移、体力、攻击、技能、生命和音效，战士 Prefab 只提供模型与 Animator。表现层根据 `SimpleSpeedAttack` 风格写入 `Speed`、`Attack`、`Skill` 和 `IsGrounded` 参数，因此同一套玩法逻辑可以驱动不同职业外观。
+
+移动 BlendTree 使用三个阈值：0 是待机，0.5 是原速跑步动作，1 是 2 倍速跑步动作。攻击单独放在带上半身遮罩的层里，角色攻击时下半身仍可继续播放移动，表现不会完全锁死。战士素材没有动画事件，所以攻击系统按 `basicAttackDuration` 的比例计算前摇和攻击盒持续时间，让伤害发生在挥剑中段，而不是按键瞬间。
+
+职业防御统一转换为 0 到 0.95 的减伤比例，再进入现有伤害公式。这样 100 点伤害打到 `defense=20` 的战士时实际扣除 80 点，也能继续与已有减伤升级逻辑组合。
+
+### 5. Unity 测试方式
+
+1. 打开 `LoginScene`，登录后创建或选择战士（classId=1），进入 `MainScene`。
+2. 使用 WASD 移动，按 Shift 奔跑；确认走路是原速跑步动作，奔跑动作播放速度明显约为两倍。
+3. 按空格确认仍能起跳和落地；因为没有跳跃素材，空中保持中立姿势属于预期降级表现。
+4. 按右键冲刺，确认战士快速冲向当前输入方向，并播放快速跑步动作及原公共翻滚音效。
+5. 连续点击左键，确认每次只播放一段剑击，不进入刺客三连击；靠近敌人时挥剑中段只结算一次伤害。
+6. 释放 Fireball 和 Poison 两个公共技能，确认技能效果、冷却、占位剑击动作和公共技能音效正常。
+7. 让敌人对战士造成 100 点基础伤害，确认未触发其他减伤时实际扣除 80 点。
+8. 在 Test Runner 的 EditMode 中运行 `WarriorPlayableTests`，确认职业配置、减伤和动画装配测试全部通过。
+
+### 6. 面试表达
+
+战士可玩化我没有复制刺客控制器，而是复用了统一的 PlayerRuntime。输入、移动、体力、攻击、技能、生命和音效仍在公共组件中，职业配置只决定基础属性和动画适配风格。我为战士单独生成了项目自有 Animator：用一维 BlendTree 把同一个 Run 动作分别作为原速走路和二倍速奔跑，缺少翻滚动画时保留原冲刺位移并播放二倍速跑步。战士普通攻击是单段攻击，因为素材没有动画事件，所以我根据攻击时长在挥剑中段开启一次命中盒。职业 defense 则统一解释为百分比减伤，战士 20 点防御就是 20% 减伤。这样实现范围小，又保留了后续替换正式动画和扩展职业技能的接口。
+
+### 7. 面试追问
+
+1. **为什么不直接复制刺客脚本改成战士？** 公共玩法逻辑已经组件化，复制会产生两套输入、攻击和生命逻辑，后续修 Bug 容易不一致；通过动画适配参数即可复用。
+2. **没有走路和翻滚动画怎么处理？** 走路用 Run 原速，奔跑与冲刺用 Run 二倍速；冲刺的真实位移仍由 `CharacterController` 驱动，动画只负责表现。
+3. **没有动画事件时怎么保证攻击时机？** 根据职业配置的攻击总时长，按比例设置前摇和攻击盒有效时间，只在挥剑中段开启一次碰撞判定。
+4. **为什么攻击放在单独 Animator 层？** 上半身播放挥剑、下半身保留移动 BlendTree，既能复用移动状态，也便于以后替换更多攻击或技能动作。
+5. **防御为什么用百分比而不是直接减固定数值？** 百分比在不同伤害量下更稳定，并且可以直接接入已有 `DamageReduction` 公式和强化系统；同时用 95% 上限避免完全免伤。
+
+### 8. 本次涉及知识点
+
+- AnimatorController、Animator 参数和状态过渡
+- 一维 BlendTree、动画播放速度与素材降级方案
+- Animator Layer、AvatarMask 和上下半身混合
+- 代码计时攻击有效帧与 Collider 命中盒
+- 职业配置数据与运行时属性初始化
+- 百分比减伤、数值 Clamp 和伤害结算
+- 组件复用、表现层与玩法逻辑解耦
+- UnityEditor Prefab 编辑 API 与资源生成工具
+- NUnit EditMode 回归测试
+
+## 功能名称：弓箭手与法师完整可玩化
+
+### 1. 实现目标
+
+让弓箭手和法师接入与刺客、战士相同的 `PlayerRuntime` 操作流程，具备移动、奔跑、跳跃、冲刺、普通攻击、公共技能、受伤、死亡、属性和音效。两个职业的普通攻击改为沿角色正前方飞行的小球：弓箭手使用较小、较快的金色球体，法师使用较大、较慢的蓝紫色球体；小球命中第一个有效敌人或实体障碍后回收。缺少走路和翻滚素材时，继续使用原速/两倍速跑步动作作为降级表现。
+
+### 2. 涉及脚本
+
+- `CharacterDefine`、`CharacterDefine.json`：新增普通攻击类型和投射物释放比例、速度、寿命、半径、颜色配置，职业差异不写死在攻击脚本里。
+- `PlayerRuntimeController`：装配并初始化公共 `PlayerRangedAttackComponent`，近战职业不会预热无用投射物。
+- `PlayerCombatComponent`：区分近战碰撞盒和远程释放点，动画事件优先、代码计时兜底，并保证一次攻击只生成一个小球。
+- `PlayerAnimationEventRelay`：把 Human Pack 攻击动画中的 `shoot` 事件转发到公共战斗组件。
+- `PlayerRangedAttackComponent`：按职业配置计算出生点和外观，并维护 8 个小球的可扩容对象池。
+- `PlayerBasicAttackProjectile`：负责直线飞行、寿命、碰撞过滤和幂等回收。
+- `PlayerBasicAttackDamageResolver`、`WeaponCo`：近战与远程共用攻击力、暴击、实际伤害、飘字和吸血结算。
+- `RangedCharacterAnimatorControllerSetupTool`：生成弓箭手/法师项目自有 Animator 与上半身遮罩，并绑定游戏、预览 Prefab。
+- `RangedCharacterPlayableTests`：验证职业配置、动画参数、两倍速移动、`shoot` 事件、Prefab 引用和运行时组件。
+
+### 3. 调用流程
+
+移动：`输入 -> PlayerMovementComponent -> PlayerPresentationComponent.SetMovement -> Archer/Wizard Locomotion BlendTree`
+
+冲刺：`右键 -> PlayerMovementComponent -> CharacterController 快速位移 -> PlayerPresentationComponent.PlayRoll -> Speed=1 两倍速跑步 -> 公共翻滚音效`
+
+远程普攻：`左键 -> PlayerCombatComponent -> Attack Trigger -> 攻击动画 shoot 事件 -> PlayerAnimationEventRelay -> TryReleaseRangedBasicAttack -> PlayerRangedAttackComponent 对象池 -> PlayerBasicAttackProjectile`
+
+命中：`Projectile.OnTriggerEnter -> PlayerBasicAttackDamageResolver -> RollPlayerAttackCommand -> FighterInterface.Hit -> FloatingCombatText -> RecordPlayerDamageDealtCommand/吸血 -> Projectile.Release 回池`
+
+事件缺失兜底：`攻击开始 -> basicAttackDuration × projectileReleaseRatio + 宽限时间 -> TryReleaseRangedBasicAttack -> 同一个去重标记阻止重复发射`
+
+### 4. 核心原理
+
+远程职业仍然复用公共玩家运行时，职业 Prefab 只负责模型和 Animator。`CharacterDefine` 通过 `basicAttackType` 告诉战斗组件当前是近战还是投射物攻击，再通过速度、寿命、半径、颜色和释放比例描述表现差异。因此新增另一种直线远程职业时，可以先增加配置而不是复制整套控制代码。
+
+攻击动画负责提供最贴合动作的释放帧。弓箭手的 `shoot` 事件约位于动作 40%，法师约位于 50%，事件经 Relay 转给战斗组件。战斗组件同时安排一个略晚的代码计时兜底；无论事件还是兜底先到，都会设置同一个 `projectileReleasedThisAttack` 标记，所以不会生成两颗球。
+
+投射物池预热 8 个球体，发射时从队列 `Get`，命中或寿命结束后 `Release` 回队列。回收时清空速度、拥有者回调和激活状态，防止上一次攻击状态残留。极端攻击频率超过预热数量时允许临时扩容，之后新对象同样回池复用，减少频繁 `Instantiate/Destroy` 带来的性能波动和 GC。
+
+近战武器碰撞盒与远程投射物最终都调用 `PlayerBasicAttackDamageResolver`。它只保留一份暴击、目标实际生命、伤害飘字和吸血后结算逻辑，避免修正近战公式后远程职业仍使用旧算法。投射物只负责“飞行与碰到谁”，不负责定义玩家伤害公式。
+
+### 5. Unity 测试方式
+
+1. 打开 `LoginScene`，分别创建或选择法师（classId=2）与弓箭手（classId=3），进入 `MainScene`。
+2. 用 WASD、Shift、空格测试移动、奔跑和跳跃；确认移动正常，走路为原速跑步动作，奔跑为两倍速动作。
+3. 按右键冲刺，确认角色快速跑向输入方向，播放两倍速跑步和原公共翻滚音效，没有翻滚动作属于预期降级。
+4. 面向敌人点击左键：弓箭手应在射击动作中发出较小较快的金色球，法师发出较大较慢的蓝紫色球。
+5. 确认小球沿角色正前方飞行，命中第一个敌人只结算一次伤害并消失；打到墙体也会消失，普通区域 Trigger 不会拦截。
+6. 观察伤害飘字、暴击和吸血效果，确认与刺客/战士普通攻击规则相同；连续点击时每个攻击周期只发射一个小球。
+7. 按技能键释放原 Fireball、Poison 技能，确认技能冷却、效果和公共音效仍正常，技能攻击动画不会额外发射普攻球。
+8. 打开 `Window > General > Test Runner`，在 EditMode 运行 `RangedCharacterPlayableTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+弓箭手和法师我没有各复制一套玩家控制脚本，而是继续复用公共 PlayerRuntime，只在职业配置中声明普攻类型和投射物参数。攻击动画的 shoot 事件会转发给战斗组件，在准确释放帧从对象池取出一个小球；同时有代码计时兜底，并通过单次攻击标记防止事件和兜底重复发射。小球组件只处理直线飞行、碰撞和回收，真正的伤害、暴击、飘字与吸血抽到公共 DamageResolver，让近战攻击盒和远程子弹共用同一套规则。对象池预热 8 个并支持扩容，减少连续攻击时频繁创建销毁和 GC。动画方面用一维 BlendTree 复用同一个 Run 动作，原速模拟走路、两倍速表现奔跑和无翻滚素材时的快速冲刺。
+
+### 7. 面试追问
+
+1. **为什么动画事件之外还需要代码兜底？** 第三方动画可能在重导入或替换时丢失事件；兜底保证玩法不会完全失效，去重标记又能避免正常情况下发射两次。
+2. **为什么投射物和伤害结算要拆成两个类？** 投射物是表现与碰撞载体，伤害属于战斗规则；拆开后可复用伤害公式，也能把直线球替换为箭矢或法术模型而不改数值系统。
+3. **对象池为什么预热 8 个还允许扩容？** 8 个覆盖正常攻速，预热减少首轮卡顿；允许扩容可以避免极端攻速或生命周期重叠时攻击直接丢失，回收后仍会继续复用。
+4. **如何避免子弹打到玩家自己？** 发射时保存玩家根节点，碰撞时先比较 `other.transform.root`；自身碰撞直接忽略，普通 Trigger 也不会阻挡。
+5. **现在的直线小球以后怎么升级？** 可以在配置中新增投射物 Prefab、命中效果、穿透数和弹道类型，再让池按配置创建；伤害 Resolver 不需要跟着改。
+
+### 8. 本次涉及知识点
+
+- Animator Event、事件转发和代码计时兜底
+- Animator Layer、AvatarMask、一维 BlendTree 与动画倍速
+- 配置驱动的职业差异和枚举分支
+- Rigidbody Kinematic、Trigger 碰撞与 FixedUpdate 移动
+- 对象池预热、动态扩容、状态重置和幂等回收
+- 伤害逻辑复用、接口目标查找、暴击/吸血后结算
+- MaterialPropertyBlock 无材质实例化换色
+- Prefab 自动装配与 UnityEditor 资源生成 API
+- NUnit EditMode 回归测试
+
+## 功能名称：战士方向、尺寸、跳跃与攻击修复
+
+### 1. 实现目标
+
+修复战士进入游戏后背对移动方向、模型尺寸过大、跳跃高度偏低，以及左键攻击没有稳定播放剑击和命中敌人的问题。游戏内战士模型缩放为原来的一半并移除额外的 180 度旋转；选角预览保持不变。公共玩家跳跃高度从 1 米提高到 2 米，因此四个职业都会获得更明显的跳跃表现。
+
+### 2. 涉及脚本
+
+- `Warrior.prefab`：游戏模型根旋转归零，统一缩放改为 0.5。
+- `PlayerRuntime.prefab`：公共 `jumpHeight` 从 1 改为 2，CharacterController 和 AttackHitbox 尺寸保持不变。
+- `PlayerPresentationComponent`：简单动画职业攻击时优先直接切入 `Attack Layer.Attack`，没有标准状态时才使用 Trigger 兜底。
+- `WarriorAnimatorControllerSetupTool`：重新生成战士 Animator 时自动恢复游戏 Prefab 的正确朝向和缩放，但不处理预览 Prefab 变换。
+- `WarriorPlayableTests`：增加模型变换、公共跳跃高度、真实攻击状态和单窗口伤害去重测试。
+
+### 3. 调用流程
+
+角色生成：`GameplayCharacterSpawner -> 实例化 PlayerRuntime -> 实例化 Warrior.prefab -> 保留 Prefab 局部变换 -> 0 度朝向、0.5 倍模型与运行时前方对齐`
+
+跳跃：`空格 -> PlayerMovementComponent.TryJump -> sqrt(jumpHeight × -2 × gravity) -> CharacterController.Move -> 2 米目标跳高`
+
+攻击表现：`左键 -> PlayerCombatComponent.StartFirstAttack -> PlayerPresentationComponent.SetCombo(1) -> Attack Layer 权重恢复为 1 -> CrossFade Attack Layer.Attack`
+
+攻击伤害：`攻击开始 -> 0.7 × 0.25 秒前摇 -> WeaponEnable -> 前方 AttackHitbox -> WeaponCo -> PlayerBasicAttackDamageResolver -> FighterInterface.Hit`
+
+### 4. 核心原理
+
+玩家真正的移动方向来自外层 `PlayerRuntime` 的 Transform，职业模型只是它的子物体。原战士模型子物体旋转了 180 度，所以代码向前移动、攻击盒也在运行时前方，但玩家看到的人物和剑却朝向相反。把游戏模型根旋转恢复为单位旋转后，模型、移动和攻击判定使用同一个前方方向，既修复视觉也修复“看起来砍中但没有伤害”的空间错位。
+
+模型缩放只发生在职业表现 Prefab 上。CharacterController 继续使用公共玩家尺寸，AttackHitbox 也继续位于局部前方 0.85 米、半径 0.65 米，因此不会因为缩小模型而把移动碰撞和攻击距离一起缩短。
+
+简单职业的攻击层在绑定模型时会先设为 0，攻击开始时再恢复为 1。为了避免 Trigger 与攻击层启用发生在同一帧时状态切换不稳定，现在会先检查标准 `Attack Layer.Attack` 是否存在，存在就直接 CrossFade；只有第三方控制器没有该状态时才回退到 Trigger。战斗伤害仍采用代码计时有效帧，不依赖战士动画事件。
+
+### 5. Unity 测试方式
+
+1. 从 `LoginScene` 选择战士进入 `MainScene`。
+2. 按 W 前进，确认战士面部和身体朝向移动方向，而不是倒着移动。
+3. 对比原效果，确认游戏内模型约为原来一半；返回选角界面时预览大小和朝向应保持原样。
+4. 分别使用四个职业按空格，确认跳跃高度均比原来的 1 米明显提高，目标高度为 2 米。
+5. 战士靠近并面向敌人点击左键，确认立即播放单段剑击，在动作中段出现伤害飘字并扣除敌人生命。
+6. 让敌人停留在攻击盒内，确认同一剑只结算一次；下一次点击可以再次造成伤害。
+7. 打开 `Window > General > Test Runner`，运行 `WarriorPlayableTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+这个问题本质上是表现坐标和玩法坐标没有对齐。玩家移动和攻击盒使用 PlayerRuntime 的正前方，但战士模型 Prefab 自己又旋转了 180 度，所以画面看起来是在向后走，剑砍向的视觉方向也和攻击盒相反。我只修正了游戏模型根节点的旋转和缩放，没有改公共碰撞体。攻击动画方面，简单职业攻击时先恢复上半身攻击层，再直接 CrossFade 到标准 Attack 状态，状态不存在才回退到 Trigger；伤害仍通过代码计时开启公共攻击盒，并对同一命中窗口做目标去重。跳跃则把公共 Prefab 中实际覆盖的 1 米参数恢复为 2 米，因此所有职业手感保持一致。
+
+### 7. 面试追问
+
+1. **为什么旋转模型而不是旋转 PlayerRuntime？** PlayerRuntime 决定移动、摄像机和攻击盒方向，旋转它会影响整个玩法坐标；问题只来自战士美术资源，所以只校正表现子物体。
+2. **为什么模型缩小但碰撞体不缩小？** 这次需求是修复视觉尺寸，公共玩家壳的碰撞和攻击距离已经用于四职业；一起缩放会改变战士玩法平衡。
+3. **为什么不用纯 Trigger 播攻击？** Trigger 依赖 Animator 在同一帧完成层权重和过渡判断，直接 CrossFade 可以确定进入目标状态，同时保留 Trigger 作为第三方控制器兼容兜底。
+4. **战士动画没有攻击事件，伤害帧怎么控制？** 使用职业基础攻击时长乘以前摇和有效帧比例，动作中段开启攻击盒，结束后自动关闭。
+5. **如何避免敌人站在攻击盒里连续掉血？** WeaponCo 用攻击窗口 ID 和 HashSet 记录本窗口已命中的目标，OnTriggerStay 也不会对同一目标重复结算。
+
+### 8. 本次涉及知识点
+
+- 父子 Transform、局部旋转与模型坐标系
+- 视觉缩放和玩法碰撞体解耦
+- 抛体运动初速度公式与 CharacterController
+- Animator Layer、状态哈希、HasState 和 CrossFadeInFixedTime
+- 代码计时攻击有效帧
+- Trigger Enter/Stay 与单窗口目标去重
+- UnityEditor PrefabUtility 资源修改
+- SerializedObject 与 EditMode 集成测试
+
+## 功能名称：三职业朝向、0.7 倍尺寸与操作一致性复查
+
+### 1. 实现目标
+
+以刺客的公共操作流程为基准，复查战士、法师和弓箭手的移动、奔跑、跳跃、冲刺、普通攻击与技能入口。修正法师和弓箭手模型额外旋转 180 度造成的视觉方向错误，并把三个职业的游戏模型统一调整为 0.7 倍；选角预览保持原来的构图。
+
+### 2. 涉及脚本
+
+- `Warrior.prefab`、`Archer.prefab`、`Wizard.prefab`：游戏表现根节点统一使用单位旋转和 0.7 倍缩放。
+- `WarriorAnimatorControllerSetupTool`：重新生成战士控制器时继续写入正确游戏 Transform。
+- `RangedCharacterAnimatorControllerSetupTool`：区分游戏与预览 Prefab，只校正游戏内法师和弓箭手 Transform。
+- `WarriorPlayableTests`、`RangedCharacterPlayableTests`：验证 Transform、Attack 状态、远程发射方向、伤害和对象池回收。
+
+### 3. 调用流程
+
+公共操作：`InputCo -> GameplayRuntime -> PlayerRuntimeController -> PlayerMovementComponent / PlayerCombatComponent / PlayerSkillCastComponent`
+
+游戏模型生成：`GameplayCharacterSpawner -> PlayerRuntime -> 职业游戏 Prefab -> 保留单位旋转和 0.7 缩放`
+
+远程普攻：`左键 -> StartFirstAttack -> SetCombo(1) -> Attack Layer.Attack -> shoot/计时兜底 -> PlayerRangedAttackComponent -> PlayerBasicAttackProjectile -> DamageResolver -> 回池`
+
+### 4. 核心原理
+
+四个职业使用同一个 `PlayerRuntime`，所以操作一致性由公共输入、移动、战斗和技能组件保证，职业模型不应该再读取另一套输入。职业差异只留在配置和表现层：刺客是三连击，战士是单段近战，法师和弓箭手发射不同参数的小球。
+
+移动、近战攻击盒和投射物都使用 `PlayerRuntime.transform.forward`。如果模型 Prefab 自己再旋转 180 度，代码仍然向正确方向移动和发射，但玩家看到的人物会面对反方向。把游戏模型根旋转归零后，视觉和玩法坐标重新一致。
+
+0.7 倍缩放只影响职业模型，不会改变外层 CharacterController、公共 AttackHitbox 或投射物出生距离。生成工具区分游戏 Prefab 与预览 Prefab，可以防止以后重新生成 Animator 时覆盖本次修复，也不会破坏选角界面构图。
+
+### 5. Unity 测试方式
+
+1. 分别选择战士、法师和弓箭手进入 `MainScene`，确认模型尺寸为 0.7 倍并面朝移动方向。
+2. 对照刺客测试 WASD、Shift、Space、右键或 LeftAlt、左键以及数字键 1/2/3。
+3. 战士面对敌人左键，确认播放单段剑击且同一剑只命中一次。
+4. 法师和弓箭手面对敌人左键，确认进入 Attack 动画并从正前方发射小球，命中后造成伤害并消失。
+5. 返回选角界面，确认三个预览模型的尺寸和朝向没有变化。
+6. 在 EditMode Test Runner 中运行全部测试，确认没有失败。
+
+### 6. 面试表达
+
+这次我先确认了四个职业都通过同一个 PlayerRuntime 接收输入，所以没有复制控制代码。问题出在法师和弓箭手的表现 Prefab 额外旋转了 180 度，而移动、攻击盒和小球都使用 PlayerRuntime 的正前方，导致视觉与玩法方向不一致。我把三个游戏模型统一为单位旋转和 0.7 倍缩放，但不动公共碰撞体和选角预览。同时把这些规则写入 Animator 生成工具，并补充了攻击状态、投射物方向、实际命中和对象池回收测试，防止资源重新生成后问题复发。
+
+### 7. 面试追问
+
+1. **如何保证不同职业操作一致？** 四个职业复用同一套输入、移动、战斗和技能组件，职业配置只决定属性与攻击表现。
+2. **为什么不旋转投射物方向来迁就模型？** 玩法方向应以 PlayerRuntime 为权威，单独反转投射物会让摄像机、移动和其他技能继续不一致。
+3. **为什么不缩放 CharacterController？** 需求只调整视觉尺寸，缩放公共碰撞体会改变通行能力和近战距离。
+4. **如何保证 Animator 重新生成后修复不丢失？** 生成工具在保存游戏 Prefab 时重新写入单位旋转和 0.7 缩放，预览 Prefab则跳过该步骤。
+5. **远程攻击测试验证了什么？** 验证 Attack 状态、单次攻击去重、正前方出生、实际命中以及回收到对象池的完整链路。
+
+### 8. 本次涉及知识点
+
+- 公共输入接口与职业运行时复用
+- Transform 父子坐标和 `transform.forward`
+- Animator Layer、CrossFade 和动画事件
+- 近战与投射物攻击表现差异
+- 对象池获取、命中与回收
+- Prefab 生成工具的幂等配置
+- EditMode 集成测试与回归保护
+
+## 功能名称：法师紫色火球与弓箭手箭矢普攻重构
+
+### 1. 实现目标
+
+解决法师和弓箭手点击一次普攻却同时出现 Human Pack 演示投射物与公共彩色球体的问题。法师现在只发射一个紫色 MagicMissile 1，视觉尺寸为技能火球来源尺寸的 0.7 倍，沿 3 米高度的抛物线飞行，并在碰撞或终点产生 1.5 米范围伤害；弓箭手只发射一个原始 Human Bolt，沿人物正前方直线飞行并命中第一个目标。两者继续复用公共攻击力、暴击、飘字、吸血和对象池。
+
+### 2. 涉及脚本
+
+- CharacterDefine.cs、CharacterDefine.json：增加直线/抛物线、弧高、视觉倍率、实例染色和爆炸半径配置。
+- PlayerRangedAttackComponent：按职业选择真实投射物 Prefab，优先使用模型 shootPoint，维护投射物池并播放可回收爆炸表现。
+- PlayerBasicAttackProjectile：处理直线或抛物线飞行、碰撞、视觉重置、单体命中或范围爆炸。
+- PlayerBasicAttackDamageResolver：新增按 FighterInterface 去重的范围普通攻击入口。
+- triggerProjectile：禁用状态收到同名 Animation Event 时立即退出，阻止第二套演示投射物。
+- PlayerRuntime.prefab、RangedCharacterAnimatorControllerSetupTool：固化火球、爆炸和箭矢 Prefab 引用。
+- RangedCharacterPlayableTests：覆盖职业配置、资源引用、旧事件保护、轨迹、范围去重、单体命中和对象池回收。
+
+### 3. 调用流程
+
+公共释放：左键 -> PlayerCombatComponent -> Attack 动画 -> shoot Animation Event -> PlayerAnimationEventRelay -> TryReleaseRangedBasicAttack -> PlayerRangedAttackComponent.Fire
+
+法师：Fire -> MagicMissile 对象池 -> Arc 轨迹 -> 敌人/墙体/终点 -> Explode -> OverlapSphereNonAlloc -> FighterInterface 去重 -> 公共伤害结算 -> 紫色爆炸 -> 回池
+
+弓箭手：Fire -> Human Bolt 对象池 -> PlayerRuntime.forward 直线 -> 第一个 FighterInterface -> 公共伤害结算 -> 回池
+
+重复保护：同名 shoot 事件 -> 禁用的 triggerProjectile.shoot -> isActiveAndEnabled 检查失败 -> 不生成 Human Pack 演示副本
+
+### 4. 核心原理
+
+重复投射物不是一次公共攻击执行了两次，而是动画事件按方法名广播时，同时找到了 Human Pack 的 triggerProjectile.shoot 和项目的 PlayerAnimationEventRelay.shoot。只设置组件 enabled=false 不足以表达业务保护，因此旧方法自身也检查 isActiveAndEnabled 与必要引用；公共 Relay 成为唯一正式发射入口。
+
+对象池不再创建临时 Sphere，而是分别实例化 MagicMissile 1 与 Human Bolt。Prefab 原始缩放会在首次入池时缓存，法师的 0.7 倍是在原始 0.8 缩放上相乘，所以实际根缩放为 0.56；弓箭保持资源原尺寸。紫色通过 MaterialPropertyBlock、粒子颜色、Trail 和 Light 写到运行时实例，不会修改共享材质，因此技能火球仍保留原颜色和尺寸。
+
+法师轨迹由“前向匀速距离 + sin(π × 进度) × 弧高”组成：起点和终点高度不变，中点达到 3 米最高点。爆炸使用 OverlapSphereNonAlloc 复用固定数组，并用 HashSet<FighterInterface> 去重，解决一个敌人有多个 Collider 时重复扣血的问题。每个唯一目标仍调用原公共 Apply，所以暴击、飘字和吸血规则没有分叉。
+
+弓箭手不做范围扫描，碰到第一个有效目标后立即回池；普通区域 Trigger 被忽略，实体墙体会结束飞行。回收时统一停止粒子、清空 Trail、清零 Rigidbody、清除拥有者、计时与回调，避免对象池状态残留。
+
+### 5. Unity 测试方式
+
+1. 打开 MainScene，分别选择法师和弓箭手进入游戏。
+2. 法师面向空地点击左键：只应出现一个较小紫色火球，轨迹明显向上拱起，到终点也会爆炸。
+3. 法师对准聚集敌人攻击：火球碰到敌人或墙体立即爆炸，1.5 米内每个敌人各受伤一次，同一敌人的多个碰撞体不会重复扣血。
+4. 弓箭手点击左键：只应出现一个原材质箭矢/木棍，沿人物正前方直线飞行，命中第一个敌人后消失并造成一次伤害。
+5. 连续攻击，确认没有额外紫色/黄色基础球，也没有无伤害的第二套抛物线投射物；观察伤害飘字、暴击和吸血仍正常。
+6. 按数字键释放法师原技能火球，确认技能火球仍是原尺寸与原颜色，不受普攻紫色染色影响。
+7. 打开 Window > General > Test Runner，运行 RangedCharacterPlayableTests，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+这个问题来自一个动画事件被两套同名接收器处理：第三方模型脚本生成演示投射物，项目 Relay 又生成正式伤害球。我把第三方接收器做了禁用状态保护，让公共战斗链成为唯一入口。远程攻击组件改为按职业从对象池取真实 Prefab，法师用配置驱动的 sin 抛物线和 1.5 米范围结算，弓箭手用直线单体箭矢。范围伤害通过非分配物理查询和 FighterInterface 集合去重，但每个目标仍进入同一个普通攻击 Resolver，所以攻击力、暴击、飘字和吸血完全复用。紫色只通过实例级 MaterialPropertyBlock 和粒子参数实现，没有修改技能火球共享材质。
+
+### 7. 面试追问
+
+1. **为什么禁用组件后还要在 shoot 方法里判断？** Animation Event 是按方法名寻找接收器，禁用行为不足以作为可靠业务边界；方法入口保护可以从源头阻止演示脚本实例化。
+2. **为什么用 sin 曲线而不是 Rigidbody 重力？** 这类美术轨迹需要固定时间、距离和最高点，参数曲线更可控，也不受场景重力配置影响；如果需要真实弹道再改为初速度加重力。
+3. **范围伤害如何避免多 Collider 重复扣血？** 物理查询得到 Collider 后向上寻找 FighterInterface，并放进 HashSet；只有第一次加入成功的目标才结算。
+4. **为什么紫色不会污染技能火球？** 没有修改 sharedMaterial，只给普通攻击实例写 MaterialPropertyBlock、粒子、Trail 和 Light 参数。
+5. **对象池回收需要重置什么？** Rigidbody 速度、碰撞参数、飞行进度、拥有者、回调、粒子和 Trail 都要重置，否则下一发可能继承旧方向、残影或重复回调。
+
+### 8. 本次涉及知识点
+
+- Animation Event 的方法名分发与重复接收保护
+- Prefab 驱动的职业投射物工厂
+- 正弦抛物线参数化轨迹
+- Rigidbody Kinematic、Trigger 与 FixedUpdate
+- OverlapSphereNonAlloc 与 HashSet 多 Collider 去重
+- 公共伤害 Resolver、暴击、飘字和吸血复用
+- MaterialPropertyBlock、ParticleSystem、TrailRenderer 与 Light 实例染色
+- 对象池预热、动态扩容、幂等回收和状态重置
+- SerializedObject、PrefabUtility 与 EditMode 回归测试
+
+## 功能名称：出生点小地图渲染性能优化
+
+### 1. 实现目标
+
+解决玩家停留在 MainScene 出生点时帧率持续偏低的问题。出生点附近场景实例密集，而小地图相机原本会以主画面帧率再次完整渲染这片区域，因此本次把小地图3D背景改为固定10 FPS刷新，并缩小渲染范围和关闭不必要的图形选项。玩家、怪物和宝箱图标仍由UI系统每帧更新，不会因为背景降频而失去操作反馈。
+
+### 2. 涉及脚本
+
+- `MiniMapCameraController.cs`：关闭 Camera 自动渲染，在 `LateUpdate` 更新跟随位置后按10 FPS手动调用 `Camera.Render`。
+- `MainScene.unity`：小地图相机只渲染 Default 与 Water，Far Clip 调整为80，关闭 HDR、MSAA，并移除多余的 AudioListener。
+- `MiniMapRT.renderTexture`：保留512×512分辨率，关闭2x MSAA。
+- `MiniMapPerformanceConfigurationTests.cs`：验证小地图相机、RenderTexture和 AudioListener 的性能配置没有被误改。
+
+### 3. 调用流程
+
+玩家运行时生成 -> GameplayRuntime 发布 CurrentPlayerChanged -> MiniMapCameraController.SetTarget -> LateUpdate 跟随玩家 -> 到达0.1秒刷新间隔 -> Camera.Render 更新 MiniMapRT -> RawImage 显示3D背景
+
+图标流程保持独立：MiniMapIconTarget 注册 -> MiniMapIconRenderer.Update -> 每帧换算UI坐标 -> 玩家、怪物和宝箱图标流畅移动
+
+### 4. 核心原理
+
+主相机和小地图相机是两次独立的场景渲染。即使小地图只占屏幕右上角，只要它的 Camera 每帧启用，Unity 仍要再次做物体剔除、提交 Draw Call，并把画面写入 RenderTexture。出生点附近模型越密集，这次重复渲染的成本越明显。
+
+本次没有降低图标刷新率，只降低不需要60 FPS的3D背景刷新率。Camera 在场景和运行时都保持 disabled，控制器每0.1秒主动调用一次 `Render`；切换玩家时通过 `forceRender` 立即刷新，避免显示旧位置。使用 `Time.unscaledTime` 是为了让暂停或升级界面改变 `timeScale` 时，刷新计时仍保持稳定。
+
+Layer Mask 只保留 Default 和 Water，因为地形与环境负责构成地图背景；Player、Enemy、Box 等动态目标已经有独立UI图标，再渲染一遍3D模型既不清晰也浪费性能。Far Clip、HDR和MSAA的调整进一步减少小地图的像素与剔除成本。
+
+### 5. Unity 测试方式
+
+1. 打开 MainScene，进入游戏后在出生点静止30秒，通过 Profiler 记录 CPU/GPU Frame Time、Batches、SetPass 和 Camera.Render。
+2. 离开出生点后再记录30秒，比较两个位置的平均帧时间。
+3. 在 Hierarchy 临时关闭 MiniMapCamera 对象做A/B对照；关闭前后差距应比优化前明显缩小。
+4. 确认右上角小地图背景正常跟随，玩家、怪物和宝箱图标仍然流畅；按M放大和关闭地图功能正常。
+5. Console 不应再出现“场景中存在多个 AudioListener”的警告。
+6. 在 Test Runner 运行 `MiniMapPerformanceConfigurationTests`，再运行全部 EditMode 测试。
+7. 最终使用 Development Build + Autoconnect Profiler 验证，小地图背景每秒最多渲染约10次。
+
+### 6. 面试表达
+
+我通过 Profiler 和场景配置排查发现，出生点附近模型比较密集，而小地图使用第二台 Camera 每帧把同一区域完整渲染到 RenderTexture，所以主画面和小地图产生了重复的剔除与 Draw Call。我把小地图 Camera 改成关闭自动渲染，由控制器按10 FPS手动刷新背景，同时保留UI图标每帧更新；另外限制了小地图的 Layer 和 Far Clip，并关闭 HDR、MSAA。这样把表现层按更新频率拆开，既保留了小地图可读性，也降低了出生点的持续渲染成本。
+
+### 7. 面试追问
+
+1. **为什么只降低背景刷新率，图标仍每帧更新？** 背景是静态环境，低刷新率不影响信息读取；图标代表动态目标，需要及时反馈位置，两者更新频率应该按职责区分。
+2. **为什么禁用 Camera 后还能显示小地图？** `Camera.enabled=false` 只关闭自动逐帧渲染，代码仍可以按需要调用 `Camera.Render()`，结果会继续写入目标 RenderTexture。
+3. **为什么使用 unscaledTime？** 暂停、升级或弹窗可能把 `timeScale` 设为0，unscaledTime 不受影响，可以避免刷新计时停住或恢复后异常。
+4. **Layer Mask 为什么能优化？** Camera 在剔除阶段就排除不需要的层，不会继续为这些对象提交渲染；动态目标已经通过UI图标表达，所以无需重复画模型。
+5. **如果优化后出生点仍然慢怎么办？** 再用 Frame Debugger 判断是否仍是主相机 Draw Call 过高，然后分阶段做静态标记、Occlusion Culling烘焙、GPU Instancing和LOD，不直接大改整个场景。
+
+### 8. 本次涉及知识点
+
+- Camera 自动渲染与手动 `Camera.Render`
+- RenderTexture、MSAA与HDR成本
+- Camera Culling Mask和 Far Clip Plane
+- `LateUpdate` 相机跟随
+- `Time.unscaledTime` 与固定刷新频率
+- Profiler、Frame Debugger和 Development Build
+- 3D背景与UI图标的更新频率解耦
+- EditMode场景配置回归测试
+
+## 功能名称：弓箭手左键攻击与箭矢发射修复
+
+### 1. 实现目标
+
+修复弓箭手移动和技能正常，但左键没有明显攻击动作、也看不到箭矢的问题。普通攻击现在会先登记释放任务，再播放动画；即使 Animation Event 丢失，仍会在配置释放帧发射一支 Human Bolt。
+
+### 2. 涉及脚本
+
+- `PlayerCombatComponent`：从真实左键入口创建攻击序号，提前注册释放计时，并让动画事件与计时兜底安全去重。
+- `PlayerPresentationComponent`：恢复 Attack Layer 权重并从起点直接播放 Attack 状态，结束后回到 Empty。
+- `PlayerRangedAttackComponent`：检查武器口是否被墙体占用，必要时改用 PlayerRuntime 的安全出生点。
+- `PlayerBasicAttackProjectile`：对象池取出时恢复 Renderer、Trail、Collider 和 Rigidbody 状态。
+- `RangedCharacterPlayableTests`：按实际生成顺序绑定弓箭手，并从模拟左键输入验证动画、延迟发射、伤害和回池。
+
+### 3. 调用流程
+
+InputCo.LeftMouseDown -> PlayerCombatComponent.CheckAttackInput -> 创建攻击序号并登记 0.3 秒释放任务 -> PlayerPresentationComponent 播放 Attack Layer.Attack -> Animation Event 或代码计时 -> TryReleaseRangedBasicAttack -> PlayerRangedAttackComponent.Fire -> Human Bolt 直线飞行 -> DamageResolver -> 回对象池
+
+### 4. 核心原理
+
+动画属于表现，箭矢和伤害属于玩法逻辑。之前的测试直接调用私有攻击方法和发射方法，绕过了真实输入与计时，无法发现运行时入口的问题。本次让攻击逻辑先建立释放任务，再请求 Animator 播放；因此动画资源异常不会让玩法攻击一起失效。
+
+每次攻击都会得到递增序号。动画 `shoot` 事件和代码计时可能在同一帧到达，但只有尚未消费的当前序号能成功取出投射物，所以既保留精准动画帧，又不会重复发射。如果第三方动画在释放帧之前误发 `ResetCombo`，战斗组件会暂时保留当前攻击和释放任务，等箭矢成功发射后再按攻击超时正常收尾。箭矢回池时停止 Trail，下一次取出再重新启用并清空残影，避免对象池状态残留。
+
+### 5. Unity 测试方式
+
+1. 从角色选择界面选择弓箭手并进入 `MainScene`。
+2. 面向空地单击左键，确认立即播放弩射击动作，约 0.3 秒后只出现一支箭。
+3. 靠近墙体射击，箭矢不应在弩口生成后立刻消失。
+4. 对准敌人连续单击，确认每次一箭、直线飞行、命中一次伤害并正常显示飘字。
+5. 在 Test Runner 运行 `RangedCharacterPlayableTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+弓箭手的问题不是输入系统整体失效，因为法师和弓箭手移动、技能都正常。我继续检查后发现原回归测试绕过了真实左键和逐帧释放过程，所以我把普通攻击改成先创建攻击序号和释放任务，再播放 Animator。动画事件和代码兜底共用同一个发射入口，用攻击序号保证一次攻击只生成一支箭。箭矢继续走对象池，取出时恢复渲染、Trail、碰撞和物理状态，同时检查武器口是否卡在实体里。这样表现层出问题时玩法仍有兜底，而且测试真正覆盖了玩家操作链路。
+
+### 7. 面试追问
+
+1. **为什么不能只依赖 Animation Event？** 第三方动作可能丢事件或状态没有进入，玩法攻击会随表现一起失效，因此需要代码计时兜底。
+2. **动画事件和计时同时触发会怎样？** 两者携带同一个攻击序号，第一次成功发射后序号被标记为已消费，第二次调用直接返回。
+3. **为什么先登记释放任务再播放动画？** Animator 调用可能因状态或资源异常失败，先登记能保证玩法逻辑不会被表现异常中断。
+4. **为什么要重置 TrailRenderer？** 池对象会保留上一发的轨迹数据，不清除就可能在下一次启用时出现跨屏残影或不可见状态。
+5. **武器口在墙里怎么处理？** 发射瞬间用非分配范围查询检查实体重叠，排除玩家自身后，必要时改用玩家前上方的通用出生点。
+
+### 8. 本次涉及知识点
+
+- 输入接口与可测试性
+- Animator Layer、AvatarMask 与 `Animator.Play`
+- Animation Event 与代码计时兜底
+- 攻击序号和幂等去重
+- `OverlapSphereNonAlloc` 出生点检测
+- Rigidbody、Collider、Renderer 与 TrailRenderer 状态重置
+- 对象池生命周期与真实操作链回归测试
+
+## 功能名称：登录与选角界面鼠标状态修复
+
+### 1. 实现目标
+
+解决登录界面或角色选择界面进入运行模式后，点击 Game 视图时鼠标偶尔被锁定并隐藏、导致 UI 无法正常操作的问题。玩法场景仍然可以按原逻辑锁定鼠标，本次只在纯 UI 界面启用时恢复适合菜单操作的鼠标状态。
+
+### 2. 涉及脚本
+
+- `UiCursorStateUtility.cs`：统一把全局鼠标切换为可见、未锁定的 UI 模式。
+- `LoginPanelController.cs`：登录面板启用时恢复 UI 鼠标状态。
+- `CharacterSelectPanelController.cs`：选角面板启用时恢复 UI 鼠标状态。
+- `UiCursorStateTests.cs`：验证公共入口会设置 `CursorLockMode.None` 和 `Cursor.visible = true`。
+
+### 3. 调用流程
+
+玩法场景 `CameraCo` 锁定并隐藏鼠标 -> 加载登录或选角场景 -> 面板对象执行 `OnEnable` -> `UiCursorStateUtility.EnsureVisibleAndUnlocked` -> 解除鼠标锁定并显示系统鼠标 -> 玩家正常点击 UI。
+
+### 4. 核心原理
+
+`Cursor.lockState` 和 `Cursor.visible` 是 Unity 的全局鼠标状态，不会因为进入了另一个场景就自动恢复。玩法相机会把鼠标设为 `Locked` 并隐藏；当 Game 视图重新获得焦点时，Unity 会真正应用这项锁定，所以问题看起来像是“点击场景后鼠标才突然消失”。停止运行时，编辑器会释放鼠标捕获，因此再次运行偶尔又表现正常。
+
+登录和选角控制器在 `OnEnable` 中主动声明自己需要 UI 鼠标模式。选择 `OnEnable` 而不是只放在 `Awake`，是因为同一个面板关闭后再次打开时也需要重新校正鼠标状态。公共工具只修改可见性和锁定模式，不移动鼠标位置，也不改动玩法相机的控制逻辑。
+
+### 5. Unity 测试方式
+
+1. 打开 `LoginScene`，连续进入和退出 Play Mode 三次；每次点击 Game 视图后鼠标都应保持可见，并能点击登录与注册按钮。
+2. 登录进入角色选择场景，确认鼠标可见且存档槽位、创建角色、返回登录按钮都能正常点击。
+3. 进入 `MainScene`，确认玩法相机仍会按原逻辑锁定并隐藏鼠标，不影响角色视角操作。
+4. 从玩法流程返回登录或选角界面，确认鼠标会自动重新显示并解除锁定。
+5. 在 Test Runner 的 EditMode 中运行 `UiCursorStateTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+我排查到这个问题不是登录 UI 自己隐藏了鼠标，而是 Unity 的 Cursor 状态属于全局状态。玩法相机进入时会锁定并隐藏鼠标，切换到登录或选角场景后这个状态不会自动按场景恢复，Game 视图获得焦点时就会再次应用锁定。我的处理方式是抽出一个 UI 鼠标状态工具，在登录和选角面板的 `OnEnable` 中明确设置为未锁定和可见。这样玩法与 UI 场景分别声明自己需要的鼠标模式，修改范围小，也方便以后新增暂停菜单或主菜单时复用。
+
+### 7. 面试追问
+
+1. **为什么问题在点击 Game 视图后才明显？** Game 视图获得焦点后，编辑器才会捕获并应用 `CursorLockMode.Locked`，所以焦点变化让残留状态暴露出来。
+2. **为什么不用停止运行来解决？** 停止运行只是编辑器临时释放鼠标捕获，不能保证构建后的场景切换流程，业务代码必须主动管理状态。
+3. **为什么使用 `OnEnable` 而不是 `Start`？** `Start` 每个组件生命周期只执行一次，面板再次启用时不会重跑；`OnEnable` 每次启用都会校正状态。
+4. **为什么抽成公共工具？** 登录和选角都需要同一组设置，统一入口可以避免漏改其中一个字段，也方便其他 UI 场景复用。
+5. **会不会影响玩法场景锁定鼠标？** 不会。工具只由 UI 面板启用时调用，进入玩法场景后原有相机控制脚本仍会重新设置 `Locked` 和隐藏状态。
+
+### 8. 本次涉及知识点
+
+- `Cursor.lockState` 与 `Cursor.visible`
+- Unity 全局状态与场景生命周期
+- `Awake`、`Start`、`OnEnable` 的执行差异
+- Game 视图焦点和编辑器鼠标捕获
+- 公共工具类与重复逻辑收敛
+- EditMode 状态测试与手动场景回归
+
+## 功能名称：四职业跳跃高度恢复
+
+### 1. 实现目标
+
+将刺客、战士、法师和弓箭手的公共跳跃高度从 2 米恢复为项目最初刺客使用的 1 米，解决四个职业起跳过高、滞空感过强的问题。
+
+### 2. 涉及脚本
+
+- `PlayerMovementComponent.cs`：把新建移动组件时的默认 `jumpHeight` 恢复为 1。
+- `PlayerRuntime.prefab`：把四职业实际运行时共用的序列化 `jumpHeight` 恢复为 1。
+- `WarriorPlayableTests.cs`：更新公共跳跃高度回归断言，防止以后再次意外改成 2。
+
+### 3. 调用流程
+
+空格输入 -> PlayerMovementComponent.UpdateJumpTimers -> TryJump -> 根据 jumpHeight 与 gravity 计算初速度 -> CharacterController 执行竖直移动 -> PlayerPresentationComponent 播放跳跃表现
+
+### 4. 核心原理
+
+四个职业只替换 PlayerRuntime 下的视觉模型，移动、重力和跳跃逻辑都来自同一个 `PlayerMovementComponent`。跳跃初速度使用 `Mathf.Sqrt(jumpHeight * -2f * gravity)` 计算，因此把公共高度从 2 恢复为 1 后，四个职业会一起恢复到最初刺客的跳跃手感，不需要分别修改职业 Prefab。
+
+代码默认值与 Prefab 序列化值同时修改，是因为 Unity 实际运行优先读取 Prefab 保存的值，而新建组件时使用代码默认值。保持两处一致可以避免场景实例正常、以后新建 Prefab 却再次出现两米跳高。
+
+### 5. Unity 测试方式
+
+1. 分别选择刺客、战士、法师和弓箭手进入 `MainScene`。
+2. 在平地按空格，确认四个职业的跳跃高度都恢复为最初刺客的高度。
+3. 检查跳跃动画、落地判断、土狼时间、输入缓冲和体力消耗仍然正常。
+4. 在 Test Runner 的 EditMode 中运行 `WarriorPlayableTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+这个项目的四个职业共用一个 PlayerRuntime，职业 Prefab 只负责模型和动画，所以跳跃过高不是四份配置的问题，而是公共 `PlayerMovementComponent` 的高度从 1 改成了 2。我把运行时 Prefab 和脚本默认值都恢复为 1，并更新自动化测试锁定这个数值。跳跃初速度继续根据目标高度和重力计算，没有修改输入缓冲、土狼时间或体力系统，因此修改范围小，也不会破坏其他移动手感。
+
+### 7. 面试追问
+
+1. **为什么四个职业只需要改一个地方？** 四个职业共用 PlayerRuntime 的移动组件，职业模型不保存独立跳跃逻辑。
+2. **为什么代码和 Prefab 都要改？** Prefab 实例使用序列化值，新建组件使用代码默认值，两处一致可以避免配置漂移。
+3. **跳跃高度如何转换成初速度？** 根据竖直匀减速运动公式，使用 `sqrt(height * -2 * gravity)` 计算向上速度。
+4. **为什么不修改重力来降低跳跃？** 重力还影响下落速度和整体滞空手感，需求只是恢复原高度，直接修改高度更准确。
+5. **如何防止以后误改？** EditMode 测试读取 PlayerRuntime 的序列化字段，并断言它必须等于 1。
+
+### 8. 本次涉及知识点
+
+- Prefab 序列化值与 C# 字段默认值
+- 四职业公共运行时组件复用
+- 竖直运动与跳跃初速度计算
+- CharacterController 移动
+- 输入缓冲与土狼时间
+- EditMode Prefab 配置测试
+
+## 功能名称：弓箭手近距离箭矢可见性修复
+
+### 1. 实现目标
+
+修复弓箭手贴近怪物攻击时只有音效、看不到箭矢的问题。近距离箭矢仍在命中帧立即结算伤害，但会冻结在命中点显示 0.1 秒后再回到对象池；法师火球流程保持不变。
+
+### 2. 涉及脚本
+
+- `PlayerRangedAttackComponent.cs`：区分攻击目标与实体墙体，只有墙体阻挡真实弩口时才改用安全出生点，并向弓箭传入 0.1 秒命中停留参数。
+- `PlayerBasicAttackProjectile.cs`：过滤攻击范围类 Trigger，负责箭矢命中冻结、延迟回池以及对象池复用时的状态恢复。
+- `RangedCharacterAnimatorControllerSetupTool.cs`：重新生成远程职业资源时写回命中停留参数，防止 Prefab 配置丢失。
+- `PlayerRuntime.prefab`：保存弓箭手命中停留时间配置。
+- `RangedCharacterPlayableTests.cs`：覆盖怪物发射前已贴近弩口、前置 Trigger 过滤、0.1 秒可见和对象池复用。
+
+### 3. 调用流程
+
+左键攻击 -> `PlayerCombatComponent` 到达释放时机 -> `PlayerRangedAttackComponent.Fire` -> 从 Human Bolt 对象池取箭 -> 从真实 `shootPoint` 发射 -> `PlayerBasicAttackProjectile` 初始重叠或逐帧扫掠 -> `PlayerBasicAttackDamageResolver` 立即结算伤害 -> 箭身在命中点停留 0.1 秒 -> 清理 Trail 并回池。
+
+### 4. 核心原理
+
+旧逻辑在 `Launch` 当帧发现弩口和怪物身体重叠后，会立即伤害并关闭箭矢。因为渲染帧还没有发生，玩家只能听见发射音效，看不到任何箭身。现在伤害结算和视觉回收被拆成两个时间点：伤害仍立即发生，箭矢则关闭碰撞并冻结 0.1 秒，保证至少有一段可见时间。
+
+出生安全检查只应该处理墙体，不能把可以受伤的怪物当作墙；否则箭可能被推入目标内部甚至目标身后。弓箭还会忽略怪物攻击范围、`shootPos` 等 Trigger，只由正式非 Trigger 身体碰撞体触发伤害。真正回池时统一清理 Trail，下一次取出时重新启用碰撞体、Renderer 和 Trail，避免对象池状态残留。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，选择弓箭手进入游戏。
+2. 分别在贴脸、近距离和正常距离对 `Slime1`、`Slime2` 与 Boss 左键攻击。
+3. 确认每次音效对应一支可见箭；贴脸命中时怪物立即扣血，箭在命中点短暂停留后消失。
+4. 连续攻击同一怪物，确认每支箭只造成一次伤害，后续箭的 Mesh 和 Trail 仍正常显示。
+5. 面向墙体射击，确认墙体仍会阻挡箭；法师普通火球仍按原逻辑爆炸并立即回池。
+6. 在 Test Runner 的 EditMode 中运行 `RangedCharacterPlayableTests`，然后运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+弓箭手贴脸攻击只有音效，是因为箭矢在发射当帧就与怪物重叠，伤害结算后马上回池，渲染系统还没机会显示它。我把逻辑命中和视觉回收拆开：命中时立即扣血并关闭碰撞，箭身冻结在命中点 0.1 秒后再回池。同时出生点检测不再把怪物当墙，箭矢也会忽略怪物的攻击范围 Trigger，只命中正式身体 Collider。对象池复用时统一恢复 Collider、Renderer 和 Trail，既解决了可见性，也避免重复伤害和状态残留。
+
+### 7. 面试追问
+
+1. **为什么不把伤害也延迟 0.1 秒？** 操作反馈应及时，延迟的只是视觉回收，不改变原有攻击手感和战斗结算时机。
+2. **怎样避免停留期间重复扣血？** 进入停留状态后立即关闭箭矢 Collider，并让 Trigger、扫掠和初始重叠入口都检查同一个停留标记。
+3. **为什么弓箭手忽略 Trigger？** 当前怪物都有正式非 Trigger 身体 Collider，而攻击范围和发射点 Trigger 不是受击盒；忽略它们能避免箭在身体前被提前消费。
+4. **墙体和怪物在出生检查中怎样区分？** 通过 `FighterInterface` 目标解析区分；能参与正式伤害结算的是目标，其他非 Trigger 实体才视为环境阻挡。
+5. **对象池复用要重置哪些状态？** 包括命中停留计时、拥有者和回调、Rigidbody 速度、Collider、Renderer、ParticleSystem 与 Trail，防止上一发状态影响下一发。
+
+### 8. 本次涉及知识点
+
+- Unity 渲染帧与物理帧的执行时机
+- 初始重叠、Trigger 与连续碰撞扫掠
+- 逻辑结算和视觉表现解耦
+- `FighterInterface` 目标识别
+- 对象池生命周期与完整状态重置
+- TrailRenderer 的 `emitting`、`Clear` 和复用
+- 幂等命中入口与重复伤害防护
+- Prefab 序列化参数和 Editor 生成工具同步
+
+## 功能名称：三职业动画过渡与弓箭手连续碰撞普攻修复
+
+### 1. 实现目标
+
+为战士、弓箭手和法师的移动、跳跃、攻击、技能与动作层返回增加统一的 0.1 秒过渡，刺客原控制器保持不变。弓箭手普攻周期由 0.75 秒缩短为 0.375 秒，箭矢在约 0.15 秒释放；箭速改为 12m/s、寿命改为 1.25 秒，在保持约 15 米射程的同时提高可见性。箭矢增加逐物理帧球形扫掠和出生点重叠检查，解决高速移动时跨过怪物 Collider、看得到箭却没有伤害的问题。
+
+### 2. 涉及脚本
+
+- `PlayerPresentationComponent.cs`：简单动画职业使用移动参数阻尼、固定时间动作 CrossFade，以及攻击层 0.1 秒淡入淡出。
+- `PlayerBasicAttackProjectile.cs`：在每个 `FixedUpdate` 对完整移动路径执行 `SphereCastNonAlloc`，并用 `OverlapSphereNonAlloc` 处理贴脸命中。
+- `CharacterDefine.json`：保存弓箭手 0.375 秒攻击周期、12m/s 速度和 1.25 秒寿命。
+- `RangedCharacterAnimatorControllerSetupTool.cs`：分别换算弓箭手 Attack 与 Skill 状态速度，普通攻击加速两倍而技能维持 0.75 秒。
+- `WarriorAnimatorControllerSetupTool.cs`：固化战士状态机 0.1 秒固定时间过渡。
+- `Archer.controller`、`Wizard.controller`、`Warrior.controller`：同步当前项目实际使用的过渡和弓箭手攻击速度。
+- `RangedCharacterPlayableTests.cs`、`WarriorPlayableTests.cs`：验证配置、Animator、层权重淡入、薄目标连续碰撞和真实史莱姆伤害链。
+
+### 3. 调用流程
+
+左键输入 -> `PlayerCombatComponent` 创建攻击令牌并启动 0.15 秒释放计时 -> `PlayerPresentationComponent` 用 0.1 秒 CrossFade 播放 Attack、同步淡入 Attack Layer -> `PlayerRangedAttackComponent` 从对象池取得 `Human Bolt` -> `PlayerBasicAttackProjectile.FixedUpdate` 计算下一位置并球形扫掠 -> 选择路径上最近的 `FighterInterface` -> `PlayerBasicAttackDamageResolver` 结算暴击、伤害、飘字和吸血 -> 箭矢回收到对象池。
+
+### 4. 核心原理
+
+只依赖 `OnTriggerEnter` 时，12m/s 的箭矢在默认 0.02 秒物理步长内会移动约 0.24 米；如果怪物碰撞体或接触区域比这段距离薄，箭矢可能从碰撞体一侧直接跳到另一侧，中间没有产生 Trigger 回调。现在每个物理帧不只检查终点，而是用箭矢半径对“当前位置到下一位置”整段路径做球形扫掠，并从结果中选择最近的有效怪物或实体墙体。
+
+Trigger 回调、路径扫掠和出生点重叠都进入同一个命中方法。投射物的 `released` 状态让回收和伤害入口保持幂等，即使同一帧既发生 Trigger 又被扫掠命中，也只会扣一次血、回收一次。查询使用预分配数组和 NonAlloc API，避免快速连射时每个物理帧产生托管内存分配。
+
+动画方面，移动 BlendTree 的 `Speed` 参数使用 0.1 秒阻尼；攻击和技能使用 `CrossFadeInFixedTime`，攻击层权重也按时间渐变。弓箭手 Attack 和 Skill 虽复用同一个动作素材，但生成工具分别计算速度，因此只提升普攻频率，不会意外加速技能动画。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，分别选择战士、法师和弓箭手，验证待机、走路、奔跑、跳跃、攻击、技能与返回移动不再瞬切；刺客表现应保持原样。
+2. 使用弓箭手连续左键，确认约每 0.375 秒可攻击一次，箭在约 0.15 秒出现，飞行速度清晰可见且总射程仍约 15 米。
+3. 分别对 `Slime1`、`Slime2` 和 Boss 射击，确认箭命中第一个目标后扣血、显示飘字并回池；贴脸和擦过较薄碰撞区域也应命中。
+4. 面向墙体射击，确认箭被实体墙阻挡，不会穿墙伤害后方怪物。
+5. 在 Test Runner 的 EditMode 中运行 `RangedCharacterPlayableTests` 与 `WarriorPlayableTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+弓箭手原来能看到箭但经常没有伤害，根因是高速投射物只依赖 Trigger。箭在一个物理帧内的位移可能大于怪物的有效碰撞厚度，所以会发生穿透。我保留了对象池和原来的 Human Bolt 表现，在每个 FixedUpdate 用 `SphereCastNonAlloc` 检查完整移动路径，并选择最近的有效目标；贴脸情况再用初始 Overlap 补充。三个碰撞入口共用一个幂等结算方法，避免重复伤害。同时我把弓箭手普攻周期减半，但单独保留技能动画速度，并为三个简单职业加了 0.1 秒动画过渡，让玩法节奏更快、表现也更平滑。
+
+### 7. 面试追问
+
+1. **为什么用 SphereCast 而不是 Raycast？** 箭矢有 0.12 米碰撞半径，SphereCast 能用实际体积扫过路径，边缘命中比中心射线更符合视觉。
+2. **为什么查询放在 FixedUpdate？** Rigidbody 移动和物理世界以固定时间步更新，在同一节奏里计算路径更稳定，也便于用速度乘固定步长理解位移。
+3. **怎样避免 SphereCast 和 OnTriggerEnter 重复扣血？** 两者调用同一个命中入口，第一次结算后立即把 `released` 设为 true，后续入口会直接返回。
+4. **为什么使用 NonAlloc API？** 箭矢可能高频发射，复用查询数组可以避免每物理帧创建新数组，减少 GC 抖动。
+5. **为什么弓箭手技能没有一起加速？** Attack 和 Skill 暂时共用素材但承担不同玩法时长，生成控制器时分别计算状态速度，防止配置耦合。
+
+### 8. 本次涉及知识点
+
+- Animator BlendTree 参数阻尼与 `CrossFadeInFixedTime`
+- Animator Layer、AvatarMask 与权重渐变
+- 攻击前摇、攻击周期和幂等攻击令牌
+- `FixedUpdate`、固定物理步长与高速物体穿透
+- `SphereCastNonAlloc`、`OverlapSphereNonAlloc` 和最近命中选择
+- Trigger、实体障碍与 `FighterInterface` 目标过滤
+- 对象池状态重置、回收幂等与 GC 优化
+- 配置数据、生成工具和 Controller 资源一致性
+
+## 功能名称：操作说明关闭按钮文字清理
+
+### 1. 实现目标
+
+删除操作说明面板关闭按钮上重复叠加的旧版 `X` 文本，只保留按钮自身的“×”图片，同时保证点击关闭功能不受影响。
+
+### 2. 涉及脚本
+
+- `GameplayStartupGuidePopup.cs`：移除不再需要的关闭按钮文本引用和运行时赋值。
+- `GameplayUiRootMigration.cs`：迁移时清理关闭按钮旧文本，不再重新创建和绑定它。
+- `GameplayUiRoot.prefab`：删除 `CloseButton` 下的 `Text (Legacy)` 子对象。
+- `StartupGuideCloseButtonConfigurationTests.cs`：保护关闭图标、按钮组件和无文本子对象的配置。
+
+### 3. 调用流程
+
+进入 `MainScene` -> `GameplayStartupGuidePopup` 显示操作说明 -> `CloseButton` 使用自身 Image 显示“×”图标 -> 玩家点击按钮 -> `ClosePopup` 隐藏面板并恢复游戏状态。
+
+### 4. 核心原理
+
+关闭按钮本身已经配置了“×”Sprite，旧的 `Text (Legacy)` 又在图片上显示一个 `X`，因此会产生重复或错位。删除文字对象后，按钮的 `Image` 仍负责视觉表现，`Button` 仍负责接收点击，两种职责互不依赖。
+
+运行时代码和编辑器迁移工具也必须一起清理，否则只改 Prefab 后，代码可能继续访问空引用，迁移工具也可能在以后重新生成文字。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene` 并进入 Play Mode。
+2. 等待操作说明面板出现，确认右上角只显示一个清晰的“×”图片，没有额外文字。
+3. 点击关闭按钮，确认面板正常关闭，游戏时间和鼠标状态正常恢复。
+4. 在 Test Runner 的 EditMode 中运行 `StartupGuideCloseButtonConfigurationTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+这个关闭按钮原本同时使用了“×”图片和一个 Legacy Text 显示 `X`，导致同一个视觉元素重复叠加。我删除了文字子对象，并同步移除运行时序列化引用和迁移工具里的生成逻辑，只保留 Image 负责显示、Button 负责交互。另外增加了 Prefab 配置测试，确保关闭按钮仍有图标和点击组件，同时不再包含文本子对象。
+
+### 7. 面试追问
+
+1. **删除 Text 会影响按钮点击吗？** 不会，点击由父对象的 `Button` 和 `Image` 接收，文字只是子级视觉元素。
+2. **为什么不能只把文字内容清空？** 空 Text 仍是冗余组件，也可能被后续代码重新赋值，直接移除并清理引用更彻底。
+3. **为什么还要修改迁移工具？** 否则以后重新执行 UI 迁移时，旧文字会被再次创建。
+4. **为什么要修改引用校验？** 文本字段被删除后，它不再是操作说明面板正常运行的必要依赖。
+5. **测试保护了什么？** 验证按钮、关闭图标仍存在，按钮下没有 Text，并确认弹窗其他序列化引用完整。
+
+### 8. 本次涉及知识点
+
+- Unity `Image`、`Button`、`Text` 的职责区别
+- Prefab YAML 序列化引用
+- 运行时引用校验
+- 编辑器迁移工具
+- EditMode Prefab 配置测试
+
+## 功能名称：本地游客模式
+
+### 1. 实现目标
+
+在不启动服务端、也不输入账号密码的情况下，让玩家可以通过登录面板的“游客模式”进入游戏。游客拥有一份保存在当前电脑上的独立档案，继续使用与普通账号相同的四个角色槽，并持久化角色名、职业、等级、经验、待分配属性点、属性强化次数、宝箱数和 Boss 数。
+
+游客退出登录后只清理运行时会话，不删除本地文件；下次启动游戏再次点击游客模式，就能继续读取原来的角色。当前普通账号本身不会保存背包，所以游客模式也保持相同边界，不额外保存背包、血蓝、动画或场景对象。
+
+### 2. 涉及脚本
+
+- `LocalGuestSaveService.cs`：负责游客 JSON 的读取、校验、创建角色、进入角色、成长保存、临时文件替换和备份恢复。
+- `GameApiClient.cs`：使用 `GameSessionMode` 区分在线账号与游客账号，并把现有角色接口路由到服务端或本地文件。
+- `LoginPanelController.cs`：处理游客按钮状态、结果提示和选角场景跳转。
+- `CharacterSelectPanelController.cs`：继续使用统一 API，并把仅描述服务器的命名调整为“当前数据源”。
+- `CharacterProgressSaveService.cs`：保留原有自动存档协调逻辑，同时支持在线数据库和本地游客文件。
+- `GuestModePersistenceTests.cs`：验证存档往返、覆盖槽位、写盘失败、备份恢复和登录场景按钮绑定。
+
+### 3. 调用流程
+
+登录界面点击游客模式 -> `LoginPanelController.LoginAsGuest` -> `GameApiClient.LoginAsGuest` -> `LocalGuestSaveService.TryLoad` -> `CharacterSelectPanelController` 读取四个角色槽 -> 创建或选择角色 -> `GameApiClient.EnterCharacter` -> `LocalGuestSaveService.TryEnterCharacter` -> `SceneFlowService.StartGameplay` -> 游戏内成长事件 -> `CharacterProgressSaveService` -> `GameApiClient.SaveCharacterProgress` -> `LocalGuestSaveService.TrySaveCharacterProgress` -> 本地 JSON。
+
+在线账号仍然使用同一套上层调用链，只是在 `GameApiClient` 内部改为发送网络协议，因此 UI 和玩法逻辑不需要维护两份实现。
+
+### 4. 核心原理
+
+可以把 `GameApiClient` 理解成一个统一柜台：角色选择界面只向柜台提出“读取角色、创建角色、进入角色、保存角色”的请求，不需要知道资料最终放在哪里。普通账号会由柜台把请求交给服务端，游客账号则交给 `LocalGuestSaveService` 写入电脑本地。
+
+游客存档使用带版本号的 JSON，并通过 `Application.persistentDataPath` 获取各平台合适的用户数据目录。写盘时先生成临时文件，再替换正式文件并保留上一份备份，避免程序在写到一半时留下不完整 JSON。读取主文件失败时会验证备份；只有备份有效才进行恢复，两份都损坏时会提示失败而不是静默创建新档覆盖玩家数据。
+
+创建或保存时先生成候选数据，只有文件写入成功后才替换内存缓存。这样即使磁盘无权限或空间不足，UI 也不会显示成功，内存里也不会出现“这次运行看得到、重启后却丢失”的假存档。
+
+### 5. Unity 测试方式
+
+1. 不启动 `TreasureHunter.Server`，打开 `LoginScene` 并运行。
+2. 点击开始按钮打开登录面板，确认登录、注册下方存在蓝色“游客模式”按钮。
+3. 点击游客模式，确认没有网络超时并进入 `CharacterSelectScene`。
+4. 选择一个槽位创建角色，进入游戏后获得经验、选择属性强化、开启宝箱或击败 Boss。
+5. 使用暂停界面的“保存并退出”返回选角，确认槽位摘要已经更新。
+6. 停止运行并重新启动，再次点击游客模式，确认角色和进度仍然存在。
+7. 返回登录并使用普通账号登录，确认看不到游客角色。
+8. 在 Test Runner 的 EditMode 中运行 `GuestModePersistenceTests`、`CharacterProgressPersistenceTests`，然后运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+我在登录系统中增加了一个完全离线的游客模式，但没有复制一套选角和存档 UI。我在 `GameApiClient` 中增加会话模式，让上层仍然调用读取角色、创建角色、进入角色和保存进度这些统一接口；在线账号走服务端，游客账号走本地 JSON。游客档保存在 `Application.persistentDataPath`，数据结构复用现有 `NCharacter`，所以等级、经验、属性强化和 Boss 进度与正式账号保持一致。写盘采用临时文件替换和备份恢复，而且只有写盘成功才更新内存缓存，避免显示成功但实际丢档。这样既降低了 UI 与存储方式的耦合，也方便以后扩展云存档或游客转正式账号。
+
+### 7. 面试追问
+
+1. **为什么不直接在登录按钮脚本里用 PlayerPrefs 保存所有角色？** PlayerPrefs 适合少量设置或简单数值，结构化的四角色成长数据更适合 JSON；独立服务也能把文件 I/O 与 UI 分开测试。
+2. **怎样保证游客和正式账号不会串档？** `GameSessionMode` 明确记录当前数据源，切换或退出会话时会清空角色缓存和活动角色；游客文件也不会被普通登录分支读取。
+3. **为什么要先写临时文件再更新内存？** 如果先改内存再写盘，写盘失败时玩家本次运行会看到新进度，但重启后数据消失。候选数据成功落盘后再提交，可以保证内存与磁盘一致。
+4. **本地 JSON 能防作弊吗？** 不能。游客模式是离线体验，明文 JSON 便于调试和展示；需要防作弊的数据仍应由服务端校验和持久化。
+5. **以后怎样做游客转正式账号？** 可以在注册成功后读取游客 JSON，把四个槽位作为迁移请求发送给服务端，由服务端校验冲突和数据合法性，确认成功后再提示是否删除本地游客档。
+
+### 8. 本次涉及知识点
+
+- `Application.persistentDataPath` 与跨平台用户数据目录
+- `JsonUtility`、可序列化数据模型和存档版本号
+- 临时文件、备份文件与失败恢复
+- 候选数据提交，避免内存和磁盘状态不一致
+- 门面模式与按会话模式路由数据源
+- 在线存档和本地存档共用业务接口
+- 深拷贝与缓存隔离
+- 协程、回调和 UI 按钮防重复点击
+- Unity Scene YAML 序列化引用
+- EditMode 文件 I/O 与场景配置测试
+
+## 功能名称：弓箭手怪物聚集区域贴脸箭视觉前飞
+
+### 1. 实现目标
+
+修复弓箭手在怪物聚集区域攻击时，箭矢出生后立即命中并原地停留、看起来像没有射出去的问题。贴脸目标仍在发射帧立即受到一次伤害，但箭矢关闭后续碰撞后继续沿正前方飞行 1.5 米，再回收到对象池。
+
+### 2. 涉及脚本
+
+- `PlayerBasicAttackProjectile.cs`：区分初始重叠和正常飞行命中，增加贴脸命中后的无伤害视觉前飞状态。
+- `PlayerRangedAttackComponent.cs`：向弓箭手投射物传入 1.5 米视觉前飞距离。
+- `PlayerRuntime.prefab`、`RangedCharacterAnimatorControllerSetupTool.cs`：保存并固化前飞距离配置。
+- `RangedCharacterPlayableTests.cs`：验证怪群目标选择、立即伤害、精确前飞距离、禁止二次伤害和对象池状态恢复。
+
+### 3. 调用流程
+
+左键攻击 -> `PlayerCombatComponent` 到达释放时机 -> `PlayerRangedAttackComponent.Fire` -> Human Bolt 从真实弩口生成 -> `TryResolveInitialOverlap` 选择瞄准线上最合适的前方目标 -> `PlayerBasicAttackDamageResolver` 立即结算一次伤害 -> 关闭箭矢 Collider -> `FixedUpdate` 继续视觉前飞 1.5 米 -> 清理 Trail 并回池。
+
+### 4. 核心原理
+
+怪物靠近时，弩口可能已经在怪物的 `CharacterController` 内部。初始重叠检测是伤害正确性的保障，不能简单删除，否则最近的怪物反而不会受伤。本次把“命中逻辑”和“命中后的视觉运动”拆开：伤害立即结算，箭矢随后进入只负责表现的状态，不再执行 Trigger 或球形扫掠，因此不会穿透伤害第二只怪物。
+
+怪物聚集时，物理查询返回顺序不稳定。初始重叠目标会先排除身后目标，再比较目标身体中心到发射射线的横向距离；更接近瞄准线的目标优先，横向距离相同时再选择前向距离较近的目标。视觉前飞按距离累计，每个物理帧最多移动 `speed * fixedDeltaTime`，最后一步截断到剩余距离，因此箭速变化后仍精确飞行 1.5 米。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，选择弓箭手。
+2. 让多个 Slime 靠近或包围玩家，然后持续左键攻击。
+3. 确认弩口与怪物重叠时，最近的正前方怪物立即扣血，箭矢仍会带着 Trail 飞出怪群。
+4. 确认视觉前飞不会继续伤害其他怪物，一支箭仍只结算一个目标。
+5. 在正常距离攻击怪物，确认箭矢仍命中最近目标并保留正常命中停留效果。
+6. 面向墙体射击，确认墙体阻挡未失效；再切换法师确认火球轨迹和爆炸未变化。
+7. 在 Test Runner 的 EditMode 中运行 `RangedCharacterPlayableTests`，然后运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+弓箭手在怪群中看不到箭，不是对象池没生成，而是弩口已经落在怪物碰撞体里，`Launch` 当帧就完成伤害并进入停留状态。我保留了初始重叠伤害，但把后续视觉单独做成一个状态：目标立即扣血，箭矢关闭 Collider 和扫掠后继续前飞 1.5 米，所以画面上能明确看到射击，同时不会穿透伤害第二个怪物。怪物聚集时还会按瞄准线距离选择前方目标，避免依赖不稳定的物理查询顺序。
+
+### 7. 面试追问
+
+1. **为什么不直接删除初始重叠检测？** SphereCast 不会稳定报告起点内部的 Collider，删除后贴脸怪物可能完全不受伤。
+2. **为什么视觉箭不继续进行碰撞？** 伤害已经结算，关闭碰撞可以保证单体箭不会因为视觉补偿变成穿透群攻。
+3. **为什么用距离而不是固定时间？** 距离是视觉需求，按距离累计后即使调整箭速，箭仍固定飞出 1.5 米。
+4. **怪物聚集时怎样选择目标？** 排除身后目标，优先选择身体中心最接近发射射线的目标，再以较近前向距离作为并列规则。
+5. **对象池复用时要重置什么？** 视觉前飞标记、剩余距离、Collider、Rigidbody、Trail、Renderer、拥有者和回调都必须恢复。
+
+### 8. 本次涉及知识点
+
+- 初始重叠与连续碰撞检测的差异
+- 逻辑命中和视觉投射物解耦
+- 向量点积、射线横向距离与目标排序
+- `FixedUpdate` 中按距离推进
+- 单体伤害幂等保护
+- Collider、TrailRenderer 与对象池状态恢复
+- Prefab 参数与 Editor 生成工具同步
+
+## 功能名称：弓箭手普通攻击最终简化——点击即发射与双条件回收
+
+### 1. 实现目标
+
+按最终验收需求简化弓箭手普通攻击：玩家每次按下左键都在当帧从弩口发射一支 Human Bolt，不再等待攻击动画事件或上一段攻击结束。箭矢只在后续飞行中碰到正式怪物身体时造成一次伤害并回池，或者飞满 `1.25s` 寿命后自动回池；出生重叠、地面、墙体、环境物件和 Trigger 都不能再让箭矢生成后秒消失。
+
+本节方案取代上一节的“贴脸立即伤害 + 视觉前飞”规则。最终需求更强调每次点击都必须看见箭飞出去，因此出生点已经覆盖弩口的怪物不会被本支箭命中，箭会先脱离怪群并继续飞行。
+
+### 2. 涉及脚本
+
+- `PlayerCombatComponent.cs`：识别弓箭手普通攻击，每个 `LeftMouseDown` 建立独立攻击令牌并立即调用远程发射。
+- `PlayerRangedAttackComponent.cs`：保留 Human Bolt 对象池和真实弩口出生点，移除弓箭手命中停留与贴脸视觉前飞配置。
+- `PlayerBasicAttackProjectile.cs`：关闭弓箭手箭矢 Trigger，记录出生重叠目标，并用逐物理帧球形扫掠只检测正式怪物身体。
+- `PlayerRuntime.prefab`、`RangedCharacterAnimatorControllerSetupTool.cs`：删除已经不再使用的弓箭停留和视觉前飞序列化参数。
+- `RangedCharacterPlayableTests.cs`：验证连续点击立即生成、出生重叠不回收、环境不阻挡、后续怪物命中和寿命回收。
+
+### 3. 调用流程
+
+左键按下 -> `PlayerCombatComponent.CheckAttackInput` -> 创建新的攻击令牌 -> `StartImmediateArcherAttack` -> 同帧调用 `PlayerRangedAttackComponent.Fire` -> 从对象池取得 Human Bolt -> `Launch` 记录出生重叠怪物并关闭 Trigger -> `FixedUpdate` 执行直线移动和 `SphereCastNonAlloc` -> 后续命中正式怪物时由 `PlayerBasicAttackDamageResolver` 结算并回池；没有命中则在 `Update` 检查到 `1.25s` 寿命结束后回池。
+
+### 4. 核心原理
+
+这次把弓箭手的输入、命中和回收规则收紧成三条清晰规则。第一，输入层只认离散的左键按下，每次按下都创建新令牌并立即发射，所以攻击动画慢、`shoot` 事件丢失或上一支箭仍在飞行，都不会吞掉这次点击。动画事件仍可调用统一释放入口，但同一个令牌已经发射后会被幂等检查拦住，不会重复生成第二支箭。
+
+第二，Human Bolt 的根 Trigger Collider 在发射时关闭。箭矢不再依赖第三方 Prefab 的 Trigger 回调，而是在每个 `FixedUpdate` 对完整移动线段执行球形扫掠。筛选条件只接受非 Trigger 且能找到 `FighterInterface` 的碰撞体，因此地面、墙体、攻击范围 Trigger 和 `shootPos` 都不会回收箭矢。
+
+第三，发射时用一次 `OverlapSphereNonAlloc` 记录已经覆盖弩口的正式怪物身体，但不结算也不回收。这些 Collider 在该支箭整个生命周期内都被忽略，避免怪物聚集或弩口落在怪物体内时箭矢同帧消失。对象回池时清空忽略集合、拥有者、计时和特效状态，保证下一次复用不会继承旧数据。法师火球仍使用原来的弧线、初始重叠、环境碰撞与范围爆炸流程。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，在选角后进入弓箭手。
+2. 在完全空旷的位置快速单击和连续单击左键，确认每次点击都立即出现一支 Human Bolt，多支箭可以同时飞行。
+3. 让多个 Slime 或 Boss 靠近并包围弩口，再快速点击，确认箭矢不会在 Hierarchy 中只存在一帧或 `0.1s` 就消失，而是能飞离怪群。
+4. 在正常距离放置怪物，确认箭矢碰到正式身体后立即消失，怪物只扣一次血。
+5. 面向地面、墙体和怪物攻击范围 Trigger 射击，确认箭不会因此消失；当前最终规则允许箭穿墙并命中墙后的怪物。
+6. 在空旷处射击，确认约 `1.25s` 后箭矢自动回池。
+7. 切换法师，确认紫色弧线火球和范围爆炸没有改变。
+8. 在 Test Runner 的 EditMode 中运行 `RangedCharacterPlayableTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+弓箭手偶发看不到箭的根因不是没有创建，而是箭出生时弩口已经处在怪物或复杂 Trigger 中，旧逻辑会在生成帧立刻命中并回池。我把弓箭手普攻简化成点击即发射，并用攻击令牌保证动画事件和代码入口不会重复生成。碰撞方面关闭 Prefab 自带 Trigger，改为每个物理帧对运动路径做球形扫掠，只接受正式怪物身体；出生时已经重叠的目标会在本支箭生命周期内忽略，地面和墙也不会回收箭。最终只有后续命中怪物或寿命结束两种回收条件，对象池回收时再统一重置状态，所以发射表现稳定，也保留了高速投射物防穿透能力。
+
+### 7. 面试追问
+
+1. **为什么每次点击还要使用攻击令牌？** 动画事件和代码都可能请求发射，令牌能保证同一次点击只成功生成一支箭，同时允许下一次点击立即创建新的箭。
+2. **为什么不用普通 `OnTriggerEnter`？** 第三方箭 Prefab 周围可能有复杂 Trigger，而且高速箭一帧能跨过薄碰撞体；对完整位移做球形扫掠更稳定。
+3. **为什么出生重叠目标要忽略整个生命周期？** 如果只忽略一帧，下一帧箭仍可能位于同一个大 Collider 内并立即回池。生命周期级忽略能保证箭真正飞离弩口。
+4. **这样会有什么玩法取舍？** 箭会穿过墙体，且与弩口重叠的贴脸怪物不会被该支箭伤害。这是为了严格满足“只有后续碰怪或超时消失、每次点击都看得到发射”的最终验收规则。
+5. **对象池复用要重置哪些状态？** 要清空出生重叠集合、飞行计时、拥有者、伤害回调、Rigidbody、Renderer、粒子和 Trail，避免上一支箭影响下一支。
+
+### 8. 本次涉及知识点
+
+- 输入边沿 `LeftMouseDown` 与持续按住的区别
+- 攻击令牌和幂等释放
+- `FixedUpdate`、`SphereCastNonAlloc` 与高速投射物连续检测
+- Collider、Trigger 与 `FighterInterface` 目标筛选
+- 出生重叠记录与 `HashSet<Collider>` 生命周期管理
+- 对象池获取、回收和状态重置
+- 逻辑伤害与动画表现解耦
+- 明确玩法规则后的技术取舍
+
+## 功能名称：项目 README 重写与求职简历包装
+
+### 1. 实现目标
+
+根据当前仓库的真实代码、场景、配置、服务端和测试情况，重写已经过时的项目 README。新版文档要让第一次打开仓库的人快速理解游戏玩法、完成度、核心架构、运行方法和项目边界，同时把能体现 Unity 客户端能力的内容提炼成简历和面试语言。
+
+本次只修改项目文档，不改动客户端脚本、服务端脚本、Prefab、场景或配置资源。
+
+### 2. 涉及脚本
+
+- `README.md`：更新项目定位、快速体验、操作方式、系统介绍、架构、调用链、联网配置、测试、已知不足和后续计划。
+- `ProjectLearningNotes.md`：记录项目包装时如何从真实代码中提炼求职亮点。
+- `Assets/Script`：只读扫描客户端的 Architecture、Player、Combat、Skills、Enemies、Boss、Inventory、UI、Network 和 Services 模块。
+- `TreasureHunter.Server`：只读扫描 TCP/Protobuf、Session、用户业务、BCrypt 和 SQL Server 存档逻辑。
+- `Assets/Editor/Tests`：只读核对现有测试覆盖与当前配置之间的一致性。
+
+### 3. 调用流程
+
+项目结构与代码扫描 -> 核对构建场景、职业和配置数据 -> 抽取客户端与服务端核心调用链 -> 区分已实现功能、第一阶段能力和后续规划 -> 重写 README -> 提炼简历项目描述与面试表达。
+
+README 中重点展示的完整玩法链路为：
+
+`登录/游客模式 -> 四槽位选角 -> LoadingScene -> MainScene -> 战斗成长 -> 击破 5 次金库 -> BossRoomScene -> Spider King -> 返回主场景继续周回`。
+
+### 4. 核心原理
+
+求职项目文档不能只罗列脚本名，也不能把未来计划写成已经完成。写 README 时需要从代码中寻找证据：场景是否加入 Build Settings、Prefab 是否存在、配置表有多少职业和技能、System 是否真正被架构注册、存档字段是否真的经过协议和数据库、测试是“存在”还是“已经运行通过”。
+
+简历内容应优先描述自己负责的技术问题、采取的设计和得到的结果。例如“写了对象池”信息量较低，而“将怪物、投射物、技能特效和掉落物接入对象池，并在回收时重置事件、协程、Collider、Trail 和业务状态，降低频繁创建销毁及状态残留风险”更能体现客户端经验。
+
+项目存在历史兼容代码并不是必须隐藏的问题。更合适的表达是：在保持原型可运行的前提下，将玩家逻辑逐步迁移到 QFramework 与组件化 PlayerRuntime，并说明当前仍有遗留模块待收敛。这比直接声称“架构已经完全解耦”更真实，也更容易回答面试追问。
+
+### 5. Unity 测试方式
+
+1. 在 Markdown 预览中检查 README 的标题、表格、代码块和 Mermaid 流程图。
+2. 核对 README 中列出的 5 个场景均已加入 Build Settings。
+3. 从 `LoginScene` 运行，使用游客模式创建或选择角色，确认经过 `LoadingScene` 进入 `MainScene`。
+4. 分别检查四职业移动和普通攻击，并验证 `B`、`Tab`、`Esc`、`1/2/3` 等正式操作。
+5. 在 Development Build 或编辑器中使用 F1 开启调试，再验证 L、P、O、N。
+6. 检查联网说明没有包含真实连接串、密码或 Token。
+7. 在 Test Runner 中运行全部 EditMode 测试；当前工作区同时包含 v3.0 数值调整，需要重点核对 JSON、ScriptableObject、Prefab 和回归断言是否一致。
+
+### 6. 面试表达
+
+这个项目是我个人持续迭代的 Unity 3D 动作 Roguelite。玩法上有四职业、怪物战斗、随机成长、背包掉落和 Boss 周回；架构上我把玩家数据和规则放到 QFramework 的 Model、System、Command、Query 和 Event 中，MonoBehaviour 主要处理输入、动画、物理和 UI。项目还实现了怪物 FSM、Boss 行为树、多类对象池、Addressables 技能特效加载，以及 TCP/Protobuf 登录和角色存档。为了方便演示，我又做了不依赖服务端的游客 JSON 存档，并加入临时文件和备份恢复。当前项目仍保留少量历史兼容代码，我会通过测试保护逐步迁移，而不是一次性大改导致原有玩法失效。
+
+### 7. 面试追问
+
+1. **为什么玩家要拆成多个组件？** 通用控制器只负责装配，移动、战斗、生命、成长、表现和远程攻击分别维护，修改某个职业表现时不需要同时改权威属性或存档规则。
+2. **为什么使用 QFramework？** 主要利用 Model、System、Command、Query 和 Event 明确读写边界，让 UI 与 MonoBehaviour 不直接修改权威数据，也方便用 EditMode 测试规则。
+3. **项目里的网络功能做到什么程度？** 当前完成账号注册登录、四角色槽、进入离开和成长存档，不是多人战斗同步；服务端通过 Session 绑定当前角色并校验客户端提交的成长范围。
+4. **对象池最容易出现什么问题？** 回收后状态残留，包括事件未注销、协程未停止、Collider 或 Trail 状态错误、旧目标引用和伤害幂等标记未清理，所以每类池化对象都有明确的重置入口。
+5. **项目目前最大的不足是什么？** 玩家旧逻辑尚未完全迁移，背包没有持久化，Addressables 还是本地加载阶段，v3.0 数值配置也需要完成资源、Prefab 和测试的最终一致性验证，这些都有明确的后续收敛顺序。
+
+### 8. 本次涉及知识点
+
+- 求职项目 README 的信息层级
+- 从代码、Prefab、场景和配置中核实功能
+- 已实现、原型阶段和后续计划的边界
+- Unity 客户端简历的 STAR/问题—方案—结果表达
+- Mermaid 架构图与调用链表达
+- 技术亮点和代码数量之间的区别
+- 第三方资源授权说明
+- 网络、存档和测试能力的准确表述
+- 遗留代码迁移与风险控制
+
+## 功能名称：v3.0 全局战斗与成长数值重平衡
+
+### 1. 实现目标
+
+把策划案 v3.0 中已经确认的数值真正同步到游戏运行时，解决职业强度差异失控、升级收益过高、怪物指数膨胀、技能后期倍率失控和 Boss 首轮过弱的问题。同时让角色、升级、怪物、金库、技能、体力、掉落和 Boss 都读取同一套明确公式，方便后续继续做数据测试和求职展示。
+
+### 2. 涉及脚本
+
+- `GameConfig.cs`：保存等级经验、通用兜底属性、升级幅度、升级次数上限、权重、治疗和普通怪 V/B 成长系数。
+- `PlayerModel.cs`、`PlayerProgressionSystem.cs`：初始化职业属性，应用升级公式与次数上限，固定生命恢复成长，并限制本局等级为 20。
+- `PlayerMovementComponent.cs`：应用 100 点体力、跳跃/翻滚/冲刺消耗和恢复速度。
+- `SlimeCo.cs`、`MonsSpawner.cs`：应用怪物基础属性、攻击间隔、V/B 双维度成长和刷怪节奏。
+- `BoxCo.cs`：应用金库血量、经验、伤害分、击破分、20% 治疗和历史分数重建公式。
+- `SpiderKingBossController.cs`、`BossRoomSceneBootstrap.cs`：应用 Boss 基础数值、狂暴倍率、周回成长与移速上限。
+- `GameplayRuntime.cs`、`BossVictoryPortalSpawner.cs`：保存跨场景的 Boss 击杀奖励分。
+- `CharacterDefine.json`、`SkillDefine.json`：保存四职业基础值和三种技能的四级精确配置。
+- `InventoryDatabase.asset`、`HealingPotion.asset`、`ManaPotion.asset`：保存 12% 小怪掉率、55:45 药水权重、药水效果与 Boss 不放回掉落数量。
+- `Slime1.prefab`、`Slime2.prefab`、`Box.prefab`、`PlayerRuntime.prefab`、`Spider King.prefab`、`MainScene.unity`、`BossRoomScene.unity`：同步 Inspector 序列化值。
+- `InventorySystemTests.cs`、`SkillConfigValidationTests.cs`、`RangedCharacterPlayableTests.cs`、`WarriorPlayableTests.cs`：把资源回归断言同步到 v3.0 规则。
+
+### 3. 调用流程
+
+职业配置加载 -> `PlayerModel.Reset` 建立基础属性 -> 击杀怪物/击破金库获得经验 -> `PlayerProgressionSystem.DoLevelUp` -> 生成带权且不重复的属性三选一 -> `CanApplyAttributeUpgrade` 同时判断次数上限和数值上限 -> 应用属性并保存选择次数。
+
+金库击破 -> `BoxCo.HandleDestroyed` -> 按 `70 + 15V + 30B` 发经验并回复 20% 最大生命 -> 金库层级加一 -> `SlimeCo.ApplyVaultDifficulty` 按 V/B 重新从基础值计算怪物生命、攻击和经验 -> 每 5 个金库开放 Boss -> `SpiderKingBossController.ApplyBossRoundScaling` 按周回线性成长 -> Boss 死亡增加 `1000 × 当前轮次` 分并抽取两个不重复掉落。
+
+### 4. 核心原理
+
+这次数值平衡没有把结果直接写死在战斗代码里，而是采用“基础值 + 配置系数 + 运行时计数”的方式。职业和技能用 JSON，掉落用 ScriptableObject，场景通用规则用 `GameConfig`，Prefab 只保存自己独有的基础值。这样修改角色攻击力不会影响怪物公式，调整掉率也不需要碰战斗逻辑。
+
+普通怪和金库从指数成长改成线性双维度成长。V 代表已经击破的金库数，B 代表已经击败的 Boss 数。生命、攻击和经验每次都从基础值重新计算，而不是拿当前值继续乘，能避免浮点误差和对象池复用后重复叠乘。Boss 周回也使用线性成长，并给冷却和移动速度加下限/上限，避免高轮次进入不可读的攻击频率。
+
+升级系统同时限制“选择次数”和“最终数值”。次数上限决定一局构筑能投入多少次，数值上限处理职业初始减伤不同等情况。例如战士自带 20% 减伤，再选择五次 4% 后正好达到 40%；其他职业即使没有达到 40%，也会在五次后停止出现该选项。这让不同职业保留差异，同时不会无限堆叠。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，依次选择战士、法师、弓箭手和刺客，检查 HUD/属性面板中的生命、魔法、攻击、减伤和移动速度。
+2. 使用开发者升级功能或正常击杀怪物，确认 Lv.1 到 Lv.20 使用新经验表，Lv.20 不再升级，并在 5/10/15/20 级出现技能选择。
+3. 重复选择同一种属性，确认攻击/生命最多 6 次、移速与回血/吸血最多 4 次、暴击最多 7 次、闪避与减伤最多 5 次，达到上限后不再出现在三选一中。
+4. 消耗体力测试跳跃、翻滚和奔跑，确认上限 100、跳跃 20、翻滚 35、奔跑每秒 15、恢复每秒 20，体力低于 15 时不能新开冲刺。
+5. 击破第一个金库，确认基础血量 250、重生无敌 2 秒、获得 70 经验、回复 20% 最大生命；继续击破并观察血量和经验按 V/B 线性增长。
+6. 检查六个刷怪点每点最多 3 只、重生间隔 7 秒，总上限 18，近战与远程刷怪点比例为 4:2。
+7. 击杀普通怪，统计较多样本确认总掉率接近 12%，生命/魔法药水比例接近 55:45；验证生命药水回复 25%、魔法药水回复 30%、单格最多 5 个。
+8. 每击破 5 个金库进入 `BossRoomScene`，确认首轮 Boss 生命 4000，35% 血量进入狂暴；击杀后获得当前轮次对应的 1000、2000、3000……分，并掉落两个不同类型光球。
+9. 在 Test Runner 中运行全部 EditMode 测试；如果 Unity 已经打开项目，请直接在当前编辑器运行，避免第二个 Unity 实例被项目锁拦截。
+
+### 6. 面试表达
+
+我对项目做过一次完整的数值重平衡。数据层上，我把职业和技能放在 JSON，掉落放在 ScriptableObject，通用成长系数集中在 GameConfig；逻辑层不写具体平衡数值，只根据配置和局内进度计算。普通怪和金库原来是指数叠乘，后期很容易失控，我改成以金库击破数 V 和 Boss 击败数 B 为变量的线性公式，而且每次从基础值重算，避免对象池复用后重复叠乘。升级系统同时有次数上限和属性上限，技能固定四级，Boss 周回有速度上限和冷却下限。这样既能控制单局节奏，也方便后续用配置表做 AB 调参和自动化回归测试。
+
+### 7. 面试追问
+
+1. **为什么普通怪不用指数成长？** 当前项目单局会连续打多个金库，指数成长会让后段数值快速失控；线性 V/B 公式更容易预测 TTK，也更方便策划调参。
+2. **为什么每次从基础值重算？** 怪物会进入对象池，如果拿当前值继续乘，复用或重复收到事件时会多乘一次；基础值乘最终倍率具有幂等性。
+3. **次数上限和数值上限为什么都需要？** 次数上限控制构筑投入，数值上限保证暴击、闪避和减伤不会破坏战斗规则；两者解决的问题不同。
+4. **跨场景 Boss 分数怎么保存？** `GameplayRuntime` 把宝箱原始分和额外奖励分分开缓存，Boss 场景只增加奖励分，回到主场景后再与 `BoxCo.Score` 合并显示。
+5. **如何验证数值不是只改了 Inspector？** 我同步修改代码默认值、Prefab/场景序列化值和资源回归测试，并用编译、JSON 解析和 Test Runner 检查三者一致。
+
+### 8. 本次涉及知识点
+
+- 数据驱动设计与配置职责划分
+- 线性成长、指数成长与 TTK 控制
+- V/B 双变量难度公式
+- 幂等计算与对象池状态复用
+- 带权不放回随机抽取
+- 属性次数上限与最终数值上限
+- Unity Prefab、Scene YAML 与 ScriptableObject 序列化
+- 跨场景运行时状态与分数合并
+- EditMode 回归测试与配置边界测试

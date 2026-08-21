@@ -12,6 +12,9 @@ using UnityEngine;
 public class PlayerPresentationComponent : MonoBehaviour
 {
     private const string DirectionalAttackLayerName = "Attack Layer";
+    private const string SimpleAttackStateName = "Attack";
+    private const string SimpleSkillStateName = "Skill";
+    private const string SimpleEmptyStateName = "Empty";
     private const string SkillTriggerName = "Skill";
     private const string ComboAttack1StateName = "Atk4";
     private const string ComboAttack2StateName = "Atk1";
@@ -25,6 +28,9 @@ public class PlayerPresentationComponent : MonoBehaviour
     [SerializeField] private float scriptedAttackLayerFadeOutDuration = 0.12f;
     [SerializeField] private float skillLayerFadeOutDuration = 0.18f;
     [SerializeField] private float comboAttackCrossFadeDuration = 0.04f;
+    [SerializeField, Min(0f)] private float simpleMovementDampTime = 0.1f;
+    [SerializeField, Min(0f)] private float simpleActionTransitionDuration = 0.1f;
+    [SerializeField, Min(0.01f)] private float simpleActionLayerBlendDuration = 0.1f;
     [SerializeField] private bool logComboAnimationDebug = true;
 
     private Animator animator;
@@ -37,7 +43,11 @@ public class PlayerPresentationComponent : MonoBehaviour
     private float skillAnimationTimer;
     private float lastMoveInputX;
     private float lastMoveInputY = 1f;
+    private bool attackLayerFadingIn;
     private bool attackLayerFading;
+    private float attackLayerCurrentFadeInDuration;
+    private bool simpleAttackStateMissingLogged;
+    private bool simpleSkillStateMissingLogged;
 
     /// <summary>
     /// 当前职业模型真正使用的 Animator。优先选择带有 Controller 的 Animator，
@@ -61,6 +71,7 @@ public class PlayerPresentationComponent : MonoBehaviour
     private void Update()
     {
         TickSkillAnimationTimer();
+        TickAttackLayerFadeIn();
         TickAttackLayerFadeOut();
     }
 
@@ -88,8 +99,12 @@ public class PlayerPresentationComponent : MonoBehaviour
         SetDirectionalAttackLayerWeight(0f);
         attackLayerFadeDelayTimer = 0f;
         attackLayerCurrentFadeOutDuration = attackLayerFadeOutDuration;
+        attackLayerCurrentFadeInDuration = simpleActionLayerBlendDuration;
         skillAnimationTimer = 0f;
+        attackLayerFadingIn = false;
         attackLayerFading = false;
+        simpleAttackStateMissingLogged = false;
+        simpleSkillStateMissingLogged = false;
 
         if (animator == null)
         {
@@ -108,7 +123,10 @@ public class PlayerPresentationComponent : MonoBehaviour
     {
         if (animationStyle == CharacterAnimationStyle.SimpleSpeedAttack)
         {
-            SetFloat("Speed", isWalking ? (isRunning ? 1f : 0.5f) : 0f);
+            SetFloatDamped(
+                "Speed",
+                isWalking ? (isRunning ? 1f : 0.5f) : 0f,
+                simpleMovementDampTime);
             return;
         }
 
@@ -171,9 +189,20 @@ public class PlayerPresentationComponent : MonoBehaviour
     /// </summary>
     public void PlayRoll(float inputX, float inputY)
     {
-        SetFloat("RollX", inputX);
-        SetFloat("RollY", inputY);
-        SetTrigger("Roll");
+        if (HasParameter("Roll"))
+        {
+            SetFloat("RollX", inputX);
+            SetFloat("RollY", inputY);
+            SetTrigger("Roll");
+            return;
+        }
+
+        if (animationStyle == CharacterAnimationStyle.SimpleSpeedAttack)
+        {
+            // 简单动画职业没有翻滚动作。冲刺位移仍由 MovementComponent 负责，
+            // 表现层把 Speed 切到奔跑档，让战士、弓箭手和法师用两倍速移动动画快速冲向锁定方向。
+            SetFloat("Speed", 1f);
+        }
     }
 
     /// <summary>
@@ -186,7 +215,28 @@ public class PlayerPresentationComponent : MonoBehaviour
             SetBool("isAttacking", comboIndex > 0);
             if (comboIndex > 0)
             {
-                SetTrigger("Attack");
+                // 简单职业的攻击也使用独立上半身层。绑定模型时该层会先归零，
+                // 每次攻击必须显式恢复权重，否则 Trigger 已触发但玩家看不到动作。
+                BeginAttackLayerFadeIn(simpleActionLayerBlendDuration);
+                ResetTrigger("Attack");
+                if (!TryCrossFadeSimpleState(SimpleAttackStateName))
+                {
+                    // 兼容以后接入但没有项目标准 Attack 状态的第三方简单控制器。
+                    if (!simpleAttackStateMissingLogged)
+                    {
+                        simpleAttackStateMissingLogged = true;
+                        Debug.LogError(
+                            $"简单职业 Animator 缺少 {DirectionalAttackLayerName}.{SimpleAttackStateName}，Controller={GetAnimatorControllerName()}，已回退到 Attack Trigger。",
+                            this);
+                    }
+                    SetTrigger("Attack");
+                }
+            }
+            else
+            {
+                // 显式回到空状态再淡出层权重，避免非循环攻击停在最后一帧后影响下一次射击。
+                TryCrossFadeSimpleState(SimpleEmptyStateName);
+                BeginAttackLayerFadeOut(0f, simpleActionLayerBlendDuration);
             }
 
             return;
@@ -243,15 +293,29 @@ public class PlayerPresentationComponent : MonoBehaviour
     /// </summary>
     public void PlaySkill(float animationDuration)
     {
-        if (animationStyle == CharacterAnimationStyle.SimpleSpeedAttack)
-        {
-            SetTrigger(SkillTriggerName);
-            return;
-        }
-
         skillAnimationTimer = Mathf.Max(0.1f, animationDuration);
         attackLayerFading = false;
         attackLayerFadeDelayTimer = 0f;
+
+        if (animationStyle == CharacterAnimationStyle.SimpleSpeedAttack)
+        {
+            // 远程职业的 Skill 占位动作也包含 shoot 事件。
+            // 技能计时期间阻止普通攻击，避免该事件被误判为一次普攻投射物释放。
+            BeginAttackLayerFadeIn(simpleActionLayerBlendDuration);
+            ResetTrigger(SkillTriggerName);
+            if (!TryCrossFadeSimpleState(SimpleSkillStateName))
+            {
+                if (!simpleSkillStateMissingLogged)
+                {
+                    simpleSkillStateMissingLogged = true;
+                    Debug.LogError(
+                        $"简单职业 Animator 缺少 {DirectionalAttackLayerName}.{SimpleSkillStateName}，Controller={GetAnimatorControllerName()}，已回退到 Skill Trigger。",
+                        this);
+                }
+                SetTrigger(SkillTriggerName);
+            }
+            return;
+        }
 
         // 技能触发前先清掉普攻连击参数，防止当前卡在 Atk1/Atk2 时抢不过 Skill Trigger。
         SetDirectionalAttackLayerWeight(1f);
@@ -371,6 +435,20 @@ public class PlayerPresentationComponent : MonoBehaviour
         }
     }
 
+    private void SetFloatDamped(string parameterName, float value, float dampTime)
+    {
+        if (HasParameter(parameterName))
+        {
+            // 简单职业使用同一 BlendTree 表现待机、走路和奔跑。
+            // 参数阻尼能保留输入响应，同时避免松开方向键时动作权重瞬间跳变。
+            animator.SetFloat(
+                parameterName,
+                value,
+                Mathf.Max(0f, dampTime),
+                Time.deltaTime);
+        }
+    }
+
     private void SetBool(string parameterName, bool value)
     {
         if (HasParameter(parameterName))
@@ -392,6 +470,14 @@ public class PlayerPresentationComponent : MonoBehaviour
         if (HasParameter(parameterName))
         {
             animator.SetTrigger(parameterName);
+        }
+    }
+
+    private void ResetTrigger(string parameterName)
+    {
+        if (HasParameter(parameterName))
+        {
+            animator.ResetTrigger(parameterName);
         }
     }
 
@@ -504,8 +590,58 @@ public class PlayerPresentationComponent : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 简单职业从起点淡入项目标准状态。
+    /// 固定时间 CrossFade 在保留连续重播能力的同时，避免弩射击、法杖和剑击动作瞬间硬切。
+    /// </summary>
+    private bool TryCrossFadeSimpleState(string stateName)
+    {
+        if (animator == null)
+        {
+            return false;
+        }
+
+        int layerIndex = animator.GetLayerIndex(DirectionalAttackLayerName);
+        if (layerIndex < 0)
+        {
+            return false;
+        }
+
+        int fullPathHash = Animator.StringToHash(
+            $"{DirectionalAttackLayerName}.{stateName}");
+        int shortNameHash = Animator.StringToHash(stateName);
+        int playableStateHash = animator.HasState(layerIndex, fullPathHash)
+            ? fullPathHash
+            : shortNameHash;
+        if (!animator.HasState(layerIndex, playableStateHash))
+        {
+            return false;
+        }
+
+        animator.CrossFadeInFixedTime(
+            playableStateHash,
+            Mathf.Max(0f, simpleActionTransitionDuration),
+            layerIndex,
+            0f);
+        return true;
+    }
+
+    private void BeginAttackLayerFadeIn(float duration)
+    {
+        attackLayerFading = false;
+        attackLayerFadeDelayTimer = 0f;
+        attackLayerCurrentFadeInDuration = Mathf.Max(0.01f, duration);
+        attackLayerFadingIn = attackLayerWeight < 1f;
+
+        if (!attackLayerFadingIn)
+        {
+            SetDirectionalAttackLayerWeight(1f);
+        }
+    }
+
     private void BeginAttackLayerFadeOut(float delay, float duration)
     {
+        attackLayerFadingIn = false;
         attackLayerFadeDelayTimer = Mathf.Max(0f, delay);
         attackLayerCurrentFadeOutDuration = Mathf.Max(0.01f, duration);
         attackLayerFading = attackLayerWeight > 0f;
@@ -541,7 +677,36 @@ public class PlayerPresentationComponent : MonoBehaviour
         {
             skillAnimationTimer = 0f;
             SetInteger("ComboIndex", 0);
-            BeginAttackLayerFadeOut(0f, skillLayerFadeOutDuration);
+            BeginAttackLayerFadeOut(
+                0f,
+                animationStyle == CharacterAnimationStyle.SimpleSpeedAttack
+                    ? simpleActionLayerBlendDuration
+                    : skillLayerFadeOutDuration);
+        }
+    }
+
+    private void TickAttackLayerFadeIn()
+    {
+        AdvanceAttackLayerFadeIn(Time.deltaTime);
+    }
+
+    /// <summary>
+    /// 单独接收帧间隔，既便于 EditMode 回归测试精确推进，也避免把表现混合绑定到固定帧率。
+    /// </summary>
+    private void AdvanceAttackLayerFadeIn(float deltaTime)
+    {
+        if (!attackLayerFadingIn)
+        {
+            return;
+        }
+
+        float duration = Mathf.Max(0.01f, attackLayerCurrentFadeInDuration);
+        float nextWeight = Mathf.MoveTowards(attackLayerWeight, 1f, Mathf.Max(0f, deltaTime) / duration);
+        SetDirectionalAttackLayerWeight(nextWeight);
+
+        if (attackLayerWeight >= 1f)
+        {
+            attackLayerFadingIn = false;
         }
     }
 

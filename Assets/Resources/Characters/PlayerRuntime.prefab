@@ -17,6 +17,7 @@ GameObject:
   - component: {fileID: 1007}
   - component: {fileID: 1009}
   - component: {fileID: 1010}
+  - component: {fileID: 3974072919841607022}
   m_Layer: 6
   m_Name: PlayerRuntime
   m_TagString: Untagged
@@ -68,14 +69,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cc6983f4ef09481895c9c7007e5234d7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   attackLayerFadeOutDelay: 0.55
   attackLayerFadeOutDuration: 0.18
   attackLayerRunCancelFadeOutDuration: 0.06
   scriptedAttackLayerFadeOutDuration: 0.12
   skillLayerFadeOutDuration: 0.18
   comboAttackCrossFadeDuration: 0.04
+  simpleMovementDampTime: 0.1
+  simpleActionTransitionDuration: 0.1
+  simpleActionLayerBlendDuration: 0.1
   logComboAnimationDebug: 1
 --- !u!114 &1004
 MonoBehaviour:
@@ -87,24 +91,24 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7f2f9b997f0f4b00aa8f0fb5a2c1e6c1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   walkSpeed: 3
   runSpeed: 5
   attackMoveSpeedLimit: 3
-  rollSpeed: 12
-  rollDuration: 0.5
+  rollSpeed: 11.5
+  rollDuration: 0.48
   jumpHeight: 1
   gravity: -9.81
   coyoteTime: 0.12
   jumpBufferTime: 0.12
-  maxStamina: 120
-  currentStamina: 120
-  jumpStaminaCost: 30
-  rollStaminaCost: 40
-  runStaminaCostPerSecond: 18
-  minimumStaminaToStartRun: 5
-  staminaRecoverPerSecond: 15
+  maxStamina: 100
+  currentStamina: 100
+  jumpStaminaCost: 20
+  rollStaminaCost: 35
+  runStaminaCostPerSecond: 15
+  minimumStaminaToStartRun: 15
+  staminaRecoverPerSecond: 20
 --- !u!114 &1005
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -122,6 +126,8 @@ MonoBehaviour:
   secondToThirdComboReleaseDelayAfterResetEvent: 0.04
   fullAttackTimeout: 4
   animationEventFallbackTimeout: 1.25
+  eventlessAttackHitboxDelayRatio: 0.25
+  eventlessAttackHitboxDurationRatio: 0.35
   eventlessFirstAttackHitboxDelay: 0.24
   eventlessFirstAttackHitboxDuration: 0.22
   eventlessFirstAttackSecondHitboxDelayAfterClose: 0.1
@@ -176,6 +182,9 @@ MonoBehaviour:
   health: {fileID: 1007}
   progression: {fileID: 1006}
   audioComponent: {fileID: 1010}
+  rangedAttack: {fileID: 3974072919841607022}
+  skillCaster: {fileID: 0}
+  developerMode: {fileID: 0}
 --- !u!114 &1010
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -218,6 +227,28 @@ MonoBehaviour:
   attackVolume: 1
   skillVolume: 1
   hitVolume: 1
+--- !u!114 &3974072919841607022
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a22508eda5e04041814b48fdad1ae1a, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  prewarmCount: 8
+  spawnHeight: 1.15
+  spawnForwardOffset: 0.7
+  wizardProjectileVisualPrefab: {fileID: 125044, guid: ae6cf3671590f3741928b2570d0f0dba,
+    type: 3}
+  wizardExplosionVisualPrefab: {fileID: 106216, guid: 0944f4b9f4efb0542888c8a41b5983ae,
+    type: 3}
+  archerProjectileVisualPrefab: {fileID: 194614, guid: 975080680c2dd2349826cd2a445aff6c,
+    type: 3}
+  wizardExplosionVfxLifetime: 0.8
 --- !u!1 &2000
 GameObject:
   m_ObjectHideFlags: 0

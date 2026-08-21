@@ -9,12 +9,16 @@ using UnityEngine;
 public sealed class PlayerCombatComponent : MonoBehaviour, IController
 {
     private const int MaxCombo = 3;
+    private const float ProjectileReleaseRetryDelay = 0.05f;
+    private const string ArcherClassKey = "Archer";
 
     [SerializeField] private SphereCollider weaponCollider;
     [SerializeField] private float comboWindowTime = 0.8f;
     [SerializeField] private float secondToThirdComboReleaseDelayAfterResetEvent = 0.04f;
     [SerializeField] private float fullAttackTimeout = 4f;
     [SerializeField] private float animationEventFallbackTimeout = 1.25f;
+    [SerializeField, Range(0f, 1f)] private float eventlessAttackHitboxDelayRatio = 0.25f;
+    [SerializeField, Range(0.05f, 1f)] private float eventlessAttackHitboxDurationRatio = 0.35f;
     [SerializeField] private float eventlessFirstAttackHitboxDelay = 0.24f;
     [SerializeField] private float eventlessFirstAttackHitboxDuration = 0.22f;
     [SerializeField] private float eventlessFirstAttackSecondHitboxDelayAfterClose = 0.1f;
@@ -24,11 +28,18 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
 
     private PlayerPresentationComponent presentation;
     private PlayerAudioComponent audioComponent;
+    private PlayerRangedAttackComponent rangedAttack;
+    private CharacterAnimationStyle animationStyle;
+    private CharacterBasicAttackType basicAttackType;
+    private bool isArcherBasicAttack;
+    private float basicAttackDuration = 0.7f;
+    private float projectileReleaseRatio = 0.5f;
     private int currentCombo;
     private int attackHitWindowId;
     private float currentTimer;
     private float currentComboTimer;
     private float fallbackHitboxTimer;
+    private float eventlessAttackReleaseDelayTimer = -1f;
     private int scriptedFallbackCombo;
     private float scriptedHitboxDelayTimer = -1f;
     private float scriptedSecondHitboxDelayTimer = -1f;
@@ -40,10 +51,18 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     private bool isAttacking;
     private bool canComboNext;
     private bool queuedThirdComboAfterSecondAttack;
+    private int nextAttackToken;
+    private int activeAttackToken;
+    private int releasedProjectileAttackToken = -1;
+    private int projectileReleaseFailureLoggedToken = -1;
 
     public bool IsAttacking => isAttacking;
     public int CurrentCombo => currentCombo;
     public int AttackHitWindowId => attackHitWindowId;
+    public int AttackCollisionLayer => weaponCollider != null
+        ? weaponCollider.gameObject.layer
+        : gameObject.layer;
+    public bool IsProjectileBasicAttack => basicAttackType == CharacterBasicAttackType.Projectile;
     public IArchitecture GetArchitecture() => TreasureHunterArchitecture.Interface;
 
     /// <summary>
@@ -54,6 +73,25 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     {
         presentation = player != null ? player.Presentation : GetComponent<PlayerPresentationComponent>();
         audioComponent = player != null ? player.Audio : GetComponent<PlayerAudioComponent>();
+        rangedAttack = player != null ? player.RangedAttack : GetComponent<PlayerRangedAttackComponent>();
+
+        CharacterDefine define = player != null ? player.EntryDefine : null;
+        animationStyle = define != null
+            ? define.animationStyle
+            : CharacterAnimationStyle.DirectionalCombo;
+        basicAttackType = define != null
+            ? define.basicAttackType
+            : CharacterBasicAttackType.Melee;
+        basicAttackDuration = define != null && define.basicAttackDuration > 0f
+            ? define.basicAttackDuration
+            : 0.7f;
+        projectileReleaseRatio = define != null
+            ? Mathf.Clamp01(define.projectileReleaseRatio)
+            : 0.5f;
+        isArcherBasicAttack =
+            define != null &&
+            (define.classId == 3 ||
+             string.Equals(define.classKey, ArcherClassKey, System.StringComparison.OrdinalIgnoreCase));
 
         if (weaponCollider == null)
         {
@@ -81,6 +119,7 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     {
         TickScriptedFallbackAnimationEvents();
         TickQueuedThirdComboRelease();
+        TickEventlessAttackReleaseDelay(Time.deltaTime);
         TickFallbackHitbox();
         if (isAttacking)
         {
@@ -121,6 +160,13 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
             return;
         }
 
+        if (HasPendingProjectileRelease())
+        {
+            // 第三方远程动画可能在 shoot 事件之前提前发送 ResetCombo。
+            // 此时保留攻击序号和计时任务，箭矢释放后仍会由攻击超时正常收尾。
+            return;
+        }
+
         if (TryScheduleQueuedThirdComboAfterSecondAttack())
         {
             return;
@@ -133,6 +179,8 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         queuedThirdComboReleaseTimer = -1f;
         currentTimer = 0f;
         fallbackHitboxTimer = 0f;
+        eventlessAttackReleaseDelayTimer = -1f;
+        activeAttackToken = 0;
         ClearScriptedFallbackAnimationEvents();
         WeaponDisable();
 
@@ -151,6 +199,14 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     {
         if (ShouldIgnoreCombatAnimationEvent())
         {
+            return;
+        }
+
+        // 远程职业的旧动画资源可能把释放点命名为 WeaponEnable。
+        // 统一转成投射物释放，避免意外打开玩家身上的近战碰撞盒。
+        if (IsProjectileBasicAttack)
+        {
+            TryReleaseRangedBasicAttack();
             return;
         }
 
@@ -197,6 +253,8 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         currentTimer = 0f;
         currentComboTimer = 0f;
         fallbackHitboxTimer = 0f;
+        eventlessAttackReleaseDelayTimer = -1f;
+        activeAttackToken = 0;
         ClearScriptedFallbackAnimationEvents();
         ForceWeaponDisable();
     }
@@ -220,6 +278,49 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         return this.SendCommand(new RecordPlayerDamageDealtCommand(appliedDamage));
     }
 
+    /// <summary>
+    /// 远程普攻的统一释放入口。动画事件和代码计时都会调用这里，
+    /// 但同一个攻击序号只允许成功生成一个投射物，避免同一帧重复发射。
+    /// </summary>
+    public bool TryReleaseRangedBasicAttack()
+    {
+        if (!IsProjectileBasicAttack ||
+            !isAttacking ||
+            currentCombo != 1 ||
+            activeAttackToken <= 0 ||
+            releasedProjectileAttackToken == activeAttackToken ||
+            rangedAttack == null)
+        {
+            return false;
+        }
+
+        PlayerBasicAttackProjectile projectile = rangedAttack.Fire();
+        if (projectile == null)
+        {
+            if (projectileReleaseFailureLoggedToken != activeAttackToken)
+            {
+                projectileReleaseFailureLoggedToken = activeAttackToken;
+                Debug.LogWarning("远程普通攻击发射失败：投射物组件尚未完成职业配置，将在本次攻击结束前继续重试。", this);
+            }
+
+            eventlessAttackReleaseDelayTimer = ProjectileReleaseRetryDelay;
+            return false;
+        }
+
+        // 只有真正从对象池取得投射物后才消费攻击序号。
+        // 如果动画事件发生得过早而初始化尚未完成，代码计时仍有机会再次兜底。
+        releasedProjectileAttackToken = activeAttackToken;
+        eventlessAttackReleaseDelayTimer = -1f;
+        attackHitWindowId++;
+
+        if (audioComponent != null && audioComponent.AutoPlayActions)
+        {
+            audioComponent.PlayAttack(currentCombo);
+        }
+
+        return true;
+    }
+
     public void ResetRuntimeBuffers()
     {
         this.GetSystem<PlayerCombatSystem>().ResetRuntimeBuffers();
@@ -235,6 +336,14 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         IGameplayInput input = GameplayRuntime.Instance.CurrentInput;
         if (input == null || !input.LeftMouseDown)
         {
+            return;
+        }
+
+        // 弓箭手采用“每次点击立即发射”：不等待动画事件，也不丢弃上一段攻击期间的新点击。
+        // 每次点击都会创建新攻击令牌，旧动画 shoot 事件和计时兜底因此无法重复生成第二支箭。
+        if (isArcherBasicAttack)
+        {
+            StartImmediateArcherAttack();
             return;
         }
 
@@ -262,11 +371,37 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     {
         isAttacking = true;
         currentCombo = 1;
+        activeAttackToken = ++nextAttackToken;
         queuedThirdComboAfterSecondAttack = false;
         queuedThirdComboReleaseTimer = -1f;
         currentTimer = GetAttackTimeout();
 
+        // 先建立伤害/投射物释放任务，再请求 Animator 播放表现。
+        // 这样即使第三方动画状态或 Animation Event 异常，普通攻击仍能按配置结算。
+        StartFallbackHitboxIfNeeded();
         PlayAttackPresentation();
+    }
+
+    /// <summary>
+    /// 弓箭手即时普攻入口：每个 LeftMouseDown 都重新播放动作并在同一帧发射一支箭。
+    /// 技能动画已在 CheckAttackInput 前置过滤，因此这里不会打断技能释放。
+    /// </summary>
+    private void StartImmediateArcherAttack()
+    {
+        ClearScriptedFallbackAnimationEvents();
+        ForceWeaponDisable();
+        fallbackHitboxTimer = 0f;
+        eventlessAttackReleaseDelayTimer = -1f;
+        queuedThirdComboAfterSecondAttack = false;
+        queuedThirdComboReleaseTimer = -1f;
+        canComboNext = false;
+
+        isAttacking = true;
+        currentCombo = 1;
+        activeAttackToken = ++nextAttackToken;
+        currentTimer = GetAttackTimeout();
+        PlayAttackPresentation();
+        TryReleaseRangedBasicAttack();
     }
 
     /// <summary>
@@ -276,13 +411,16 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     {
         ClearScriptedFallbackAnimationEvents();
         fallbackHitboxTimer = 0f;
+        eventlessAttackReleaseDelayTimer = -1f;
         ForceWeaponDisable();
 
         currentCombo++;
+        activeAttackToken = ++nextAttackToken;
         canComboNext = false;
         queuedThirdComboAfterSecondAttack = false;
         queuedThirdComboReleaseTimer = -1f;
         currentTimer = GetAttackTimeout();
+        StartFallbackHitboxIfNeeded();
         PlayAttackPresentation();
     }
 
@@ -355,7 +493,6 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         }
 
         presentation.SetCombo(currentCombo);
-        StartFallbackHitboxIfNeeded();
     }
 
     /// <summary>
@@ -381,15 +518,29 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     /// </summary>
     private void StartFallbackHitboxIfNeeded()
     {
-        if (presentation == null)
+        bool usesCombatAnimationEvents = presentation != null
+            ? presentation.UsesCombatAnimationEvents
+            : animationStyle == CharacterAnimationStyle.DirectionalCombo;
+        if (!usesCombatAnimationEvents)
         {
-            return;
-        }
+            // 简单职业统一使用代码兜底：近战在动作中段开攻击盒，
+            // 远程的动画 shoot 事件与代码计时使用同一个配置释放点，攻击序号负责重复保护。
+            ForceWeaponDisable();
+            fallbackHitboxTimer = 0f;
+            float releaseRatio = IsProjectileBasicAttack
+                ? projectileReleaseRatio
+                : eventlessAttackHitboxDelayRatio;
+            float attackDuration = presentation != null
+                ? presentation.BasicAttackDuration
+                : Mathf.Max(0.1f, basicAttackDuration);
+            eventlessAttackReleaseDelayTimer = Mathf.Max(
+                0f,
+                attackDuration * releaseRatio);
 
-        if (!presentation.UsesCombatAnimationEvents)
-        {
-            WeaponEnable();
-            fallbackHitboxTimer = Mathf.Max(0.1f, presentation.BasicAttackDuration * 0.45f);
+            if (eventlessAttackReleaseDelayTimer <= 0f)
+            {
+                ResolveEventlessAttackRelease();
+            }
             return;
         }
 
@@ -471,6 +622,66 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
                 ResetCombo();
             }
         }
+    }
+
+    /// <summary>
+    /// 推进简单动画职业的攻击释放计时。
+    /// 战士在动作中段开启一次近战判定；弓箭手和法师在动画事件丢失时补发一次投射物。
+    /// </summary>
+    private void TickEventlessAttackReleaseDelay(float deltaTime)
+    {
+        if (eventlessAttackReleaseDelayTimer < 0f)
+        {
+            return;
+        }
+
+        bool usesCombatAnimationEvents = presentation != null
+            ? presentation.UsesCombatAnimationEvents
+            : animationStyle == CharacterAnimationStyle.DirectionalCombo;
+        if (!isAttacking || usesCombatAnimationEvents)
+        {
+            eventlessAttackReleaseDelayTimer = -1f;
+            return;
+        }
+
+        eventlessAttackReleaseDelayTimer -= Mathf.Max(0f, deltaTime);
+        if (eventlessAttackReleaseDelayTimer <= 0f)
+        {
+            ResolveEventlessAttackRelease();
+        }
+    }
+
+    private void ResolveEventlessAttackRelease()
+    {
+        eventlessAttackReleaseDelayTimer = -1f;
+        if (IsProjectileBasicAttack)
+        {
+            TryReleaseRangedBasicAttack();
+            return;
+        }
+
+        BeginEventlessAttackHitbox();
+    }
+
+    private bool HasPendingProjectileRelease()
+    {
+        return IsProjectileBasicAttack &&
+               isAttacking &&
+               currentTimer > 0f &&
+               eventlessAttackReleaseDelayTimer >= 0f &&
+               activeAttackToken > 0 &&
+               releasedProjectileAttackToken != activeAttackToken;
+    }
+
+    private void BeginEventlessAttackHitbox()
+    {
+        eventlessAttackReleaseDelayTimer = -1f;
+        WeaponEnable();
+        fallbackHitboxTimer = Mathf.Max(
+            0.05f,
+            presentation != null
+                ? presentation.BasicAttackDuration * eventlessAttackHitboxDurationRatio
+                : 0.2f);
     }
 
     private void TriggerFirstScriptedHitbox()

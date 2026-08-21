@@ -156,6 +156,14 @@ public sealed class BossPortalUnlockController : MonoBehaviour
         }
 
         destroyedVaultCount = BossRunProgressState.TotalVaultDestroyedCount;
+
+        // 中途退出 Boss 战后不会恢复战斗现场，但已满足门槛的入口必须重新生成。
+        // 这里只恢复传送门，不再次发放宝箱经验、掉落或击破事件。
+        if (!portalUnlocked && BossRunProgressState.IsBossEntranceReady && vaults.Length > 0)
+        {
+            portalUnlocked = true;
+            StartCoroutine(UnlockPortalNextFrame(vaults[0]));
+        }
     }
 
     /// <summary>

@@ -13,7 +13,8 @@ public sealed class DBService : Singleton<DBService>
 
     public void Init()
     {
-        // 启动阶段只验证配置；每次业务操作按需打开并及时释放独立连接。
+        // 启动阶段先验证配置并执行幂等结构检查，让权限不足或迁移失败尽早暴露，
+        // 不要等到玩家登录后才发现存档表不可用。
         Settings.Load();
         _connectionString = Settings.ConnectionString;
 
@@ -21,6 +22,9 @@ public sealed class DBService : Singleton<DBService>
         {
             throw new InvalidOperationException("Database connection string is not configured.");
         }
+
+        using SqlConnection connection = OpenConnection();
+        EnsurePlayerCharactersTable(connection);
     }
 
     /// <summary>
@@ -64,12 +68,50 @@ public sealed class DBService : Singleton<DBService>
                     ClassId INT NOT NULL,
                     Level INT NOT NULL CONSTRAINT DF_PlayerCharacters_Level DEFAULT 1,
                     Exp INT NOT NULL CONSTRAINT DF_PlayerCharacters_Exp DEFAULT 0,
+                    PendingAttributeUpgradeCount INT NOT NULL CONSTRAINT DF_PlayerCharacters_PendingAttributeUpgradeCount DEFAULT 0,
+                    VaultDestroyedCount INT NOT NULL CONSTRAINT DF_PlayerCharacters_VaultDestroyedCount DEFAULT 0,
+                    CompletedBossCount INT NOT NULL CONSTRAINT DF_PlayerCharacters_CompletedBossCount DEFAULT 0,
                     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_PlayerCharacters_CreatedAt DEFAULT SYSUTCDATETIME(),
                     UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_PlayerCharacters_UpdatedAt DEFAULT SYSUTCDATETIME(),
                     CONSTRAINT FK_PlayerCharacters_Users FOREIGN KEY (UserId) REFERENCES dbo.Users(Id),
                     CONSTRAINT UQ_PlayerCharacters_User_Slot UNIQUE (UserId, SlotIndex),
                     CONSTRAINT CK_PlayerCharacters_Slot CHECK (SlotIndex >= 0 AND SlotIndex <= 3),
                     CONSTRAINT CK_PlayerCharacters_Class CHECK (ClassId IN (1, 2, 3,4))
+                );
+            END
+
+            IF COL_LENGTH(N'dbo.PlayerCharacters', N'PendingAttributeUpgradeCount') IS NULL
+            BEGIN
+                ALTER TABLE dbo.PlayerCharacters
+                ADD PendingAttributeUpgradeCount INT NOT NULL
+                    CONSTRAINT DF_PlayerCharacters_PendingAttributeUpgradeCount DEFAULT 0;
+            END
+
+            IF COL_LENGTH(N'dbo.PlayerCharacters', N'VaultDestroyedCount') IS NULL
+            BEGIN
+                ALTER TABLE dbo.PlayerCharacters
+                ADD VaultDestroyedCount INT NOT NULL
+                    CONSTRAINT DF_PlayerCharacters_VaultDestroyedCount DEFAULT 0;
+            END
+
+            IF COL_LENGTH(N'dbo.PlayerCharacters', N'CompletedBossCount') IS NULL
+            BEGIN
+                ALTER TABLE dbo.PlayerCharacters
+                ADD CompletedBossCount INT NOT NULL
+                    CONSTRAINT DF_PlayerCharacters_CompletedBossCount DEFAULT 0;
+            END
+
+            IF OBJECT_ID(N'dbo.CharacterAttributeUpgrades', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CharacterAttributeUpgrades (
+                    CharacterId BIGINT NOT NULL,
+                    AttributeType INT NOT NULL,
+                    UpgradeCount INT NOT NULL,
+                    CONSTRAINT PK_CharacterAttributeUpgrades PRIMARY KEY (CharacterId, AttributeType),
+                    CONSTRAINT FK_CharacterAttributeUpgrades_Character
+                        FOREIGN KEY (CharacterId) REFERENCES dbo.PlayerCharacters(Id) ON DELETE CASCADE,
+                    CONSTRAINT CK_CharacterAttributeUpgrades_Type CHECK (AttributeType >= 1 AND AttributeType <= 8),
+                    CONSTRAINT CK_CharacterAttributeUpgrades_Count CHECK (UpgradeCount >= 0)
                 );
             END
             """,
@@ -111,6 +153,7 @@ public sealed class DBService : Singleton<DBService>
 
         if (user != null)
         {
+            EnsurePlayerCharactersTable(connection);
             LoadPlayer(connection, user);
         }
 
@@ -235,6 +278,9 @@ public sealed class DBService : Singleton<DBService>
                         ClassId = @ClassId,
                         Level = 1,
                         Exp = 0,
+                        PendingAttributeUpgradeCount = 0,
+                        VaultDestroyedCount = 0,
+                        CompletedBossCount = 0,
                         UpdatedAt = SYSUTCDATETIME()
                     OUTPUT INSERTED.Id,
                            INSERTED.UserId,
@@ -242,7 +288,10 @@ public sealed class DBService : Singleton<DBService>
                            INSERTED.Name,
                            INSERTED.ClassId,
                            INSERTED.Level,
-                           INSERTED.Exp
+                           INSERTED.Exp,
+                           INSERTED.PendingAttributeUpgradeCount,
+                           INSERTED.VaultDestroyedCount,
+                           INSERTED.CompletedBossCount
                     WHERE UserId = @UserId AND SlotIndex = @SlotIndex;
                 END
                 ELSE
@@ -255,7 +304,10 @@ public sealed class DBService : Singleton<DBService>
                            INSERTED.Name,
                            INSERTED.ClassId,
                            INSERTED.Level,
-                           INSERTED.Exp
+                           INSERTED.Exp,
+                           INSERTED.PendingAttributeUpgradeCount,
+                           INSERTED.VaultDestroyedCount,
+                           INSERTED.CompletedBossCount
                     VALUES (@UserId, @SlotIndex, @Name, @ClassId, 1, 0);
                 END
                 """,
@@ -274,6 +326,16 @@ public sealed class DBService : Singleton<DBService>
                 {
                     character = ReadCharacter(reader);
                 }
+            }
+
+            if (character != null)
+            {
+                using var clearUpgradesCommand = new SqlCommand(
+                    "DELETE FROM dbo.CharacterAttributeUpgrades WHERE CharacterId = @CharacterId",
+                    connection,
+                    transaction);
+                clearUpgradesCommand.Parameters.AddWithValue("@CharacterId", character.ID);
+                clearUpgradesCommand.ExecuteNonQuery();
             }
 
             transaction.Commit();
@@ -295,6 +357,94 @@ public sealed class DBService : Singleton<DBService>
         using SqlConnection connection = OpenConnection();
         EnsurePlayerCharactersTable(connection);
         return LoadCharacters(connection, userId);
+    }
+
+    /// <summary>
+    /// 原子保存角色成长。角色主记录和属性强化子表必须一起成功，避免只保存了一半数据。
+    /// </summary>
+    public TCharacter SaveCharacterProgress(
+        long userId,
+        long characterId,
+        int level,
+        int exp,
+        int pendingAttributeUpgradeCount,
+        int vaultDestroyedCount,
+        int completedBossCount,
+        IReadOnlyDictionary<int, int> attributeUpgradeCounts)
+    {
+        using SqlConnection connection = OpenConnection();
+        EnsurePlayerCharactersTable(connection);
+        using SqlTransaction transaction = connection.BeginTransaction();
+
+        try
+        {
+            using var updateCommand = new SqlCommand(
+                """
+                UPDATE dbo.PlayerCharacters
+                SET Level = @Level,
+                    Exp = @Exp,
+                    PendingAttributeUpgradeCount = @PendingAttributeUpgradeCount,
+                    VaultDestroyedCount = @VaultDestroyedCount,
+                    CompletedBossCount = @CompletedBossCount,
+                    UpdatedAt = SYSUTCDATETIME()
+                WHERE Id = @CharacterId AND UserId = @UserId;
+                """,
+                connection,
+                transaction);
+
+            updateCommand.Parameters.AddWithValue("@Level", level);
+            updateCommand.Parameters.AddWithValue("@Exp", exp);
+            updateCommand.Parameters.AddWithValue("@PendingAttributeUpgradeCount", pendingAttributeUpgradeCount);
+            updateCommand.Parameters.AddWithValue("@VaultDestroyedCount", vaultDestroyedCount);
+            updateCommand.Parameters.AddWithValue("@CompletedBossCount", completedBossCount);
+            updateCommand.Parameters.AddWithValue("@CharacterId", characterId);
+            updateCommand.Parameters.AddWithValue("@UserId", userId);
+
+            if (updateCommand.ExecuteNonQuery() != 1)
+            {
+                throw new InvalidOperationException("Character does not belong to the current user.");
+            }
+
+            using (var deleteCommand = new SqlCommand(
+                       "DELETE FROM dbo.CharacterAttributeUpgrades WHERE CharacterId = @CharacterId",
+                       connection,
+                       transaction))
+            {
+                deleteCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                deleteCommand.ExecuteNonQuery();
+            }
+
+            foreach ((int attributeType, int upgradeCount) in attributeUpgradeCounts)
+            {
+                if (upgradeCount <= 0)
+                {
+                    continue;
+                }
+
+                using var insertCommand = new SqlCommand(
+                    """
+                    INSERT INTO dbo.CharacterAttributeUpgrades (CharacterId, AttributeType, UpgradeCount)
+                    VALUES (@CharacterId, @AttributeType, @UpgradeCount);
+                    """,
+                    connection,
+                    transaction);
+                insertCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                insertCommand.Parameters.AddWithValue("@AttributeType", attributeType);
+                insertCommand.Parameters.AddWithValue("@UpgradeCount", upgradeCount);
+                insertCommand.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+
+        List<TCharacter> characters = LoadCharacters(userId);
+        TCharacter? savedCharacter = characters.Find(character => character.ID == characterId);
+        return savedCharacter ?? throw new InvalidOperationException("Saved character could not be reloaded.");
     }
 
     private static void LoadPlayer(SqlConnection connection, TUser user)
@@ -331,24 +481,60 @@ public sealed class DBService : Singleton<DBService>
     {
         var characters = new List<TCharacter>();
 
+        using (var command = new SqlCommand(
+                   """
+                   SELECT Id, UserId, SlotIndex, Name, ClassId, Level, Exp,
+                          PendingAttributeUpgradeCount, VaultDestroyedCount, CompletedBossCount
+                   FROM dbo.PlayerCharacters
+                   WHERE UserId = @UserId
+                   ORDER BY SlotIndex;
+                   """,
+                   connection))
+        {
+            command.Parameters.AddWithValue("@UserId", userId);
+
+            using SqlDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                characters.Add(ReadCharacter(reader));
+            }
+        }
+
+        LoadAttributeUpgrades(connection, userId, characters);
+
+        return characters;
+    }
+
+    private static void LoadAttributeUpgrades(
+        SqlConnection connection,
+        long userId,
+        List<TCharacter> characters)
+    {
+        if (characters.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<long, TCharacter> charactersById = characters.ToDictionary(character => character.ID);
         using var command = new SqlCommand(
             """
-            SELECT Id, UserId, SlotIndex, Name, ClassId, Level, Exp
-            FROM dbo.PlayerCharacters
-            WHERE UserId = @UserId
-            ORDER BY SlotIndex;
+            SELECT upgrades.CharacterId, upgrades.AttributeType, upgrades.UpgradeCount
+            FROM dbo.CharacterAttributeUpgrades AS upgrades
+            INNER JOIN dbo.PlayerCharacters AS characters ON characters.Id = upgrades.CharacterId
+            WHERE characters.UserId = @UserId;
             """,
             connection);
-
         command.Parameters.AddWithValue("@UserId", userId);
 
         using SqlDataReader reader = command.ExecuteReader();
         while (reader.Read())
         {
-            characters.Add(ReadCharacter(reader));
+            long characterId = reader.GetInt64(0);
+            if (charactersById.TryGetValue(characterId, out TCharacter? character))
+            {
+                character.AttributeUpgradeCounts[reader.GetInt32(1)] = reader.GetInt32(2);
+            }
         }
-
-        return characters;
     }
 
     private static TCharacter ReadCharacter(SqlDataReader reader)
@@ -366,6 +552,9 @@ public sealed class DBService : Singleton<DBService>
             Class = classId,
             Level = reader.GetInt32(5),
             Exp = reader.GetInt32(6),
+            PendingAttributeUpgradeCount = reader.GetInt32(7),
+            VaultDestroyedCount = reader.GetInt32(8),
+            CompletedBossCount = reader.GetInt32(9),
             TID = classId,
             MapID = 1,
             Gold = 0

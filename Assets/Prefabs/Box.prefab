@@ -62,10 +62,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a6533d19316d74a42920e774f90066a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  baseMaxHp: 200
-  hpGrowthPerDestroy: 1.6
-  difficultyGrowthPerDestroy: 1.1
-  invincibleDuration: 3
+  baseMaxHp: 250
+  hpGrowthPerDestroy: 0.18
+  hpGrowthPerBossDefeat: 0.25
+  difficultyGrowthPerDestroy: 0.18
+  invincibleDuration: 2
   breakAnimationDuration: 0.6
   respawnDelay: 0.2
   respawnAnimationDuration: 0.6
@@ -73,9 +74,13 @@ MonoBehaviour:
   playScaleFallbackAnimation: 1
   animationRoot: {fileID: 0}
   destroyedScale: 0.05
-  baseDestroyExpReward: 100
-  expRewardStep: 20
-  scoreDamagePerPoint: 20
+  baseDestroyExpReward: 70
+  expRewardStep: 15
+  expRewardPerBossDefeat: 30
+  scoreDamagePerPoint: 10
+  destroyScoreBase: 100
+  destroyScorePerVault: 25
+  destroyScorePerBoss: 100
   fullHealPlayerOnDestroy: 0
   extraExpPickupPrefab: {fileID: 0}
   extraExpPickupReward: 20
@@ -101,8 +106,8 @@ MonoBehaviour:
   score: 0
   currentVaultDamage: 0
   currentVaultScore: 0
-  currentHp: 200
-  maxHp: 200
+  currentHp: 250
+  maxHp: 250
   isInvincible: 0
   invincibleTimer: 0
   isRespawning: 0

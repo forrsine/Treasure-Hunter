@@ -12,7 +12,7 @@ public static class SelectedCharacterState
     /// </summary>
     public static void SetCharacter(NCharacter save)
     {
-        CurrentCharacter = save;
+        CurrentCharacter = save != null ? save.Clone() : null;
     }
 
     /// <summary>

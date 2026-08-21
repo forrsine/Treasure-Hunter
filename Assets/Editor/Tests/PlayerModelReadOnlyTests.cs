@@ -69,10 +69,9 @@ public sealed class PlayerModelReadOnlyTests
     }
 
     [Test]
-    public void TakeDamage_AppliesReductionAndClampsHealth()
+    public void TakeDamage_AppliesProfessionReductionAndClampsHealth()
     {
-        config.playerBaseDamageReduction = 0.25f;
-        InitializePlayer();
+        InitializePlayer(25f);
 
         PlayerDamageResult result = architecture.SendCommand(new TakePlayerDamageCommand(40, false));
         PlayerStatsSnapshot stats = QueryStats();
@@ -144,7 +143,7 @@ public sealed class PlayerModelReadOnlyTests
         Assert.That(QueryStats().AttackPower, Is.EqualTo(52));
     }
 
-    private void InitializePlayer()
+    private void InitializePlayer(float professionDefense = 0f)
     {
         NCharacter save = new NCharacter
         {
@@ -161,6 +160,7 @@ public sealed class PlayerModelReadOnlyTests
             initLevel = 1,
             hp = 200f,
             attack = 40f,
+            defense = professionDefense,
             moveSpeed = 3f
         };
         architecture.SendCommand(new InitializePlayerCommand(save, define));

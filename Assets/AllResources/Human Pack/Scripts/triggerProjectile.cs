@@ -15,6 +15,11 @@ public class triggerProjectile : MonoBehaviour {
 
 	public void shoot()
 	{
+		// 游戏运行时会禁用 Human Pack 的演示投射物脚本。
+		// Animation Event 仍可能按方法名找到禁用组件，因此这里必须再次保护，避免与公共攻击 Relay 重复发射。
+		if (!isActiveAndEnabled || projectile == null || shootPoint == null)
+			return;
+
 		magicMissile = Instantiate(projectile, shootPoint.position, transform.rotation) as GameObject;
 	
 		StartCoroutine(lerpyLoop(magicMissile));

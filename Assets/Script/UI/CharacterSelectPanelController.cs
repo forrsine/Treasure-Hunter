@@ -7,9 +7,9 @@ using UnityEngine.UI;
 ///
 /// 这个脚本主要负责以下几件事：
 /// 1. 在“存档选择面板”和“创建角色面板”之间切换；
-/// 2. 从服务器读取当前账号的角色存档，并把数据填入四个存档槽位；
+/// 2. 从当前会话的数据源读取角色存档，并把数据填入四个存档槽位；
 /// 3. 记录玩家当前选中的存档槽位和职业；
-/// 4. 请求服务器创建角色；
+/// 4. 请求在线服务端或本地游客档创建角色；
 /// 5. 根据当前选择刷新角色预览、职业说明和存档高亮；
 /// 6. 将最终选中的角色交给 SceneFlowService，进入游戏场景。
 ///
@@ -40,7 +40,7 @@ public class CharacterSelectPanelController : MonoBehaviour
     // 使用当前选中的已有角色进入游戏。
     [SerializeField] private Button startGameButton;
 
-    // 注销当前账号并返回登录场景。
+    // 退出当前在线/游客会话并返回登录场景。
     [SerializeField] private Button backToLoginButton;
 
     [Header("Create Panel Buttons")]
@@ -83,7 +83,7 @@ public class CharacterSelectPanelController : MonoBehaviour
     // 默认会寻找名为 HighLight 的对象，并通过 SetActive 控制其显示状态。
     [SerializeField] private string slotHighlightObjectName = "HighLight";
 
-    // 本地保存的四个角色数据。数组位置与服务器的 slotIndex 一一对应；
+    // 当前会话缓存的四个角色数据。数组位置与存档的 slotIndex 一一对应；
     // 某一项为 null 表示该槽位目前没有角色。
     private NCharacter[] saves = new NCharacter[4];
 
@@ -98,9 +98,21 @@ public class CharacterSelectPanelController : MonoBehaviour
     private int creatingSlotIndex = -1;
 
     /// <summary>
+    /// 选角界面属于纯 UI 场景，启用时必须解除玩法场景留下的鼠标锁定。
+    /// 这样从主场景返回选角，或直接从选角场景进入 Play Mode 时，按钮都能正常点击。
+    /// </summary>
+    private void OnEnable()
+    {
+        if (Application.isPlaying)
+        {
+            UiCursorStateUtility.EnsureVisibleAndUnlocked();
+        }
+    }
+
+    /// <summary>
     /// Unity 在对象初始化时调用。
     /// 此处只处理本地初始化：获取服务、注册按钮事件，以及显示初始面板。
-    /// 服务器请求放在 Start 中执行，避免 Awake 阶段其他单例尚未初始化完成。
+    /// 存档请求放在 Start 中执行，避免 Awake 阶段其他单例尚未初始化完成。
     /// </summary>
     private void Awake()
     {
@@ -122,18 +134,18 @@ public class CharacterSelectPanelController : MonoBehaviour
         archerButton.onClick.AddListener(() => SelectClass(3));
         assassinButton.onClick.AddListener(() => SelectClass(4));
 
-        // 打开场景时先显示存档面板。此时服务器数据可能还没返回，
+        // 打开场景时先显示存档面板。此时当前数据源可能还没返回，
         // 因此先按空数组刷新一次，等请求完成后会再次刷新。
         ShowSavePanel();
         RefreshSaveSlots();
     }
 
     /// <summary>
-    /// Unity 在第一次帧更新前调用，从服务器异步加载当前账号的角色列表。
+    /// Unity 在第一次帧更新前调用，从当前会话的数据源异步加载角色列表。
     /// </summary>
     private void Start()
     {
-        StartCoroutine(LoadCharactersFromServer());
+        StartCoroutine(LoadCharactersFromCurrentSource());
     }
 
     /// <summary>
@@ -193,9 +205,42 @@ public class CharacterSelectPanelController : MonoBehaviour
             return;
         }
 
-        // 将完整角色数据交给场景流程服务，由它保存当前角色并加载游戏场景。
-        NCharacter save = saves[selectedSlotIndex];
-        SceneFlowService.StartGameplay(save);
+        StartCoroutine(EnterSelectedCharacter(saves[selectedSlotIndex]));
+    }
+
+    /// <summary>
+    /// 先让当前数据源确认角色归属并建立角色 Session，成功后才允许切入玩法场景。
+    /// </summary>
+    private IEnumerator EnterSelectedCharacter(NCharacter selectedCharacter)
+    {
+        if (apiClient == null)
+        {
+            SetMessage("ApiClient is missing.");
+            yield break;
+        }
+
+        bool success = false;
+        string message = "";
+        NCharacter authoritativeCharacter = null;
+        SetSaveInteractable(false);
+        SetMessage("正在进入角色...");
+
+        yield return apiClient.EnterCharacter(selectedCharacter, (result, resultMessage, character) =>
+        {
+            success = result;
+            message = resultMessage;
+            authoritativeCharacter = character;
+        });
+
+        SetSaveInteractable(true);
+        if (!success || authoritativeCharacter == null)
+        {
+            SetMessage(string.IsNullOrEmpty(message) ? "进入角色失败。" : message);
+            yield break;
+        }
+
+        SetMessage("角色进度加载完成。");
+        SceneFlowService.StartGameplay(authoritativeCharacter);
     }
 
     /// <summary>
@@ -219,14 +264,14 @@ public class CharacterSelectPanelController : MonoBehaviour
         }
 
         // 创建请求需要同时携带目标槽位、角色名和职业 ID。
-        StartCoroutine(CreateCharacterOnServer(creatingSlotIndex, characterName, selectedClassId));
+        StartCoroutine(CreateCharacterInCurrentSource(creatingSlotIndex, characterName, selectedClassId));
     }
 
     /// <summary>
-    /// 从服务器读取当前登录账号的所有角色。
+    /// 从当前会话的数据源读取所有角色。
     /// GameApiClient 通过回调返回结果；yield return 会让协程等待请求结束。
     /// </summary>
-    private IEnumerator LoadCharactersFromServer()
+    private IEnumerator LoadCharactersFromCurrentSource()
     {
         // 没有网络服务时立即结束，防止后续调用产生空引用异常。
         if (apiClient == null)
@@ -248,9 +293,9 @@ public class CharacterSelectPanelController : MonoBehaviour
                 return;
             }
 
-            // 请求成功后，先按 slotIndex 将服务器角色放入本地数组，
+            // 请求成功后，先按 slotIndex 将角色放入本地数组，
             // 然后刷新每一个存档槽位及其选中状态。
-            ApplyServerCharacters(characters);
+            ApplyLoadedCharacters(characters);
             SetMessage(string.IsNullOrEmpty(message) ? "Character saves loaded." : message);
             RefreshSaveSlots();
             ShowSavePanel();
@@ -258,13 +303,13 @@ public class CharacterSelectPanelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 向服务器发送创建角色请求。
+    /// 向当前会话的数据源发送创建角色请求。
     ///
     /// slotIndex：角色要保存到的槽位下标；
     /// characterName：经过本地校验的角色名称；
     /// classId：所选职业 ID。
     /// </summary>
-    private IEnumerator CreateCharacterOnServer(int slotIndex, string characterName, int classId)
+    private IEnumerator CreateCharacterInCurrentSource(int slotIndex, string characterName, int classId)
     {
         if (apiClient == null)
         {
@@ -282,14 +327,14 @@ public class CharacterSelectPanelController : MonoBehaviour
             // 无论成功还是失败，请求结束后都要恢复按钮操作。
             SetCreateInteractable(true);
 
-            // success 为 false 表示服务端拒绝请求；角色为空则表示返回数据不完整。
+            // success 为 false 表示当前数据源拒绝请求；角色为空则表示返回数据不完整。
             if (!success || createdCharacter == null)
             {
                 SetMessage(string.IsNullOrEmpty(message) ? "Failed to create character." : message);
                 return;
             }
 
-            // 服务端返回的 slotIndex 才是最终可信的保存位置。
+            // 数据源返回的 slotIndex 才是最终可信的保存位置。
             // 确认下标合法后更新本地缓存，并自动选中新创建的角色。
             if (createdCharacter.slotIndex >= 0 && createdCharacter.slotIndex < saves.Length)
             {
@@ -314,19 +359,19 @@ public class CharacterSelectPanelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 把服务器返回的角色列表转换为固定四格的本地存档数组。
-    /// 服务器列表的顺序不一定等于槽位顺序，因此必须使用 character.slotIndex 放置。
+    /// 把当前数据源返回的角色列表转换为固定四格的本地存档数组。
+    /// 返回列表的顺序不一定等于槽位顺序，因此必须使用 character.slotIndex 放置。
     /// </summary>
-    private void ApplyServerCharacters(NCharacter[] characters)
+    private void ApplyLoadedCharacters(NCharacter[] characters)
     {
-        // 每次使用服务器的最新完整结果重建数组，避免残留已经不存在的旧角色。
+        // 每次使用数据源的最新完整结果重建数组，避免残留已经不存在的旧角色。
         saves = new NCharacter[4];
 
         if (characters != null)
         {
             foreach (NCharacter character in characters)
             {
-                // 忽略服务器列表中的空项。
+                // 忽略返回列表中的空项。
                 if (character == null)
                 {
                     continue;
@@ -593,6 +638,33 @@ public class CharacterSelectPanelController : MonoBehaviour
         if (backToSaveButton != null)
         {
             backToSaveButton.interactable = interactable;
+        }
+    }
+
+    private void SetSaveInteractable(bool interactable)
+    {
+        if (startGameButton != null)
+        {
+            startGameButton.interactable = interactable;
+        }
+
+        if (createCharacterButton != null)
+        {
+            createCharacterButton.interactable = interactable;
+        }
+
+        if (backToLoginButton != null)
+        {
+            backToLoginButton.interactable = interactable;
+        }
+
+        for (int i = 0; i < saveSlots.Length; i++)
+        {
+            Button slotButton = saveSlots[i] != null ? saveSlots[i].GetComponent<Button>() : null;
+            if (slotButton != null)
+            {
+                slotButton.interactable = interactable;
+            }
         }
     }
 }

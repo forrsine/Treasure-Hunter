@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -26,6 +27,7 @@ public static class BossRunProgressState
     public static int NextBossUnlockVaultCount => Mathf.Max(1, completedBossCount + 1) * vaultsPerBoss;
     public static int VaultsUntilNextBoss => Mathf.Max(0, NextBossUnlockVaultCount - totalVaultDestroyedCount);
     public static bool IsBossEntranceReady => !bossFightInProgress && totalVaultDestroyedCount >= NextBossUnlockVaultCount;
+    public static event Action PersistentProgressChanged;
 
     /// <summary>
     /// 每局可以由入口控制器配置一次“打几次宝箱开 Boss 门”，默认是 5。
@@ -45,7 +47,12 @@ public static class BossRunProgressState
             return;
         }
 
+        int previousCount = totalVaultDestroyedCount;
         totalVaultDestroyedCount = Mathf.Max(totalVaultDestroyedCount, vault.DestroyedCount);
+        if (totalVaultDestroyedCount != previousCount)
+        {
+            PersistentProgressChanged?.Invoke();
+        }
     }
 
     /// <summary>
@@ -84,6 +91,7 @@ public static class BossRunProgressState
     /// </summary>
     public static void MarkBossDefeated()
     {
+        int previousCompletedBossCount = completedBossCount;
         if (bossFightInProgress)
         {
             completedBossCount = Mathf.Max(completedBossCount, activeBossRound);
@@ -91,6 +99,26 @@ public static class BossRunProgressState
 
         bossFightInProgress = false;
         activeBossRound = 0;
+
+        if (completedBossCount != previousCompletedBossCount)
+        {
+            PersistentProgressChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// 从数据库恢复长期关卡进度。正在进行的 Boss 战和返回坐标属于临时状态，不跨会话恢复。
+    /// </summary>
+    public static void RestorePersistentProgress(int vaultDestroyedCount, int bossCompletedCount)
+    {
+        totalVaultDestroyedCount = Mathf.Max(0, vaultDestroyedCount);
+        completedBossCount = Mathf.Clamp(bossCompletedCount, 0, totalVaultDestroyedCount);
+        activeBossRound = 0;
+        bossFightInProgress = false;
+        hasMainSceneReturnSpawn = false;
+        mainSceneReturnPosition = Vector3.zero;
+        mainSceneReturnRotation = Quaternion.identity;
+        vaultsPerBoss = DefaultVaultsPerBoss;
     }
 
     /// <summary>

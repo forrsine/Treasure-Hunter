@@ -13,23 +13,12 @@ public sealed class Character : IPostResponser
     {
         Data = data;
         Id = data.ID;
-        Info = new NCharacterInfo
-        {
-            Id = checked((int)data.ID),
-            ConfigId = data.TID,
-            EntityId = checked((int)data.ID),
-            Name = data.Name,
-            Type = type,
-            Class = (CharacterClass)data.Class,
-            Level = data.Level,
-            mapId = data.MapID,
-            Gold = data.Gold,
-            SlotIndex = data.SlotIndex
-        };
+        Info = new NCharacterInfo { Type = type };
+        ApplyPersistedData(data);
     }
 
     public long Id { get; }
-    public TCharacter Data { get; }
+    public TCharacter Data { get; private set; }
     public NCharacterInfo Info { get; }
 
     /// <summary>
@@ -49,12 +38,44 @@ public sealed class Character : IPostResponser
     }
 
     /// <summary>
+    /// 用数据库确认后的记录刷新在线实体，避免客户端缓存、Session 和数据库各持有一套不同进度。
+    /// </summary>
+    public void ApplyPersistedData(TCharacter data)
+    {
+        Data = data ?? throw new ArgumentNullException(nameof(data));
+
+        Info.Id = checked((int)data.ID);
+        Info.ConfigId = data.TID;
+        Info.EntityId = checked((int)data.ID);
+        Info.Name = data.Name;
+        Info.Class = (CharacterClass)data.Class;
+        Info.Level = data.Level;
+        Info.mapId = data.MapID;
+        Info.Gold = data.Gold;
+        Info.SlotIndex = data.SlotIndex;
+        Info.Exp = data.Exp;
+        Info.PendingAttributeUpgradeCount = data.PendingAttributeUpgradeCount;
+        Info.VaultDestroyedCount = data.VaultDestroyedCount;
+        Info.CompletedBossCount = data.CompletedBossCount;
+        Info.AttributeUpgrades.Clear();
+
+        foreach ((int attributeType, int upgradeCount) in data.AttributeUpgradeCounts)
+        {
+            Info.AttributeUpgrades.Add(new NAttributeUpgradeInfo
+            {
+                AttributeType = attributeType,
+                UpgradeCount = upgradeCount
+            });
+        }
+    }
+
+    /// <summary>
     /// 返回一份新的基础信息 DTO，避免外部直接修改 Character 内部持有的 Info。
     /// </summary>
     public NCharacterInfo GetBasicInfo()
     {
         // 返回新的 DTO，避免调用方直接修改实体内部持有的 Info。
-        return new NCharacterInfo
+        var copy = new NCharacterInfo
         {
             Id = Info.Id,
             ConfigId = Info.ConfigId,
@@ -62,9 +83,24 @@ public sealed class Character : IPostResponser
             Type = Info.Type,
             Class = Info.Class,
             Level = Info.Level,
+            Exp = Info.Exp,
+            PendingAttributeUpgradeCount = Info.PendingAttributeUpgradeCount,
+            VaultDestroyedCount = Info.VaultDestroyedCount,
+            CompletedBossCount = Info.CompletedBossCount,
             mapId = Info.mapId,
             Gold = Info.Gold,
             SlotIndex = Info.SlotIndex
         };
+
+        foreach (NAttributeUpgradeInfo upgrade in Info.AttributeUpgrades)
+        {
+            copy.AttributeUpgrades.Add(new NAttributeUpgradeInfo
+            {
+                AttributeType = upgrade.AttributeType,
+                UpgradeCount = upgrade.UpgradeCount
+            });
+        }
+
+        return copy;
     }
 }

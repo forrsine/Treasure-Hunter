@@ -25,12 +25,16 @@ public sealed class PlayerProgressionSystem : AbstractSystem
     public void InitializePlayer(NCharacter save, CharacterDefine define)
     {
         model.Reset(save, define);
+        RestoreAttributeUpgrades(save);
+        Stats.PendingUpgradeSelectionCount = save != null
+            ? Mathf.Max(0, save.pendingAttributeUpgradeCount)
+            : 0;
         this.GetSystem<PlayerCombatSystem>().ResetRuntimeBuffers();
         // 新开一局或切换角色时，重置玩家技能运行时数据。
         // 这样可以避免上一个角色学过的技能、冷却、待选择次数残留到新角色身上。
         this.GetSystem<PlayerSkillSystem>().ResetRuntimeSkills();
         this.SendEvent(new PlayerStatsChangedEvent());
-        this.SendEvent(new PlayerUpgradeQueueChangedEvent(0));
+        this.SendEvent(new PlayerUpgradeQueueChangedEvent(Stats.PendingUpgradeSelectionCount));
     }
 
     /// <summary>
@@ -120,6 +124,14 @@ public sealed class PlayerProgressionSystem : AbstractSystem
     public bool CanApplyAttributeUpgrade(PlayerAttributeType attributeType)
     {
         GameConfig config = GameConfig.instance;
+        int maxCount = config != null
+            ? config.GetUpgradeMaxCount(attributeType)
+            : GetFallbackUpgradeMaxCount(attributeType);
+        if (maxCount <= 0 || Stats.GetAttributeUpgradeCount(attributeType) >= maxCount)
+        {
+            return false;
+        }
+
         switch (attributeType)
         {
             case PlayerAttributeType.AttackPower:
@@ -128,16 +140,16 @@ public sealed class PlayerProgressionSystem : AbstractSystem
             case PlayerAttributeType.HealthRegen:
                 return GetNextHealthRegenUpgradeAmount() > MinUpgradeableThreshold;
             case PlayerAttributeType.MoveSpeed:
-                float moveCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.6f;
+                float moveCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.2f;
                 return GetMoveSpeedBonusPercent() + MinUpgradeableThreshold < moveCap;
             case PlayerAttributeType.CritChance:
-                return Stats.CritChance + MinUpgradeableThreshold < (config != null ? config.playerCritChanceCap : 0.8f);
+                return Stats.CritChance + MinUpgradeableThreshold < (config != null ? config.playerCritChanceCap : 0.35f);
             case PlayerAttributeType.DodgeChance:
-                return Stats.DodgeChance + MinUpgradeableThreshold < (config != null ? config.playerDodgeChanceCap : 0.5f);
+                return Stats.DodgeChance + MinUpgradeableThreshold < (config != null ? config.playerDodgeChanceCap : 0.2f);
             case PlayerAttributeType.DamageReduction:
-                return Stats.DamageReduction + MinUpgradeableThreshold < (config != null ? config.playerDamageReductionCap : 0.7f);
+                return Stats.DamageReduction + MinUpgradeableThreshold < (config != null ? config.playerDamageReductionCap : 0.4f);
             case PlayerAttributeType.LifeSteal:
-                return Stats.LifeSteal + MinUpgradeableThreshold < (config != null ? config.playerLifeStealCap : 0.5f);
+                return Stats.LifeSteal + MinUpgradeableThreshold < (config != null ? config.playerLifeStealCap : 0.1f);
             default:
                 return false;
         }
@@ -149,6 +161,14 @@ public sealed class PlayerProgressionSystem : AbstractSystem
     /// </summary>
     public bool TryApplyAttributeUpgrade(PlayerAttributeType type)
     {
+        return ApplyAttributeUpgrade(type, true, true);
+    }
+
+    /// <summary>
+    /// 统一应用属性公式。读取存档时关闭通知和治疗表现，避免把恢复过程当成一次新奖励。
+    /// </summary>
+    private bool ApplyAttributeUpgrade(PlayerAttributeType type, bool notifyChanges, bool applyHealReward)
+    {
         if (!CanApplyAttributeUpgrade(type))
         {
             return false;
@@ -158,54 +178,102 @@ public sealed class PlayerProgressionSystem : AbstractSystem
         switch (type)
         {
             case PlayerAttributeType.AttackPower:
-                float attackPercent = config != null ? config.playerAttackUpgradePercent : 0.3f;
+                float attackPercent = config != null ? config.playerAttackUpgradePercent : 0.12f;
                 Stats.AttackPower = Mathf.Max(1, Mathf.CeilToInt(Stats.AttackPower * (1f + attackPercent)));
                 break;
             case PlayerAttributeType.MaxHp:
-                int hpBonus = config != null ? config.playerMaxHpUpgradeFlat : 50;
+                int hpBonus = config != null ? config.playerMaxHpUpgradeFlat : 30;
                 Stats.BonusMaxHp += hpBonus;
                 model.RecalculateMaxHp(false);
-                this.GetSystem<PlayerCombatSystem>().Heal(hpBonus, false);
+                if (applyHealReward)
+                {
+                    this.GetSystem<PlayerCombatSystem>().Heal(hpBonus, false);
+                }
                 break;
             case PlayerAttributeType.MoveSpeed:
-                float speedPercent = config != null ? config.playerMoveSpeedUpgradePercent : 0.15f;
-                float speedCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.6f;
+                float speedPercent = config != null ? config.playerMoveSpeedUpgradePercent : 0.05f;
+                float speedCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.2f;
                 Stats.CurrentMoveSpeed = Mathf.Min(
                     Stats.BaseMoveSpeed * (1f + speedCap),
                     Stats.CurrentMoveSpeed * (1f + speedPercent));
                 break;
             case PlayerAttributeType.CritChance:
                 Stats.CritChance = Mathf.Min(
-                    config != null ? config.playerCritChanceCap : 0.8f,
-                    Stats.CritChance + (config != null ? config.playerCritChanceUpgrade : 0.1f));
+                    config != null ? config.playerCritChanceCap : 0.35f,
+                    Stats.CritChance + (config != null ? config.playerCritChanceUpgrade : 0.05f));
                 break;
             case PlayerAttributeType.DodgeChance:
                 Stats.DodgeChance = Mathf.Min(
-                    config != null ? config.playerDodgeChanceCap : 0.5f,
-                    Stats.DodgeChance + (config != null ? config.playerDodgeChanceUpgrade : 0.1f));
+                    config != null ? config.playerDodgeChanceCap : 0.2f,
+                    Stats.DodgeChance + (config != null ? config.playerDodgeChanceUpgrade : 0.04f));
                 break;
             case PlayerAttributeType.HealthRegen:
                 Stats.HealthRegenPerSecond = Mathf.Min(
                     GetHealthRegenCap(),
                     Stats.HealthRegenPerSecond + GetNextHealthRegenUpgradeAmount());
-                Stats.HealthRegenUpgradeCount++;
                 break;
             case PlayerAttributeType.DamageReduction:
                 Stats.DamageReduction = Mathf.Min(
-                    config != null ? config.playerDamageReductionCap : 0.7f,
-                    Stats.DamageReduction + (config != null ? config.playerDamageReductionUpgrade : 0.1f));
+                    config != null ? config.playerDamageReductionCap : 0.4f,
+                    Stats.DamageReduction + (config != null ? config.playerDamageReductionUpgrade : 0.04f));
                 break;
             case PlayerAttributeType.LifeSteal:
                 Stats.LifeSteal = Mathf.Min(
-                    config != null ? config.playerLifeStealCap : 0.5f,
-                    Stats.LifeSteal + (config != null ? config.playerLifeStealUpgrade : 0.05f));
+                    config != null ? config.playerLifeStealCap : 0.1f,
+                    Stats.LifeSteal + (config != null ? config.playerLifeStealUpgrade : 0.025f));
                 break;
             default:
                 return false;
         }
 
-        this.SendEvent(new PlayerStatsChangedEvent());
+        int upgradeCount = Stats.IncrementAttributeUpgradeCount(type);
+        if (notifyChanges)
+        {
+            this.SendEvent(new PlayerAttributeUpgradedEvent(type, upgradeCount));
+            this.SendEvent(new PlayerStatsChangedEvent());
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// 数据库确认死亡/重开清理成功后，同步清空本地的强化计数和待选择次数。
+    /// 当前死亡场景里的最终属性不再参与玩法，下一场景会按已清空的服务端存档重新初始化。
+    /// </summary>
+    public void ClearRunUpgradeProgress()
+    {
+        Stats.ResetAttributeUpgradeCounts();
+        Stats.PendingUpgradeSelectionCount = 0;
+        Stats.IsUpgradeSelectionActive = false;
+        this.SendEvent(new PlayerUpgradeQueueChangedEvent(0));
+        this.SendEvent(new PlayerStatsChangedEvent());
+    }
+
+    private void RestoreAttributeUpgrades(NCharacter save)
+    {
+        if (save == null)
+        {
+            return;
+        }
+
+        for (int typeValue = (int)PlayerAttributeType.AttackPower;
+             typeValue <= (int)PlayerAttributeType.LifeSteal;
+             typeValue++)
+        {
+            PlayerAttributeType attributeType = (PlayerAttributeType)typeValue;
+            int count = save.GetAttributeUpgradeCount(attributeType);
+            for (int i = 0; i < count; i++)
+            {
+                if (!ApplyAttributeUpgrade(attributeType, false, false))
+                {
+                    break;
+                }
+            }
+        }
+
+        // 运行时血蓝不进入数据库；恢复成长后统一以满状态开始本次游戏。
+        Stats.CurrentHp = Stats.MaxHp;
+        Stats.CurrentMp = Stats.MaxMp;
     }
 
     /// <summary>
@@ -286,14 +354,11 @@ public sealed class PlayerProgressionSystem : AbstractSystem
             // 每升到 5 的倍数等级，额外给玩家一次技能学习/升级选择机会。
             // 注意：属性升级和技能升级分开处理，避免两个成长系统强耦合在同一个 UI 规则里。
             model.RecalculateMaxHp(false);
-            int minimumHeal = GameConfig.instance != null ? GameConfig.instance.minimumLevelUpHeal : 30;
-            float healPercent = GameConfig.instance != null ? GameConfig.instance.levelUpHealPercent : 0.3f;
+            int minimumHeal = GameConfig.instance != null ? GameConfig.instance.minimumLevelUpHeal : 20;
+            float healPercent = GameConfig.instance != null ? GameConfig.instance.levelUpHealPercent : 0.15f;
             this.GetSystem<PlayerCombatSystem>().Heal(
                 Mathf.Max(minimumHeal, Mathf.CeilToInt(Stats.MaxHp * healPercent)),
                 false);
-            // 升级奖励统一通过资源系统回满蓝，确保蓝量事件和 HUD 刷新仍走正式流程。
-            this.GetSystem<PlayerResourceSystem>().FullRestoreMana();
-
             if (grantAttributeSelections)
             {
                 Stats.PendingUpgradeSelectionCount++;
@@ -354,25 +419,25 @@ public sealed class PlayerProgressionSystem : AbstractSystem
         switch (type)
         {
             case PlayerAttributeType.AttackPower:
-                float attackPercent = config != null ? config.playerAttackUpgradePercent : 0.3f;
+                float attackPercent = config != null ? config.playerAttackUpgradePercent : 0.12f;
                 return $"当前 {Stats.AttackPower} -> {Mathf.Max(1, Mathf.CeilToInt(Stats.AttackPower * (1f + attackPercent)))}";
             case PlayerAttributeType.MaxHp:
-                return $"当前 {Stats.MaxHp} -> {Stats.MaxHp + (config != null ? config.playerMaxHpUpgradeFlat : 50)}";
+                return $"当前 {Stats.MaxHp} -> {Stats.MaxHp + (config != null ? config.playerMaxHpUpgradeFlat : 30)}";
             case PlayerAttributeType.MoveSpeed:
-                float speedPercent = config != null ? config.playerMoveSpeedUpgradePercent : 0.15f;
-                float speedCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.6f;
+                float speedPercent = config != null ? config.playerMoveSpeedUpgradePercent : 0.05f;
+                float speedCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.2f;
                 float next = Mathf.Min(Stats.BaseMoveSpeed * (1f + speedCap), Stats.CurrentMoveSpeed * (1f + speedPercent));
                 return $"当前 {Stats.CurrentMoveSpeed:0.00} -> {next:0.00}";
             case PlayerAttributeType.CritChance:
-                return PreviewPercent(Stats.CritChance, config != null ? config.playerCritChanceUpgrade : 0.1f, config != null ? config.playerCritChanceCap : 0.8f);
+                return PreviewPercent(Stats.CritChance, config != null ? config.playerCritChanceUpgrade : 0.05f, config != null ? config.playerCritChanceCap : 0.35f);
             case PlayerAttributeType.DodgeChance:
-                return PreviewPercent(Stats.DodgeChance, config != null ? config.playerDodgeChanceUpgrade : 0.1f, config != null ? config.playerDodgeChanceCap : 0.5f);
+                return PreviewPercent(Stats.DodgeChance, config != null ? config.playerDodgeChanceUpgrade : 0.04f, config != null ? config.playerDodgeChanceCap : 0.2f);
             case PlayerAttributeType.HealthRegen:
                 return $"当前 {Stats.HealthRegenPerSecond:0.##}/s -> {Mathf.Min(GetHealthRegenCap(), Stats.HealthRegenPerSecond + GetNextHealthRegenUpgradeAmount()):0.##}/s";
             case PlayerAttributeType.DamageReduction:
-                return PreviewPercent(Stats.DamageReduction, config != null ? config.playerDamageReductionUpgrade : 0.1f, config != null ? config.playerDamageReductionCap : 0.7f);
+                return PreviewPercent(Stats.DamageReduction, config != null ? config.playerDamageReductionUpgrade : 0.04f, config != null ? config.playerDamageReductionCap : 0.4f);
             case PlayerAttributeType.LifeSteal:
-                return PreviewPercent(Stats.LifeSteal, config != null ? config.playerLifeStealUpgrade : 0.05f, config != null ? config.playerLifeStealCap : 0.5f);
+                return PreviewPercent(Stats.LifeSteal, config != null ? config.playerLifeStealUpgrade : 0.025f, config != null ? config.playerLifeStealCap : 0.1f);
             default:
                 return string.Empty;
         }
@@ -390,17 +455,38 @@ public sealed class PlayerProgressionSystem : AbstractSystem
 
     private float GetNextHealthRegenUpgradeAmount()
     {
-        float baseUpgrade = GameConfig.instance != null ? GameConfig.instance.playerHpRegenUpgrade : 1f;
+        float baseUpgrade = GameConfig.instance != null ? GameConfig.instance.playerHpRegenUpgrade : 1.5f;
         return Mathf.Max(
             0f,
             Mathf.Min(
-                baseUpgrade * Mathf.Pow(2f, Mathf.Max(0, Stats.HealthRegenUpgradeCount)),
+                baseUpgrade,
                 GetHealthRegenCap() - Stats.HealthRegenPerSecond));
     }
 
     private float GetHealthRegenCap()
     {
-        return GameConfig.instance != null ? Mathf.Max(0f, GameConfig.instance.playerHpRegenCap) : 32f;
+        return GameConfig.instance != null ? Mathf.Max(0f, GameConfig.instance.playerHpRegenCap) : 6f;
+    }
+
+    private int GetFallbackUpgradeMaxCount(PlayerAttributeType type)
+    {
+        switch (type)
+        {
+            case PlayerAttributeType.AttackPower:
+            case PlayerAttributeType.MaxHp:
+                return 6;
+            case PlayerAttributeType.MoveSpeed:
+            case PlayerAttributeType.HealthRegen:
+            case PlayerAttributeType.LifeSteal:
+                return 4;
+            case PlayerAttributeType.CritChance:
+                return 7;
+            case PlayerAttributeType.DodgeChance:
+            case PlayerAttributeType.DamageReduction:
+                return 5;
+            default:
+                return 0;
+        }
     }
 
     private float GetMoveSpeedBonusPercent()

@@ -271,7 +271,7 @@ public sealed class PlayerHudUi : MonoBehaviour, IController
         levelText.text = "Lv.1";
         hpText.text = "HP 150/150";
         mpText.text = "MP 120/120";
-        staminaText.text = "SP 120/120";
+        staminaText.text = "SP 100/100";
         expText.text = "EXP 0/50";
         SetBarTarget(hpBar, ref targetHpPercent, 1f, true);
         SetBarTarget(mpBar, ref targetMpPercent, 1f, true);

@@ -1,4 +1,5 @@
 using QFramework;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -224,8 +225,7 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     public void RestartGame()
     {
         PersistCurrentScore();
-        PrepareForSceneTransition();
-        SceneFlowService.RestartGameplay();
+        StartCoroutine(ResetProgressAndRestart());
     }
 
     /// <summary>
@@ -234,6 +234,59 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     public void QuitGame()
     {
         PersistCurrentScore();
+        StartCoroutine(SaveAndQuit());
+    }
+
+    private IEnumerator ResetProgressAndRestart()
+    {
+        CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
+        if (saveService == null || !saveService.IsSessionActive)
+        {
+            PrepareForSceneTransition();
+            SceneFlowService.RestartGameplay();
+            yield break;
+        }
+
+        bool success = false;
+        string message = "";
+        SetTransitionPending("正在清空本局强化并保存...");
+        yield return saveService.FlushNow(true, (result, resultMessage, _) =>
+        {
+            success = result;
+            message = resultMessage;
+        });
+
+        if (!success)
+        {
+            ShowTransitionError(message);
+            yield break;
+        }
+
+        PrepareForSceneTransition();
+        SceneFlowService.RestartGameplay();
+    }
+
+    private IEnumerator SaveAndQuit()
+    {
+        CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
+        if (saveService != null && saveService.IsSessionActive)
+        {
+            bool success = false;
+            string message = "";
+            SetTransitionPending("正在保存并退出...");
+            yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
+            {
+                success = result;
+                message = resultMessage;
+            });
+
+            if (!success)
+            {
+                ShowTransitionError(message);
+                yield break;
+            }
+        }
+
         PrepareForSceneTransition();
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
@@ -317,11 +370,11 @@ public sealed class GameSessionUi : MonoBehaviour, IController
             overlayTitleText.text = "游戏暂停";
             overlayBodyText.text = $"当前分数：{score}";
             primaryButtonText.text = "回到游戏";
-            secondaryButtonText.text = "退出登录";
+            secondaryButtonText.text = "保存并退出";
             if (!preview)
             {
                 primaryButton.onClick.AddListener(ResumeGame);
-                secondaryButton.onClick.AddListener(LogoutToLogin);
+                secondaryButton.onClick.AddListener(SaveAndReturnToCharacterSelect);
             }
 
             return;
@@ -481,11 +534,56 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     }
 
     /// <summary>
-    /// 从暂停界面退出登录。
+    /// 从暂停界面保存当前角色并返回角色选择界面。
+    /// 这里只结束角色会话，账号登录态由常驻 GameApiClient 继续保留。
     /// </summary>
-    private void LogoutToLogin()
+    private void SaveAndReturnToCharacterSelect()
     {
+        PersistCurrentScore();
+        StartCoroutine(SaveAndReturnToCharacterSelectRoutine());
+    }
+
+    private IEnumerator SaveAndReturnToCharacterSelectRoutine()
+    {
+        CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
+        if (saveService == null || !saveService.IsSessionActive)
+        {
+            ShowTransitionError("当前角色会话不存在，无法保存并退出。");
+            yield break;
+        }
+
+        bool success = false;
+        string message = "";
+        SetTransitionPending("正在保存并返回角色选择...");
+        yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
+        {
+            success = result;
+            message = resultMessage;
+        });
+
+        if (!success)
+        {
+            ShowTransitionError(message);
+            yield break;
+        }
+
         PrepareForSceneTransition();
-        SceneFlowService.LogoutToLogin();
+        SceneFlowService.ReturnToCharacterSelect();
+    }
+
+    private void SetTransitionPending(string message)
+    {
+        primaryButton.interactable = false;
+        secondaryButton.interactable = false;
+        overlayBodyText.text = message;
+    }
+
+    private void ShowTransitionError(string message)
+    {
+        primaryButton.interactable = true;
+        secondaryButton.interactable = true;
+        overlayBodyText.text = string.IsNullOrEmpty(message)
+            ? "存档失败，请检查服务端后重试。"
+            : message;
     }
 }

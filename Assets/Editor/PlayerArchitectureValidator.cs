@@ -44,6 +44,7 @@ public static class PlayerArchitectureValidator
         RequireComponent<PlayerProgressionComponent>(prefab);
         RequireComponent<PlayerPresentationComponent>(prefab);
         RequireComponent<PlayerAudioComponent>(prefab);
+        RequireComponent<PlayerRangedAttackComponent>(prefab);
         RejectComponent<GameSessionUi>(prefab);
         RejectComponent<PlayerAttributePanel>(prefab);
         RejectComponent<PlayerLevelUpPanel>(prefab);

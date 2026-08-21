@@ -68,16 +68,16 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
     [SerializeField, Min(0f)] private float backFillLightIntensity = 0.85f;
 
     [Header("Boss 周回成长")]
-    [Tooltip("每多挑战一轮 Boss，最大生命额外提升比例。0.35 表示第二轮血量为第一轮的 1.35 倍。")]
-    [SerializeField] private float bossHpGrowthPerRound = 0.35f;
+    [Tooltip("每多挑战一轮 Boss，最大生命额外提升比例。0.30 表示第二轮血量为第一轮的 1.30 倍。")]
+    [SerializeField] private float bossHpGrowthPerRound = 0.3f;
     [Tooltip("每多挑战一轮 Boss，攻击伤害额外提升比例。")]
-    [SerializeField] private float bossDamageGrowthPerRound = 0.18f;
+    [SerializeField] private float bossDamageGrowthPerRound = 0.12f;
     [Tooltip("每多挑战一轮 Boss，移动速度额外提升比例。")]
-    [SerializeField] private float bossMoveSpeedGrowthPerRound = 0.08f;
+    [SerializeField] private float bossMoveSpeedGrowthPerRound = 0.05f;
     [Tooltip("每多挑战一轮 Boss，攻击冷却减少比例。")]
-    [SerializeField] private float bossCooldownReductionPerRound = 0.06f;
+    [SerializeField] private float bossCooldownReductionPerRound = 0.05f;
     [Tooltip("Boss 攻击冷却最低倍率，避免高轮次技能释放过密。")]
-    [SerializeField] private float bossMinimumCooldownMultiplier = 0.65f;
+    [SerializeField] private float bossMinimumCooldownMultiplier = 0.75f;
 
     private bool initialized;
 

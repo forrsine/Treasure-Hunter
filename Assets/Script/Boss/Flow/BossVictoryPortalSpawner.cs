@@ -113,6 +113,9 @@ public sealed class BossVictoryPortalSpawner : MonoBehaviour
             return;
         }
 
+        // 当前轮次在 MarkBossDefeated 后会前进，因此先按 R+1 结算 1000、2000、3000... Boss 分。
+        int defeatedRound = BossRunProgressState.CurrentBossRound;
+        GameplayRuntime.Instance.AddScoreBonus(1000 * Mathf.Max(1, defeatedRound));
         BossRunProgressState.MarkBossDefeated();
         spawnRoutine = StartCoroutine(SpawnReturnPortalAfterDelay());
     }

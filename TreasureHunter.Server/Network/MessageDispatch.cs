@@ -16,6 +16,7 @@ public class MessageDispatch<T> : Singleton<MessageDispatch<T>>
         if (message.createChar != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.createChar); }
         if (message.gameEnter != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.gameEnter); }
         if (message.gameLeave != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.gameLeave); }
+        if (message.saveCharacterProgress != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.saveCharacterProgress); }
     }
 
     /// <summary>
@@ -29,5 +30,6 @@ public class MessageDispatch<T> : Singleton<MessageDispatch<T>>
         if (message.createChar != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.createChar); }
         if (message.gameEnter != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.gameEnter); }
         if (message.gameLeave != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.gameLeave); }
+        if (message.saveCharacterProgress != null) { MessageDistributer<T>.Instance.RaiseEvent(sender, message.saveCharacterProgress); }
     }
 }

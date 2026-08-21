@@ -96,8 +96,8 @@ public static class GameplayUiRootMigration
     }
 
     /// <summary>
-    /// 给独立的新手引导视图补齐关闭按钮文字。
-    /// GameplayStartupGuidePopup 会明确持有这个引用，避免运行时动态查找或创建控件。
+    /// 清理独立新手引导视图中覆盖在关闭图标上的旧文字。
+    /// 关闭按钮已经使用“×”图片作为视觉表现，不再额外保留 Text 子对象。
     /// </summary>
     private static void UpgradeStartupGuidePrefab()
     {
@@ -111,26 +111,13 @@ public static class GameplayUiRootMigration
         {
             Transform panel = RequireTransform(root.transform, "Panel");
             Transform closeButton = RequireTransform(panel, "CloseButton");
-            Transform labelTransform = closeButton.Find("Label");
-            Text label;
-
-            if (labelTransform == null)
+            Text[] legacyLabels = closeButton.GetComponentsInChildren<Text>(true);
+            foreach (Text legacyLabel in legacyLabels)
             {
-                Font font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-                label = CreateText("Label", closeButton, font, 26, Color.black, TextAnchor.MiddleCenter);
-                RectTransform labelRect = label.rectTransform;
-                labelRect.anchorMin = Vector2.zero;
-                labelRect.anchorMax = Vector2.one;
-                labelRect.offsetMin = Vector2.zero;
-                labelRect.offsetMax = Vector2.zero;
-            }
-            else
-            {
-                label = RequireComponent<Text>(labelTransform.gameObject);
+                // 关闭按钮本身已经有图标，删除旧文字可以避免两个“×”叠在一起。
+                UnityEngine.Object.DestroyImmediate(legacyLabel.gameObject);
             }
 
-            label.text = "X";
-            label.raycastTarget = false;
             PrefabUtility.SaveAsPrefabAsset(root, StartupGuidePrefabPath);
         }
         finally
@@ -239,10 +226,6 @@ public static class GameplayUiRootMigration
         SetReference(serialized, "titleText", RequireComponent<Text>(RequireTransform(panel, "Title").gameObject));
         SetReference(serialized, "bodyText", RequireComponent<Text>(RequireTransform(panel, "Body").gameObject));
         SetReference(serialized, "closeButton", RequireComponent<Button>(closeButtonTransform.gameObject));
-        SetReference(
-            serialized,
-            "closeButtonText",
-            RequireComponent<Text>(RequireTransform(closeButtonTransform, "Label").gameObject));
         serialized.ApplyModifiedPropertiesWithoutUndo();
     }
 

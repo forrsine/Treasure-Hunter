@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using System.Collections;
 
 /// <summary>
 /// 游戏结束面板。
@@ -92,8 +93,7 @@ public class ReStartPanel : MonoBehaviour
     {
         // 重开前先保存分数并恢复时间，避免新场景被暂停。
         PersistCurrentScore();
-        RestoreGameplayState();
-        SceneFlowService.RestartGameplay();
+        StartCoroutine(ResetProgressAndRestart());
     }
 
     /// <summary>
@@ -103,6 +103,64 @@ public class ReStartPanel : MonoBehaviour
     {
         // 退出前也保存分数。
         PersistCurrentScore();
+        StartCoroutine(SaveAndExit());
+    }
+
+    private IEnumerator ResetProgressAndRestart()
+    {
+        CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
+        if (saveService != null && saveService.IsSessionActive)
+        {
+            bool success = false;
+            string message = "";
+            if (summaryText != null)
+            {
+                summaryText.text = "正在清空本局强化并保存...";
+            }
+
+            yield return saveService.FlushNow(true, (result, resultMessage, _) =>
+            {
+                success = result;
+                message = resultMessage;
+            });
+
+            if (!success)
+            {
+                if (summaryText != null)
+                {
+                    summaryText.text = string.IsNullOrEmpty(message) ? "存档失败，请重试。" : message;
+                }
+                yield break;
+            }
+        }
+
+        RestoreGameplayState();
+        SceneFlowService.RestartGameplay();
+    }
+
+    private IEnumerator SaveAndExit()
+    {
+        CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
+        if (saveService != null && saveService.IsSessionActive)
+        {
+            bool success = false;
+            string message = "";
+            yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
+            {
+                success = result;
+                message = resultMessage;
+            });
+
+            if (!success)
+            {
+                if (summaryText != null)
+                {
+                    summaryText.text = string.IsNullOrEmpty(message) ? "存档失败，请重试。" : message;
+                }
+                yield break;
+            }
+        }
+
         RestoreGameplayState();
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;

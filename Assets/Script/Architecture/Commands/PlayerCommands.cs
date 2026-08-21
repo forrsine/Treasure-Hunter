@@ -174,6 +174,18 @@ public sealed class ResolvePlayerUpgradeCommand : AbstractCommand<bool>
 }
 
 /// <summary>
+/// 清空本局属性强化的存档计数和待选择队列。
+/// 最终战斗面板会在紧接着的场景重载中按基础配置重建，因此这里不在死亡画面反向计算属性。
+/// </summary>
+public sealed class ClearPlayerRunUpgradeProgressCommand : AbstractCommand
+{
+    protected override void OnExecute()
+    {
+        this.GetSystem<PlayerProgressionSystem>().ClearRunUpgradeProgress();
+    }
+}
+
+/// <summary>
 /// 仅应用属性升级，不消费升级队列；保留给调试工具使用。
 /// 正常游戏流程应优先通过 ResolvePlayerUpgradeCommand 进入。
 /// </summary>

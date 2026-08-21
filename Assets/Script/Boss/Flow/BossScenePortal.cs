@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 /// <summary>
 /// 场景传送门：负责检测玩家进入触发区域，并切换到指定场景。
@@ -136,11 +135,10 @@ public sealed class BossScenePortal : MonoBehaviour
 
         if (targetSceneName == GameSceneNames.GameplayScene)
         {
-            SceneFlowService.RestartGameplay();
+            SceneFlowService.ReturnToGameplayFromBoss();
             return;
         }
 
-        SceneFlowService.PrepareForSceneLoad();
-        SceneManager.LoadScene(targetSceneName);
+        SceneFlowService.LoadSceneWithLoading(targetSceneName);
     }
 }

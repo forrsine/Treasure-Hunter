@@ -18,20 +18,20 @@ public class PlayerMovementComponent : MonoBehaviour
     [SerializeField] private float walkSpeed = 3f;
     [SerializeField] private float runSpeed = 5f;
     [SerializeField] private float attackMoveSpeedLimit = 3f;
-    [SerializeField] private float rollSpeed = 12f;
-    [SerializeField] private float rollDuration = 0.5f;
-    [SerializeField] private float jumpHeight = 2f;
+    [SerializeField] private float rollSpeed = 11.5f;
+    [SerializeField] private float rollDuration = 0.48f;
+    [SerializeField] private float jumpHeight = 1f;
     [SerializeField] private float gravity = -9.81f;
     [SerializeField] private float coyoteTime = 0.12f;
     [SerializeField] private float jumpBufferTime = 0.12f;
 
-    [SerializeField] private float maxStamina = 120f;
+    [SerializeField] private float maxStamina = 100f;
     [SerializeField] private float currentStamina;
-    [SerializeField] private float jumpStaminaCost = 60f;
-    [SerializeField] private float rollStaminaCost = 40f;
-    [SerializeField] private float runStaminaCostPerSecond = 18f;
-    [SerializeField] private float minimumStaminaToStartRun = 5f;
-    [SerializeField] private float staminaRecoverPerSecond = 15f;
+    [SerializeField] private float jumpStaminaCost = 20f;
+    [SerializeField] private float rollStaminaCost = 35f;
+    [SerializeField] private float runStaminaCostPerSecond = 15f;
+    [SerializeField] private float minimumStaminaToStartRun = 15f;
+    [SerializeField] private float staminaRecoverPerSecond = 20f;
 
     private bool isJumping;
     private bool isRunning;

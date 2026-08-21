@@ -13,6 +13,26 @@ public enum CharacterAnimationStyle
 }
 
 /// <summary>
+/// 职业普通攻击类型。
+/// 近战由公共攻击盒判定；投射物攻击会在动画释放帧生成对应职业的可复用投射物。
+/// </summary>
+public enum CharacterBasicAttackType
+{
+    Melee = 0,
+    Projectile = 1
+}
+
+/// <summary>
+/// 远程普攻投射物的飞行轨迹。
+/// Straight 用于弓箭，Arc 用于需要明显抛物线表现的法术火球。
+/// </summary>
+public enum CharacterProjectileTrajectory
+{
+    Straight = 0,
+    Arc = 1
+}
+
+/// <summary>
 /// CharacterDefine.json 的根节点，仅用于让 JsonUtility 读取职业列表。
 /// </summary>
 [Serializable]
@@ -38,11 +58,25 @@ public class CharacterDefine
     // 保留旧字段兼容现有数据和工具，新生成流程会优先读取 visualPrefabPath。
     public string gamePrefabPath;
     public CharacterAnimationStyle animationStyle;
+    public CharacterBasicAttackType basicAttackType;
     public float basicAttackDuration;
+    // 远程攻击配置。近战职业会忽略这些字段。
+    public float projectileReleaseRatio;
+    public float projectileSpeed;
+    public float projectileLifetime;
+    public float projectileRadius;
+    public string projectileColorHex;
+    public CharacterProjectileTrajectory projectileTrajectory;
+    public float projectileArcHeight;
+    public float projectileVisualScale;
+    public bool projectileApplyTint;
+    public float projectileExplosionRadius;
     public int initLevel;
     public float hp;
     public float mp;
     public float attack;
+    // 职业基础伤害减免百分比。例如 20 表示进入战斗时拥有 20% 伤害减免。
+    // 使用百分比而不是直接参与减法，可以继续复用现有 DamageReduction 成长和伤害公式。
     public float defense;
     public float moveSpeed;
 }

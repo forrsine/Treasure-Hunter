@@ -39,7 +39,7 @@ public class MonsSpawner : MonoBehaviour
     public int maxNum = 3;
 
     // 每隔多少秒生成一只怪。
-    public float spawnerTime;
+    public float spawnerTime = 7f;
 
     // 当前生成倒计时。
     public float curSpawnerTime;

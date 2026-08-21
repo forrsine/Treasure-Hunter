@@ -8,6 +8,41 @@ public sealed class GetPlayerStatsQuery : AbstractQuery<PlayerStatsSnapshot>
     protected override PlayerStatsSnapshot OnDo() => this.GetModel<PlayerModel>().CreateSnapshot();
 }
 
+/// <summary>生成独立的长期成长快照，网络层拿到的是副本而不是可写 Model。</summary>
+public sealed class GetPlayerProgressSaveDataQuery : AbstractQuery<PlayerProgressSaveData>
+{
+    protected override PlayerProgressSaveData OnDo()
+    {
+        PlayerRuntimeStats stats = this.GetModel<PlayerModel>().MutableStats;
+        var saveData = new PlayerProgressSaveData
+        {
+            Level = stats.Level,
+            Exp = stats.CurrentExp,
+            PendingAttributeUpgradeCount = stats.PendingUpgradeSelectionCount
+        };
+
+        for (int typeValue = (int)PlayerAttributeType.AttackPower;
+             typeValue <= (int)PlayerAttributeType.LifeSteal;
+             typeValue++)
+        {
+            PlayerAttributeType attributeType = (PlayerAttributeType)typeValue;
+            int count = stats.GetAttributeUpgradeCount(attributeType);
+            if (count <= 0)
+            {
+                continue;
+            }
+
+            saveData.AttributeUpgrades.Add(new NAttributeUpgradeSave
+            {
+                attributeType = typeValue,
+                upgradeCount = count
+            });
+        }
+
+        return saveData;
+    }
+}
+
 /// <summary>
 /// 判断当前玩家是否有足够魔法释放技能。
 /// 这里只查询不扣蓝，真正扣蓝必须走 TrySpendPlayerManaCommand。

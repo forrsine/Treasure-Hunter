@@ -33,6 +33,9 @@ namespace SkillBridge.Message
 
         [ProtoMember(5)]
         public UserGameLeaveRequest gameLeave { get; set; }
+
+        [ProtoMember(6)]
+        public UserSaveCharacterProgressRequest saveCharacterProgress { get; set; }
     }
 
     /// <summary>服务端发往客户端的响应集合，字段编号必须与服务端协议保持一致。</summary>
@@ -53,6 +56,9 @@ namespace SkillBridge.Message
 
         [ProtoMember(5)]
         public UserGameLeaveResponse gameLeave { get; set; }
+
+        [ProtoMember(6)]
+        public UserSaveCharacterProgressResponse saveCharacterProgress { get; set; }
     }
 
     /// <summary>注册账号请求。密码只用于本次传输，不应写入客户端日志。</summary>
@@ -136,6 +142,9 @@ namespace SkillBridge.Message
     {
         [ProtoMember(1, Name = "characterIdx")]
         public int characterIdx { get; set; }
+
+        [ProtoMember(2, Name = "character_id")]
+        public int CharacterId { get; set; }
     }
 
     /// <summary>进入游戏结果和当前角色网络数据。</summary>
@@ -167,6 +176,46 @@ namespace SkillBridge.Message
 
         [ProtoMember(2, Name = "errormsg")]
         public string Errormsg { get; set; } = "";
+    }
+
+    /// <summary>
+    /// 保存当前在线角色的长期成长数据。
+    /// 角色 ID 不由客户端传入，服务端只允许写入当前 Session 已进入的角色。
+    /// </summary>
+    [ProtoContract]
+    public class UserSaveCharacterProgressRequest
+    {
+        [ProtoMember(1, Name = "level")]
+        public int Level { get; set; }
+
+        [ProtoMember(2, Name = "exp")]
+        public int Exp { get; set; }
+
+        [ProtoMember(3, Name = "pending_attribute_upgrade_count")]
+        public int PendingAttributeUpgradeCount { get; set; }
+
+        [ProtoMember(4, Name = "vault_destroyed_count")]
+        public int VaultDestroyedCount { get; set; }
+
+        [ProtoMember(5, Name = "completed_boss_count")]
+        public int CompletedBossCount { get; set; }
+
+        [ProtoMember(6, Name = "attribute_upgrades")]
+        public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new List<NAttributeUpgradeInfo>();
+    }
+
+    /// <summary>角色成长保存结果，以及数据库确认后的最新角色数据。</summary>
+    [ProtoContract]
+    public class UserSaveCharacterProgressResponse
+    {
+        [ProtoMember(1, Name = "result")]
+        public Result Result { get; set; }
+
+        [ProtoMember(2, Name = "errormsg")]
+        public string Errormsg { get; set; } = "";
+
+        [ProtoMember(3, Name = "character")]
+        public NCharacterInfo Character { get; set; }
     }
 
     /// <summary>登录用户的网络传输数据。</summary>
@@ -224,6 +273,32 @@ namespace SkillBridge.Message
 
         [ProtoMember(10, Name = "slot_index")]
         public int SlotIndex { get; set; }
+
+        [ProtoMember(11, Name = "exp")]
+        public int Exp { get; set; }
+
+        [ProtoMember(12, Name = "pending_attribute_upgrade_count")]
+        public int PendingAttributeUpgradeCount { get; set; }
+
+        [ProtoMember(13, Name = "vault_destroyed_count")]
+        public int VaultDestroyedCount { get; set; }
+
+        [ProtoMember(14, Name = "completed_boss_count")]
+        public int CompletedBossCount { get; set; }
+
+        [ProtoMember(15, Name = "attribute_upgrades")]
+        public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new List<NAttributeUpgradeInfo>();
+    }
+
+    /// <summary>某一种属性被强化的次数；最终数值仍由客户端配置和成长公式计算。</summary>
+    [ProtoContract]
+    public class NAttributeUpgradeInfo
+    {
+        [ProtoMember(1, Name = "attribute_type")]
+        public int AttributeType { get; set; }
+
+        [ProtoMember(2, Name = "upgrade_count")]
+        public int UpgradeCount { get; set; }
     }
 
     /// <summary>通用业务处理结果。</summary>

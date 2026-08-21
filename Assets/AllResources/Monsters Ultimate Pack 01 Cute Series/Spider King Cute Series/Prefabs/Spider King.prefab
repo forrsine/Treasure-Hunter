@@ -907,29 +907,30 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier:
   bossName: Spider King
-  maxHp: 1200
-  biteDamage: 28
-  clawDamage: 34
-  spellDamage: 24
+  maxHp: 4000
+  biteDamage: 30
+  clawDamage: 36
+  spellDamage: 26
   detectRange: 22
   meleeRange: 3.2
   spellRange: 10
   spellImpactRadius: 2.2
   chaseStopDistance: 2.65
   overlapSeparationDistance: 1.55
-  moveSpeed: 3.1
+  moveSpeed: 3
+  maximumRoundScaledMoveSpeed: 4.2
   overlapSeparationSpeed: 3.8
   rotateSpeed: 540
   meleeCooldown: 2.1
-  spellCooldown: 4.2
+  spellCooldown: 4.5
   meleeActionLockDuration: 0.95
   spellActionLockDuration: 1.25
   meleeHitDelay: 0.42
   spellHitDelay: 0.72
   enragedHpPercent: 0.35
-  enragedMoveSpeedMultiplier: 1.25
-  enragedDamageMultiplier: 1.35
-  enragedCooldownMultiplier: 0.78
+  enragedMoveSpeedMultiplier: 1.18
+  enragedDamageMultiplier: 1.25
+  enragedCooldownMultiplier: 0.85
   idleStateName: Idle 0
   moveStateName: Crawl Forward Fast In Place
   biteAttackStateName: Bite Attack
