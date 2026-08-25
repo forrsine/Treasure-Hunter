@@ -228,15 +228,6 @@ public sealed class GameSessionUi : MonoBehaviour, IController
         StartCoroutine(ResetProgressAndRestart());
     }
 
-    /// <summary>
-    /// 退出游戏，或在编辑器里停止播放。
-    /// </summary>
-    public void QuitGame()
-    {
-        PersistCurrentScore();
-        StartCoroutine(SaveAndQuit());
-    }
-
     private IEnumerator ResetProgressAndRestart()
     {
         CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
@@ -249,12 +240,14 @@ public sealed class GameSessionUi : MonoBehaviour, IController
 
         bool success = false;
         string message = "";
-        SetTransitionPending("正在清空本局强化并保存...");
-        yield return saveService.FlushNow(true, (result, resultMessage, _) =>
-        {
-            success = result;
-            message = resultMessage;
-        });
+        SetTransitionPending("正在重置死亡进度并保存...");
+        yield return saveService.FlushNow(
+            CharacterProgressSaveMode.ResetAfterDeath,
+            (result, resultMessage, _) =>
+            {
+                success = result;
+                message = resultMessage;
+            });
 
         if (!success)
         {
@@ -264,35 +257,6 @@ public sealed class GameSessionUi : MonoBehaviour, IController
 
         PrepareForSceneTransition();
         SceneFlowService.RestartGameplay();
-    }
-
-    private IEnumerator SaveAndQuit()
-    {
-        CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
-        if (saveService != null && saveService.IsSessionActive)
-        {
-            bool success = false;
-            string message = "";
-            SetTransitionPending("正在保存并退出...");
-            yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
-            {
-                success = result;
-                message = resultMessage;
-            });
-
-            if (!success)
-            {
-                ShowTransitionError(message);
-                yield break;
-            }
-        }
-
-        PrepareForSceneTransition();
-#if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-#else
-        Application.Quit();
-#endif
     }
 
     /// <summary>
@@ -383,11 +347,12 @@ public sealed class GameSessionUi : MonoBehaviour, IController
         overlayTitleText.text = "游戏结束";
         overlayBodyText.text = $"当前分数：{score}\n历史最高分：{GameHighScore.GetHighScore()}";
         primaryButtonText.text = "重新开始";
-        secondaryButtonText.text = "退出游戏";
+        secondaryButtonText.text = "返回角色选择";
         if (!preview)
         {
             primaryButton.onClick.AddListener(RestartGame);
-            secondaryButton.onClick.AddListener(QuitGame);
+            // 失败后保留账号登录态，先保存角色数据，再回到角色选择界面。
+            secondaryButton.onClick.AddListener(SaveAndReturnToCharacterSelect);
         }
     }
 
@@ -554,12 +519,19 @@ public sealed class GameSessionUi : MonoBehaviour, IController
 
         bool success = false;
         string message = "";
-        SetTransitionPending("正在保存并返回角色选择...");
-        yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
-        {
-            success = result;
-            message = resultMessage;
-        });
+        CharacterProgressSaveMode saveMode = overlayMode == OverlayMode.GameOver
+            ? CharacterProgressSaveMode.ResetAfterDeath
+            : CharacterProgressSaveMode.Normal;
+        SetTransitionPending(saveMode == CharacterProgressSaveMode.ResetAfterDeath
+            ? "正在重置死亡进度并返回角色选择..."
+            : "正在保存并返回角色选择...");
+        yield return saveService.FlushAndLeave(
+            saveMode,
+            (result, resultMessage) =>
+            {
+                success = result;
+                message = resultMessage;
+            });
 
         if (!success)
         {

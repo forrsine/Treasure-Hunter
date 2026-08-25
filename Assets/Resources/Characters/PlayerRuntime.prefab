@@ -18,6 +18,7 @@ GameObject:
   - component: {fileID: 1009}
   - component: {fileID: 1010}
   - component: {fileID: 3974072919841607022}
+  - component: {fileID: 3974072919841607023}
   m_Layer: 6
   m_Name: PlayerRuntime
   m_TagString: Untagged
@@ -161,6 +162,8 @@ MonoBehaviour:
   hitFlashColor: {r: 0.86415094, g: 0.22011383, b: 0.22011383, a: 1}
   defaultHitColor: {r: 1, g: 1, b: 1, a: 1}
   hitColorTime: 0.1
+  fullChargeFlashColor: {r: 1, g: 0.8352941, b: 0.2901961, a: 1}
+  fullChargeFlashInterval: 0.18
   dodgeInvincibleDuration: 1
   dodgeFlickerInterval: 0.08
 --- !u!114 &1009
@@ -183,8 +186,21 @@ MonoBehaviour:
   progression: {fileID: 1006}
   audioComponent: {fileID: 1010}
   rangedAttack: {fileID: 3974072919841607022}
+  chargedAttack: {fileID: 3974072919841607023}
   skillCaster: {fileID: 0}
   developerMode: {fileID: 0}
+--- !u!114 &3974072919841607023
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c4f3b08e17a84582b64e52d30f266c91, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!114 &1010
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -195,8 +211,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a2222222222222222222222222222222, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   source: {fileID: 0}
   autoPlayFootstepSfx: 1
   autoPlayActionSfx: 1

@@ -124,6 +124,27 @@ public sealed class InventorySystemTests
     }
 
     [Test]
+    public void SaveSnapshotAndRestore_PreserveStableIdCountAndSlotIndex()
+    {
+        InventoryDatabase database = Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath);
+        Assert.That(database, Is.Not.Null);
+        Assert.That(database.TryGetItemById("spider_king_core", out InventoryItemDefinition item), Is.True);
+        inventorySystem.ConfigureDatabase(database);
+        inventorySystem.TryAddItem(item, 2);
+
+        List<NInventoryItemSave> snapshot = inventorySystem.CreateSaveSnapshot();
+        inventorySystem.ResetInventory();
+        inventorySystem.RestoreInventory(snapshot);
+
+        Assert.That(snapshot, Has.Count.EqualTo(1));
+        Assert.That(snapshot[0].slotIndex, Is.Zero);
+        Assert.That(snapshot[0].itemId, Is.EqualTo("spider_king_core"));
+        Assert.That(snapshot[0].count, Is.EqualTo(2));
+        Assert.That(inventoryModel.Slots[0].Item, Is.SameAs(item));
+        Assert.That(inventoryModel.Slots[0].Count, Is.EqualTo(2));
+    }
+
+    [Test]
     public void UseHealthPotion_RestoresThirtyPercentAndConsumesOne()
     {
         InventoryItemDefinition potion = CreateItem(

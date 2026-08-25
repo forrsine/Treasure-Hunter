@@ -50,6 +50,7 @@ public sealed class PlayerAudioComponent : MonoBehaviour
         }
 
         source.playOnAwake = false;
+        GameSettingsService.RouteSoundsSource(source);
     }
 
     /// <summary>

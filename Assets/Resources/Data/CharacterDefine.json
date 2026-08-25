@@ -11,6 +11,18 @@
       "animationStyle": 1,
       "basicAttackType": 0,
       "basicAttackDuration": 0.75,
+      "chargeAttack": {
+        "enabled": true,
+        "maxChargeDuration": 1.6,
+        "maxDamageMultiplier": 3.0,
+        "holdNormalizedTime": 0.2,
+        "releaseHitDelay": 0.08,
+        "movementSpeedLimit": 1.5,
+        "fullChargeDamageReduction": 0.15,
+        "fullChargeAreaRadius": 3.0,
+        "fullChargeSpinDuration": 0.6,
+        "fullChargeSpinDegrees": 360
+      },
       "initLevel": 1,
       "hp": 380,
       "mp": 120,
@@ -56,7 +68,7 @@
       "gamePrefabPath": "Characters/Archer",
       "animationStyle": 1,
       "basicAttackType": 1,
-      "basicAttackDuration": 0.72,
+      "basicAttackDuration": 0.25,
       "projectileReleaseRatio": 0.4,
       "projectileSpeed": 12,
       "projectileLifetime": 1.25,
@@ -70,7 +82,7 @@
       "initLevel": 1,
       "hp": 300,
       "mp": 180,
-      "attack": 38,
+      "attack": 15,
       "defense": 12,
       "moveSpeed": 5.5
     },
@@ -86,10 +98,10 @@
       "basicAttackType": 0,
       "basicAttackDuration": 0.62,
       "initLevel": 1,
-      "hp": 280,
+      "hp": 240,
       "mp": 160,
       "attack": 44,
-      "defense": 10,
+      "defense": 5,
       "moveSpeed": 6
     }
   ]

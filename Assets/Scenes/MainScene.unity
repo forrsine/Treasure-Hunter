@@ -495,7 +495,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   spawnPoint: {fileID: 572775926}
   gameplayCamera: {fileID: 1588964956}
-  fallbackClassId: 3
+  fallbackClassId: 1
 --- !u!4 &365139769
 Transform:
   m_ObjectHideFlags: 0
@@ -2474,6 +2474,8 @@ MonoBehaviour:
   Yinput: 0
   MouseInput: {x: 0, y: 0, z: 0}
   leftMouseDown: 0
+  leftMouseHeld: 0
+  leftMouseUp: 0
   rollDown: 0
   developerModeToggleDown: 0
   debugAddLevelsDown: 0

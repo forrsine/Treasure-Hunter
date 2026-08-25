@@ -114,6 +114,21 @@ public sealed class DBService : Singleton<DBService>
                     CONSTRAINT CK_CharacterAttributeUpgrades_Count CHECK (UpgradeCount >= 0)
                 );
             END
+
+            IF OBJECT_ID(N'dbo.CharacterInventoryItems', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CharacterInventoryItems (
+                    CharacterId BIGINT NOT NULL,
+                    SlotIndex INT NOT NULL,
+                    ItemId NVARCHAR(64) NOT NULL,
+                    ItemCount INT NOT NULL,
+                    CONSTRAINT PK_CharacterInventoryItems PRIMARY KEY (CharacterId, SlotIndex),
+                    CONSTRAINT FK_CharacterInventoryItems_Character
+                        FOREIGN KEY (CharacterId) REFERENCES dbo.PlayerCharacters(Id) ON DELETE CASCADE,
+                    CONSTRAINT CK_CharacterInventoryItems_Slot CHECK (SlotIndex >= 0 AND SlotIndex < 24),
+                    CONSTRAINT CK_CharacterInventoryItems_Count CHECK (ItemCount > 0)
+                );
+            END
             """,
             connection,
             transaction);
@@ -336,6 +351,13 @@ public sealed class DBService : Singleton<DBService>
                     transaction);
                 clearUpgradesCommand.Parameters.AddWithValue("@CharacterId", character.ID);
                 clearUpgradesCommand.ExecuteNonQuery();
+
+                using var clearInventoryCommand = new SqlCommand(
+                    "DELETE FROM dbo.CharacterInventoryItems WHERE CharacterId = @CharacterId",
+                    connection,
+                    transaction);
+                clearInventoryCommand.Parameters.AddWithValue("@CharacterId", character.ID);
+                clearInventoryCommand.ExecuteNonQuery();
             }
 
             transaction.Commit();
@@ -370,7 +392,8 @@ public sealed class DBService : Singleton<DBService>
         int pendingAttributeUpgradeCount,
         int vaultDestroyedCount,
         int completedBossCount,
-        IReadOnlyDictionary<int, int> attributeUpgradeCounts)
+        IReadOnlyDictionary<int, int> attributeUpgradeCounts,
+        IReadOnlyList<TInventoryItem> inventoryItems)
     {
         using SqlConnection connection = OpenConnection();
         EnsurePlayerCharactersTable(connection);
@@ -432,6 +455,31 @@ public sealed class DBService : Singleton<DBService>
                 insertCommand.Parameters.AddWithValue("@AttributeType", attributeType);
                 insertCommand.Parameters.AddWithValue("@UpgradeCount", upgradeCount);
                 insertCommand.ExecuteNonQuery();
+            }
+
+            using (var deleteInventoryCommand = new SqlCommand(
+                       "DELETE FROM dbo.CharacterInventoryItems WHERE CharacterId = @CharacterId",
+                       connection,
+                       transaction))
+            {
+                deleteInventoryCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                deleteInventoryCommand.ExecuteNonQuery();
+            }
+
+            foreach (TInventoryItem item in inventoryItems)
+            {
+                using var insertInventoryCommand = new SqlCommand(
+                    """
+                    INSERT INTO dbo.CharacterInventoryItems (CharacterId, SlotIndex, ItemId, ItemCount)
+                    VALUES (@CharacterId, @SlotIndex, @ItemId, @ItemCount);
+                    """,
+                    connection,
+                    transaction);
+                insertInventoryCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                insertInventoryCommand.Parameters.AddWithValue("@SlotIndex", item.SlotIndex);
+                insertInventoryCommand.Parameters.AddWithValue("@ItemId", item.ItemId);
+                insertInventoryCommand.Parameters.AddWithValue("@ItemCount", item.Count);
+                insertInventoryCommand.ExecuteNonQuery();
             }
 
             transaction.Commit();
@@ -501,6 +549,7 @@ public sealed class DBService : Singleton<DBService>
         }
 
         LoadAttributeUpgrades(connection, userId, characters);
+        LoadInventoryItems(connection, userId, characters);
 
         return characters;
     }
@@ -533,6 +582,45 @@ public sealed class DBService : Singleton<DBService>
             if (charactersById.TryGetValue(characterId, out TCharacter? character))
             {
                 character.AttributeUpgradeCounts[reader.GetInt32(1)] = reader.GetInt32(2);
+            }
+        }
+    }
+
+    /// <summary>批量读取账号下全部角色背包，避免角色列表中的每个角色各发一次查询。</summary>
+    private static void LoadInventoryItems(
+        SqlConnection connection,
+        long userId,
+        List<TCharacter> characters)
+    {
+        if (characters.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<long, TCharacter> charactersById = characters.ToDictionary(character => character.ID);
+        using var command = new SqlCommand(
+            """
+            SELECT inventory.CharacterId, inventory.SlotIndex, inventory.ItemId, inventory.ItemCount
+            FROM dbo.CharacterInventoryItems AS inventory
+            INNER JOIN dbo.PlayerCharacters AS characters ON characters.Id = inventory.CharacterId
+            WHERE characters.UserId = @UserId
+            ORDER BY inventory.CharacterId, inventory.SlotIndex;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@UserId", userId);
+
+        using SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            long characterId = reader.GetInt64(0);
+            if (charactersById.TryGetValue(characterId, out TCharacter? character))
+            {
+                character.InventoryItems.Add(new TInventoryItem
+                {
+                    SlotIndex = reader.GetInt32(1),
+                    ItemId = reader.GetString(2),
+                    Count = reader.GetInt32(3)
+                });
             }
         }
     }

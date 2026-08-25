@@ -1422,6 +1422,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         }
 
         sfxSource.playOnAwake = false;
+        GameSettingsService.RouteSoundsSource(sfxSource);
     }
 
     /// <summary>

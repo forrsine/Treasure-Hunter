@@ -572,5 +572,8 @@ public class GameConfig : MonoBehaviour
 
         // spatialBlend = 0 表示 2D 声音，不会因为玩家离物体远近而改变音量。
         backgroundMusicSource.spatialBlend = 0f;
+
+        // 只给没有自定义 Mixer 分组的运行时音源补齐 Music 路由，保留 Inspector 手动配置。
+        GameSettingsService.RouteMusicSource(backgroundMusicSource);
     }
 }

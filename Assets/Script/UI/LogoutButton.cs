@@ -40,11 +40,13 @@ public class LogoutButton : MonoBehaviour
         {
             bool success = false;
             string message = "";
-            yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
-            {
-                success = result;
-                message = resultMessage;
-            });
+            yield return saveService.FlushAndLeave(
+                CharacterProgressSaveMode.Normal,
+                (result, resultMessage) =>
+                {
+                    success = result;
+                    message = resultMessage;
+                });
 
             if (!success)
             {

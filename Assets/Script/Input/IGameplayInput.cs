@@ -11,6 +11,8 @@ public interface IGameplayInput
     float YInput { get; }
     Vector3 MouseInput { get; }
     bool LeftMouseDown { get; }
+    bool LeftMouseHeld { get; }
+    bool LeftMouseUp { get; }
     bool RollDown { get; }
     bool DeveloperModeToggleDown { get; }
     bool DebugAddLevelsDown { get; }

@@ -249,6 +249,31 @@ public sealed class PlayerProgressionSystem : AbstractSystem
         this.SendEvent(new PlayerStatsChangedEvent());
     }
 
+    /// <summary>
+    /// 将数据源已经确认的死亡重置结果同步回运行时模型。
+    /// 复用 PlayerModel.Reset 可以完整撤销攻击、生命、移速等强化结果，
+    /// 随后再把生命设回 0，避免结算界面背后的角色被意外复活。
+    /// </summary>
+    public void ResetProgressAfterDeath(NCharacter confirmedCharacter)
+    {
+        if (confirmedCharacter == null)
+        {
+            Debug.LogError("同步死亡重置失败：数据源没有返回角色数据。");
+            return;
+        }
+
+        CharacterDefine define = model.CharacterDefine;
+        model.Reset(confirmedCharacter, define);
+        Stats.CurrentHp = 0;
+        Stats.PendingUpgradeSelectionCount = 0;
+        Stats.IsUpgradeSelectionActive = false;
+
+        this.GetSystem<PlayerCombatSystem>().ResetRuntimeBuffers();
+        this.GetSystem<PlayerSkillSystem>().ResetRuntimeSkills();
+        this.SendEvent(new PlayerUpgradeQueueChangedEvent(0));
+        this.SendEvent(new PlayerStatsChangedEvent());
+    }
+
     private void RestoreAttributeUpgrades(NCharacter save)
     {
         if (save == null)

@@ -141,6 +141,34 @@ public class SkillDataManager : MonoBehaviour
             return false;
         }
 
+        if (skill.castCommitment != null && skill.castCommitment.enabled)
+        {
+            SkillCastCommitmentDefine commitment = skill.castCommitment;
+            if (commitment.hitDelay < 0f)
+            {
+                error = "技能出手承诺的 hitDelay 不能小于 0。";
+                return false;
+            }
+
+            if (commitment.lockDuration <= 0f)
+            {
+                error = "技能出手承诺的 lockDuration 必须大于 0。";
+                return false;
+            }
+
+            if (commitment.hitDelay > commitment.lockDuration)
+            {
+                error = "技能出手承诺的 hitDelay 不能大于 lockDuration。";
+                return false;
+            }
+
+            if (commitment.movementSpeedLimit <= 0f)
+            {
+                error = "技能出手承诺的 movementSpeedLimit 必须大于 0。";
+                return false;
+            }
+        }
+
         if (skill.levels == null || skill.levels.Count != skill.maxLevel)
         {
             int levelCount = skill.levels != null ? skill.levels.Count : 0;

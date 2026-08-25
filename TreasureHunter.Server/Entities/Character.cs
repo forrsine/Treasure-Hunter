@@ -58,6 +58,7 @@ public sealed class Character : IPostResponser
         Info.VaultDestroyedCount = data.VaultDestroyedCount;
         Info.CompletedBossCount = data.CompletedBossCount;
         Info.AttributeUpgrades.Clear();
+        Info.InventoryItems.Clear();
 
         foreach ((int attributeType, int upgradeCount) in data.AttributeUpgradeCounts)
         {
@@ -65,6 +66,16 @@ public sealed class Character : IPostResponser
             {
                 AttributeType = attributeType,
                 UpgradeCount = upgradeCount
+            });
+        }
+
+        foreach (TInventoryItem item in data.InventoryItems)
+        {
+            Info.InventoryItems.Add(new NInventoryItemInfo
+            {
+                SlotIndex = item.SlotIndex,
+                ItemId = item.ItemId,
+                Count = item.Count
             });
         }
     }
@@ -98,6 +109,16 @@ public sealed class Character : IPostResponser
             {
                 AttributeType = upgrade.AttributeType,
                 UpgradeCount = upgrade.UpgradeCount
+            });
+        }
+
+        foreach (NInventoryItemInfo item in Info.InventoryItems)
+        {
+            copy.InventoryItems.Add(new NInventoryItemInfo
+            {
+                SlotIndex = item.SlotIndex,
+                ItemId = item.ItemId,
+                Count = item.Count
             });
         }
 

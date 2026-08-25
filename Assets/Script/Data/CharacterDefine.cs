@@ -42,6 +42,27 @@ public class CharacterDefineTable
 }
 
 /// <summary>
+/// 战士蓄力普攻配置。
+/// 配置只描述数值规则，输入状态、动画固定和伤害结算分别由对应运行时组件处理。
+/// </summary>
+[Serializable]
+public class CharacterChargedAttackDefine
+{
+    public bool enabled;
+    public float maxChargeDuration;
+    public float maxDamageMultiplier;
+    public float holdNormalizedTime;
+    public float releaseHitDelay;
+    public float movementSpeedLimit;
+    // 满蓄力后的额外乘算减伤，只在本次蓄力攻击结束前生效，不写入玩家常驻属性。
+    public float fullChargeDamageReduction;
+    // 只有满蓄力释放才读取以下旋转重斩配置；未满蓄力仍使用原近战攻击盒。
+    public float fullChargeAreaRadius;
+    public float fullChargeSpinDuration;
+    public float fullChargeSpinDegrees;
+}
+
+/// <summary>
 /// 职业静态配置：描述一个职业使用什么模型、初始数值和动画适配方式。
 /// 这里只保存不会在一局游戏中变化的数据；当前血量、经验等运行时状态不应写回本配置。
 /// </summary>
@@ -60,6 +81,8 @@ public class CharacterDefine
     public CharacterAnimationStyle animationStyle;
     public CharacterBasicAttackType basicAttackType;
     public float basicAttackDuration;
+    // 只有配置此节点并启用的职业才会接管左键蓄力，其余职业保持原攻击流程。
+    public CharacterChargedAttackDefine chargeAttack;
     // 远程攻击配置。近战职业会忽略这些字段。
     public float projectileReleaseRatio;
     public float projectileSpeed;

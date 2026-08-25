@@ -271,7 +271,12 @@ public sealed class UserService : Singleton<UserService>
             return;
         }
 
-        if (!TryValidateCharacterProgress(request, onlineCharacter.Data, out Dictionary<int, int> upgrades, out string error))
+        if (!TryValidateCharacterProgress(
+                request,
+                onlineCharacter.Data,
+                out Dictionary<int, int> upgrades,
+                out List<TInventoryItem> inventoryItems,
+                out string error))
         {
             sender.Session.Response.saveCharacterProgress.Result = Result.Failed;
             sender.Session.Response.saveCharacterProgress.Errormsg = error;
@@ -289,7 +294,8 @@ public sealed class UserService : Singleton<UserService>
                 request.PendingAttributeUpgradeCount,
                 request.VaultDestroyedCount,
                 request.CompletedBossCount,
-                upgrades);
+                upgrades,
+                inventoryItems);
 
             int characterIndex = user.Player.Characters.FindIndex(character => character.ID == saved.ID);
             if (characterIndex >= 0)
@@ -316,10 +322,39 @@ public sealed class UserService : Singleton<UserService>
         UserSaveCharacterProgressRequest request,
         TCharacter current,
         out Dictionary<int, int> upgrades,
+        out List<TInventoryItem> inventoryItems,
         out string error)
     {
         upgrades = new Dictionary<int, int>();
+        inventoryItems = new List<TInventoryItem>();
         error = "";
+
+        if (!TryValidateInventory(
+                request.InventoryItems,
+                request.ResetAfterDeath,
+                out inventoryItems,
+                out error))
+        {
+            return false;
+        }
+
+        if (request.ResetAfterDeath)
+        {
+            bool isExactDeathReset = request.Level == 1 &&
+                request.Exp == 0 &&
+                request.PendingAttributeUpgradeCount == 0 &&
+                request.VaultDestroyedCount == 0 &&
+                request.CompletedBossCount == 0 &&
+                request.AttributeUpgrades.Count == 0;
+            if (!isExactDeathReset)
+            {
+                error = "死亡重置数据必须全部归零";
+                return false;
+            }
+
+            // 只有固定的 1 级空进度可以绕过防回档校验，客户端不能借此写入任意旧数据。
+            return true;
+        }
 
         if (request.Level < 1 || request.Level > 999 || request.Exp < 0)
         {
@@ -369,6 +404,49 @@ public sealed class UserService : Singleton<UserService>
             return false;
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// 校验客户端提交的背包结构。死亡重置请求只允许携带材料和任务物品，不能保留药水。
+    /// </summary>
+    private static bool TryValidateInventory(
+        IEnumerable<NInventoryItemInfo> requestedItems,
+        bool resetAfterDeath,
+        out List<TInventoryItem> inventoryItems,
+        out string error)
+    {
+        inventoryItems = new List<TInventoryItem>();
+        var usedSlots = new HashSet<int>();
+
+        foreach (NInventoryItemInfo item in requestedItems)
+        {
+            if (item == null ||
+                item.SlotIndex < 0 || item.SlotIndex >= InventoryPersistenceRules.Capacity ||
+                !usedSlots.Add(item.SlotIndex) ||
+                !InventoryPersistenceRules.TryGetRule(item.ItemId, out InventoryItemRule rule) ||
+                item.Count <= 0 || item.Count > rule.MaxStack)
+            {
+                error = "背包格子、物品ID或数量非法";
+                return false;
+            }
+
+            if (resetAfterDeath && !rule.PersistsAfterDeath)
+            {
+                error = "死亡重置存档不能保留消耗品";
+                return false;
+            }
+
+            inventoryItems.Add(new TInventoryItem
+            {
+                SlotIndex = item.SlotIndex,
+                ItemId = item.ItemId,
+                Count = item.Count
+            });
+        }
+
+        inventoryItems.Sort((left, right) => left.SlotIndex.CompareTo(right.SlotIndex));
+        error = "";
         return true;
     }
 
@@ -457,6 +535,16 @@ public sealed class UserService : Singleton<UserService>
             {
                 AttributeType = attributeType,
                 UpgradeCount = upgradeCount
+            });
+        }
+
+        foreach (TInventoryItem item in character.InventoryItems)
+        {
+            info.InventoryItems.Add(new NInventoryItemInfo
+            {
+                SlotIndex = item.SlotIndex,
+                ItemId = item.ItemId,
+                Count = item.Count
             });
         }
 

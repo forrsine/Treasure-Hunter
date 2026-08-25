@@ -18,6 +18,7 @@ public class NCharacter
     public int vaultDestroyedCount;
     public int completedBossCount;
     public List<NAttributeUpgradeSave> attributeUpgrades = new List<NAttributeUpgradeSave>();
+    public List<NInventoryItemSave> inventoryItems = new List<NInventoryItemSave>();
 
     /// <summary>
     /// 查询某一种属性的强化次数。返回值来自副本，外部不能直接改写存档集合。
@@ -76,7 +77,43 @@ public class NCharacter
             }
         }
 
+        if (inventoryItems != null)
+        {
+            for (int i = 0; i < inventoryItems.Count; i++)
+            {
+                NInventoryItemSave item = inventoryItems[i];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                copy.inventoryItems.Add(item.Clone());
+            }
+        }
+
         return copy;
+    }
+}
+
+/// <summary>
+/// 单个背包格的持久化数据。
+/// 存档只记录稳定物品 ID，不直接保存 ScriptableObject 引用，避免资源重新加载后引用失效。
+/// </summary>
+[Serializable]
+public sealed class NInventoryItemSave
+{
+    public int slotIndex;
+    public string itemId;
+    public int count;
+
+    public NInventoryItemSave Clone()
+    {
+        return new NInventoryItemSave
+        {
+            slotIndex = slotIndex,
+            itemId = itemId,
+            count = count
+        };
     }
 }
 

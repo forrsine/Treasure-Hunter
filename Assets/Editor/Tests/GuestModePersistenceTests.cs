@@ -50,6 +50,25 @@ public sealed class GuestModePersistenceTests
     }
 
     [Test]
+    public void VersionOneSaveWithoutInventory_MigratesToEmptyVersionTwoInventory()
+    {
+        Directory.CreateDirectory(temporaryDirectory);
+        File.WriteAllText(
+            saveFilePath,
+            "{\"version\":1,\"characters\":[{\"id\":1,\"slotIndex\":0," +
+            "\"name\":\"旧游客\",\"classId\":1,\"level\":1,\"exp\":0," +
+            "\"pendingAttributeUpgradeCount\":0,\"vaultDestroyedCount\":0," +
+            "\"completedBossCount\":0,\"attributeUpgrades\":[]}]}" );
+
+        var service = new LocalGuestSaveService(saveFilePath);
+        bool success = service.TryLoad(out NCharacter[] characters, out string message);
+
+        Assert.That(success, Is.True, message);
+        Assert.That(characters, Has.Length.EqualTo(1));
+        Assert.That(characters[0].inventoryItems, Is.Not.Null.And.Empty);
+    }
+
+    [Test]
     public void CreateCharacter_ReloadPreservesSlotAndIdentity()
     {
         var service = CreateLoadedService();
@@ -104,11 +123,24 @@ public sealed class GuestModePersistenceTests
             attributeType = (int)PlayerAttributeType.MaxHp,
             upgradeCount = 1
         });
+        progress.InventoryItems.Add(new NInventoryItemSave
+        {
+            slotIndex = 2,
+            itemId = "healing_potion",
+            count = 3
+        });
+        progress.InventoryItems.Add(new NInventoryItemSave
+        {
+            slotIndex = 7,
+            itemId = "spider_king_core",
+            count = 2
+        });
 
         bool saved = service.TrySaveCharacterProgress(
             progress,
             8,
             2,
+            false,
             out NCharacter savedCharacter,
             out string saveMessage);
 
@@ -119,6 +151,7 @@ public sealed class GuestModePersistenceTests
         Assert.That(savedCharacter.vaultDestroyedCount, Is.EqualTo(8));
         Assert.That(savedCharacter.completedBossCount, Is.EqualTo(2));
         Assert.That(savedCharacter.attributeUpgrades, Has.Count.EqualTo(2));
+        Assert.That(savedCharacter.inventoryItems, Has.Count.EqualTo(2));
 
         var reloadedService = new LocalGuestSaveService(saveFilePath);
         Assert.That(reloadedService.TryLoad(out NCharacter[] reloaded, out string reloadMessage), Is.True, reloadMessage);
@@ -132,6 +165,13 @@ public sealed class GuestModePersistenceTests
         Assert.That(restored.completedBossCount, Is.EqualTo(2));
         Assert.That(restored.GetAttributeUpgradeCount(PlayerAttributeType.AttackPower), Is.EqualTo(2));
         Assert.That(restored.GetAttributeUpgradeCount(PlayerAttributeType.MaxHp), Is.EqualTo(1));
+        Assert.That(restored.inventoryItems, Has.Count.EqualTo(2));
+        Assert.That(
+            restored.inventoryItems.Single(item => item.itemId == "healing_potion").count,
+            Is.EqualTo(3));
+        Assert.That(
+            restored.inventoryItems.Single(item => item.itemId == "spider_king_core").slotIndex,
+            Is.EqualTo(7));
     }
 
     [Test]
@@ -148,7 +188,7 @@ public sealed class GuestModePersistenceTests
             upgradeCount = 1
         });
         Assert.That(
-            service.TrySaveCharacterProgress(progress, 1, 0, out _, out string saveMessage),
+            service.TrySaveCharacterProgress(progress, 1, 0, false, out _, out string saveMessage),
             Is.True,
             saveMessage);
 
@@ -163,6 +203,100 @@ public sealed class GuestModePersistenceTests
         Assert.That(replacement.vaultDestroyedCount, Is.Zero);
         Assert.That(replacement.completedBossCount, Is.Zero);
         Assert.That(replacement.attributeUpgrades, Is.Empty);
+        Assert.That(replacement.inventoryItems, Is.Empty);
+    }
+
+    [Test]
+    public void DeathReset_AllowsOnlyExactLevelOneEmptyProgress()
+    {
+        var service = CreateLoadedService();
+        NCharacter character = CreateCharacter(service, 0, "死亡重置测试", 2);
+        Assert.That(service.TryEnterCharacter(character, out _, out string enterMessage), Is.True, enterMessage);
+
+        var progressed = new PlayerProgressSaveData { Level = 5, Exp = 37 };
+        progressed.InventoryItems.Add(new NInventoryItemSave
+        {
+            slotIndex = 0,
+            itemId = "mana_potion",
+            count = 4
+        });
+        progressed.InventoryItems.Add(new NInventoryItemSave
+        {
+            slotIndex = 1,
+            itemId = "experience_crystal",
+            count = 12
+        });
+        Assert.That(
+            service.TrySaveCharacterProgress(progressed, 8, 2, false, out _, out string progressMessage),
+            Is.True,
+            progressMessage);
+
+        var invalidReset = new PlayerProgressSaveData { Level = 2, Exp = 0 };
+        Assert.That(
+            service.TrySaveCharacterProgress(invalidReset, 0, 0, true, out _, out string invalidMessage),
+            Is.False);
+        Assert.That(invalidMessage, Does.Contain("必须全部归零"));
+
+        var exactReset = new PlayerProgressSaveData { Level = 5, Exp = 99 };
+        exactReset.AttributeUpgrades.Add(new NAttributeUpgradeSave
+        {
+            attributeType = (int)PlayerAttributeType.AttackPower,
+            upgradeCount = 1
+        });
+        exactReset.InventoryItems.AddRange(progressed.InventoryItems.Select(item => item.Clone()));
+        exactReset.ResetAfterDeath(Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath));
+
+        Assert.That(
+            service.TrySaveCharacterProgress(
+                exactReset,
+                0,
+                0,
+                true,
+                out NCharacter resetCharacter,
+                out string resetMessage),
+            Is.True,
+            resetMessage);
+        Assert.That(resetCharacter.level, Is.EqualTo(1));
+        Assert.That(resetCharacter.exp, Is.Zero);
+        Assert.That(resetCharacter.pendingAttributeUpgradeCount, Is.Zero);
+        Assert.That(resetCharacter.vaultDestroyedCount, Is.Zero);
+        Assert.That(resetCharacter.completedBossCount, Is.Zero);
+        Assert.That(resetCharacter.attributeUpgrades, Is.Empty);
+        Assert.That(resetCharacter.inventoryItems, Has.Count.EqualTo(1));
+        Assert.That(resetCharacter.inventoryItems[0].itemId, Is.EqualTo("experience_crystal"));
+        Assert.That(resetCharacter.inventoryItems[0].count, Is.EqualTo(12));
+        Assert.That(resetCharacter.name, Is.EqualTo("死亡重置测试"));
+        Assert.That(resetCharacter.classId, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void NormalSave_StillRejectsProgressRollback()
+    {
+        var service = CreateLoadedService();
+        NCharacter character = CreateCharacter(service, 0, "防回档测试", 1);
+        Assert.That(service.TryEnterCharacter(character, out _, out string enterMessage), Is.True, enterMessage);
+
+        Assert.That(
+            service.TrySaveCharacterProgress(
+                new PlayerProgressSaveData { Level = 5, Exp = 10 },
+                4,
+                1,
+                false,
+                out _,
+                out string firstMessage),
+            Is.True,
+            firstMessage);
+
+        Assert.That(
+            service.TrySaveCharacterProgress(
+                new PlayerProgressSaveData { Level = 1, Exp = 0 },
+                0,
+                0,
+                false,
+                out _,
+                out string rollbackMessage),
+            Is.False);
+        Assert.That(rollbackMessage, Does.Contain("不能用旧进度覆盖"));
     }
 
     [Test]

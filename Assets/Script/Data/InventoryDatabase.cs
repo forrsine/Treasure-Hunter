@@ -76,6 +76,32 @@ public sealed class InventoryDatabase : ScriptableObject
     public GameObject BossLootOrbPrefab => bossLootOrbPrefab;
 
     /// <summary>
+    /// 根据稳定物品 ID 查找静态配置。
+    /// 该入口主要用于存档恢复；背包只有 5 类物品，低频线性查询比额外维护运行时字典更直观。
+    /// </summary>
+    public bool TryGetItemById(string itemId, out InventoryItemDefinition item)
+    {
+        item = null;
+        if (string.IsNullOrWhiteSpace(itemId) || items == null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < items.Length; i++)
+        {
+            InventoryItemDefinition candidate = items[i];
+            if (candidate != null &&
+                string.Equals(candidate.ItemId, itemId, StringComparison.Ordinal))
+            {
+                item = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 按权重抽取一次宝箱奖励。
     /// roll01 作为参数传入，既方便运行时使用 Random.value，也方便 EditMode 测试固定边界结果。
     /// </summary>

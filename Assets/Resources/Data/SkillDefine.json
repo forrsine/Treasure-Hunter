@@ -44,6 +44,12 @@
       "allowedClassIds": [4],
       "maxLevel": 4,
       "unlockLevel": 5,
+      "castCommitment": {
+        "enabled": true,
+        "hitDelay": 0.35,
+        "lockDuration": 1.05,
+        "movementSpeedLimit": 1.5
+      },
       "levels": [
         { "level": 1, "mpCost": 32, "cooldown": 7.0, "damageRate": 1.9, "radius": 2.8, "duration": 0.0, "tickInterval": 0.0, "slowRate": 0.0 },
         { "level": 2, "mpCost": 35, "cooldown": 6.6, "damageRate": 2.3, "radius": 3.1, "duration": 0.0, "tickInterval": 0.0, "slowRate": 0.0 },

@@ -2,27 +2,42 @@ using QFramework;
 using UnityEngine;
 
 /// <summary>
-/// 玩家生命表现组件：实现受击接口，并负责受击数字、闪红、闪避闪烁和死亡菜单。
+/// 玩家生命表现组件：实现受击接口，并负责受击数字、受击闪红、满蓄力闪黄和闪避闪烁。
 /// 生命值、闪避率和减伤公式由 PlayerCombatSystem 处理，本组件不直接修改权威数据。
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, IController
 {
+    private enum CombatTintState
+    {
+        Default,
+        FullCharge,
+        Hit
+    }
+
     [SerializeField] private Color hitFlashColor = new Color(0.86f, 0.22f, 0.22f, 1f);
     [SerializeField] private Color defaultHitColor = Color.white;
     [SerializeField] private float hitColorTime = 0.1f;
+    [SerializeField] private Color fullChargeFlashColor = new Color(1f, 0.8352941f, 0.2901961f, 1f);
+    [SerializeField, Min(0.01f)] private float fullChargeFlashInterval = 0.18f;
     [SerializeField] private float dodgeInvincibleDuration = 1f;
     [SerializeField] private float dodgeFlickerInterval = 0.08f;
 
     private PlayerRuntimeController runtimeController;
     private PlayerPresentationComponent presentation;
     private PlayerAudioComponent audioComponent;
+    private PlayerChargedAttackComponent chargedAttack;
     private SkinnedMeshRenderer hitRenderer;
+    private Material[] hitMaterials;
     private Color[] defaultColors;
     private Renderer[] dodgeRenderers;
     private bool[] dodgeRendererDefaultEnabled;
     private bool isHitFlashing;
     private float hitFlashStartedAt;
+    private bool wasFullChargeGuardActive;
+    private bool fullChargeFlashVisible;
+    private float fullChargeFlashTimer;
+    private CombatTintState appliedTintState = CombatTintState.Default;
     private bool isDodgeInvincible;
     private float dodgeInvincibleTimer;
     private float dodgeFlickerTimer;
@@ -36,11 +51,14 @@ public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, ICo
     /// </summary>
     public void Initialize(PlayerRuntimeController player)
     {
+        RestoreDefaultMaterialColors();
         runtimeController = player;
         presentation = player != null ? player.Presentation : GetComponent<PlayerPresentationComponent>();
         audioComponent = player != null ? player.Audio : GetComponent<PlayerAudioComponent>();
+        chargedAttack = player != null ? player.ChargedAttack : GetComponent<PlayerChargedAttackComponent>();
         CacheHitRenderer();
         CacheDodgeRenderers();
+        ResetFullChargeFlashState();
     }
 
     /// <summary>
@@ -77,24 +95,23 @@ public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, ICo
     }
 
     /// <summary>
-    /// 推进受击闪红效果计时。
-    /// 这里只做表现恢复，不参与伤害计算。
+    /// 推进受击闪红和满蓄力黄色闪烁。
+    /// 两种效果由同一个入口按“受击红色 > 满蓄力黄色 > 原色”排序，避免多个组件互相覆盖材质。
     /// </summary>
     public void TickHitFlash()
     {
-        if (!isHitFlashing || hitRenderer == null || Time.time - hitFlashStartedAt < hitColorTime)
+        if (isHitFlashing && Time.time - hitFlashStartedAt >= hitColorTime)
         {
-            return;
+            isHitFlashing = false;
         }
 
-        isHitFlashing = false;
-        Material[] materials = hitRenderer.materials;
-        for (int i = 0; i < materials.Length; i++)
-        {
-            materials[i].color = defaultColors != null && i < defaultColors.Length
-                ? defaultColors[i]
-                : defaultHitColor;
-        }
+        TickFullChargeFlash(Time.deltaTime);
+        CombatTintState desiredState = isHitFlashing
+            ? CombatTintState.Hit
+            : wasFullChargeGuardActive && fullChargeFlashVisible
+                ? CombatTintState.FullCharge
+                : CombatTintState.Default;
+        ApplyTintState(desiredState);
     }
 
     /// <summary>
@@ -134,7 +151,13 @@ public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, ICo
             return;
         }
 
-        PlayerDamageResult result = this.SendCommand(new TakePlayerDamageCommand(incomingAttackPower, true));
+        float temporaryDamageReduction = chargedAttack != null && chargedAttack.IsFullChargeGuardActive
+            ? chargedAttack.FullChargeDamageReduction
+            : 0f;
+        PlayerDamageResult result = this.SendCommand(new TakePlayerDamageCommand(
+            incomingAttackPower,
+            true,
+            temporaryDamageReduction));
         if (result.Dodged)
         {
             FloatingCombatText.ShowMiss(transform);
@@ -180,6 +203,8 @@ public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, ICo
         regenBuffer = 0f;
         StopDodgeInvincibility();
         isHitFlashing = false;
+        ResetFullChargeFlashState();
+        ApplyTintState(CombatTintState.Default, true);
     }
 
     /// <summary>
@@ -215,16 +240,23 @@ public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, ICo
 
         if (hitRenderer == null)
         {
+            hitMaterials = null;
             defaultColors = null;
             return;
         }
 
-        Material[] materials = hitRenderer.materials;
-        defaultColors = new Color[materials.Length];
-        for (int i = 0; i < materials.Length; i++)
+        // Renderer.materials 会为角色创建运行时材质实例，只在绑定模型时缓存一次，
+        // 后续闪色直接复用，避免 Update 中反复分配数组或实例化材质。
+        hitMaterials = hitRenderer.materials;
+        defaultColors = new Color[hitMaterials.Length];
+        for (int i = 0; i < hitMaterials.Length; i++)
         {
-            defaultColors[i] = materials[i].color;
+            defaultColors[i] = hitMaterials[i] != null
+                ? hitMaterials[i].color
+                : defaultHitColor;
         }
+
+        appliedTintState = CombatTintState.Default;
     }
 
     private void CacheDodgeRenderers()
@@ -275,23 +307,99 @@ public sealed class PlayerHealthComponent : MonoBehaviour, FighterInterface, ICo
 
     private void StartHitFlash()
     {
-        if (hitRenderer == null)
+        if (hitRenderer == null || hitMaterials == null)
         {
             CacheHitRenderer();
         }
 
-        if (hitRenderer == null)
+        if (hitRenderer == null || hitMaterials == null)
         {
             return;
         }
 
         isHitFlashing = true;
         hitFlashStartedAt = Time.time;
-        Material[] materials = hitRenderer.materials;
-        for (int i = 0; i < materials.Length; i++)
+        ApplyTintState(CombatTintState.Hit);
+    }
+
+    /// <summary>
+    /// 满蓄力只切换材质颜色，不关闭 Renderer，避免和闪避无敌的显隐闪烁产生相同语义。
+    /// </summary>
+    private void TickFullChargeFlash(float deltaTime)
+    {
+        bool isGuardActive = chargedAttack != null && chargedAttack.IsFullChargeGuardActive;
+        if (!isGuardActive)
         {
-            materials[i].color = hitFlashColor;
+            ResetFullChargeFlashState();
+            return;
         }
+
+        if (!wasFullChargeGuardActive)
+        {
+            wasFullChargeGuardActive = true;
+            fullChargeFlashVisible = true;
+            fullChargeFlashTimer = Mathf.Max(0.01f, fullChargeFlashInterval);
+            return;
+        }
+
+        fullChargeFlashTimer -= Mathf.Max(0f, deltaTime);
+        if (fullChargeFlashTimer > 0f)
+        {
+            return;
+        }
+
+        fullChargeFlashVisible = !fullChargeFlashVisible;
+        fullChargeFlashTimer = Mathf.Max(0.01f, fullChargeFlashInterval);
+    }
+
+    private void ResetFullChargeFlashState()
+    {
+        wasFullChargeGuardActive = false;
+        fullChargeFlashVisible = false;
+        fullChargeFlashTimer = 0f;
+    }
+
+    private void ApplyTintState(CombatTintState tintState, bool force = false)
+    {
+        if (!force && appliedTintState == tintState)
+        {
+            return;
+        }
+
+        appliedTintState = tintState;
+        if (hitMaterials == null)
+        {
+            return;
+        }
+
+        for (int i = 0; i < hitMaterials.Length; i++)
+        {
+            if (hitMaterials[i] == null)
+            {
+                continue;
+            }
+
+            hitMaterials[i].color = tintState == CombatTintState.Hit
+                ? hitFlashColor
+                : tintState == CombatTintState.FullCharge
+                    ? fullChargeFlashColor
+                    : defaultColors != null && i < defaultColors.Length
+                        ? defaultColors[i]
+                        : defaultHitColor;
+        }
+    }
+
+    private void RestoreDefaultMaterialColors()
+    {
+        ApplyTintState(CombatTintState.Default, true);
+    }
+
+    private void OnDisable()
+    {
+        isHitFlashing = false;
+        ResetFullChargeFlashState();
+        StopDodgeInvincibility();
+        RestoreDefaultMaterialColors();
     }
 
 }

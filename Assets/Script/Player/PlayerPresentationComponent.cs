@@ -48,6 +48,8 @@ public class PlayerPresentationComponent : MonoBehaviour
     private float attackLayerCurrentFadeInDuration;
     private bool simpleAttackStateMissingLogged;
     private bool simpleSkillStateMissingLogged;
+    private bool simpleAttackPoseHeld;
+    private float simpleAttackHeldNormalizedTime;
 
     /// <summary>
     /// 当前职业模型真正使用的 Animator。优先选择带有 Controller 的 Animator，
@@ -73,6 +75,12 @@ public class PlayerPresentationComponent : MonoBehaviour
         TickSkillAnimationTimer();
         TickAttackLayerFadeIn();
         TickAttackLayerFadeOut();
+    }
+
+    private void LateUpdate()
+    {
+        // Animator 在 Update 后完成采样，LateUpdate 再固定攻击层，避免蓄力姿势在帧间继续向前漂移。
+        PinSimpleAttackPoseIfNeeded();
     }
 
     /// <summary>
@@ -105,6 +113,8 @@ public class PlayerPresentationComponent : MonoBehaviour
         attackLayerFading = false;
         simpleAttackStateMissingLogged = false;
         simpleSkillStateMissingLogged = false;
+        simpleAttackPoseHeld = false;
+        simpleAttackHeldNormalizedTime = 0f;
 
         if (animator == null)
         {
@@ -256,6 +266,66 @@ public class PlayerPresentationComponent : MonoBehaviour
         // 如果这里立刻把层权重设为 0，收刀动作会被脚本直接切掉。
         SetInteger("ComboIndex", 0);
         BeginAttackLayerFadeOut(attackLayerFadeOutDelay, attackLayerFadeOutDuration);
+    }
+
+    /// <summary>
+    /// 当简单职业攻击动画到达指定归一化时间后，只固定 Attack Layer 的 Attack 状态。
+    /// 不修改 Animator.speed，因此基础移动层仍能以受限速度继续播放和移动。
+    /// </summary>
+    public bool TryHoldSimpleAttackPose(float normalizedTime)
+    {
+        if (animationStyle != CharacterAnimationStyle.SimpleSpeedAttack || animator == null)
+        {
+            return false;
+        }
+
+        int layerIndex = animator.GetLayerIndex(DirectionalAttackLayerName);
+        int attackStateHash = GetSimpleStateHash(layerIndex, SimpleAttackStateName);
+        if (layerIndex < 0 || attackStateHash == 0)
+        {
+            return false;
+        }
+
+        float targetTime = Mathf.Clamp01(normalizedTime);
+        AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(layerIndex);
+        if (animator.IsInTransition(layerIndex))
+        {
+            AnimatorStateInfo nextState = animator.GetNextAnimatorStateInfo(layerIndex);
+            if (IsSimpleState(nextState, SimpleAttackStateName))
+            {
+                stateInfo = nextState;
+            }
+        }
+
+        if (!IsSimpleState(stateInfo, SimpleAttackStateName) || stateInfo.normalizedTime < targetTime)
+        {
+            return false;
+        }
+
+        simpleAttackPoseHeld = true;
+        simpleAttackHeldNormalizedTime = targetTime;
+        attackLayerFadingIn = false;
+        attackLayerFading = false;
+        SetDirectionalAttackLayerWeight(1f);
+        PinSimpleAttackPose(layerIndex, attackStateHash);
+        return true;
+    }
+
+    /// <summary>
+    /// 松手时停止固定状态，让 Animator 从职业配置的固定点继续播放剩余挥剑动作。
+    /// </summary>
+    public void ReleaseSimpleAttackPose()
+    {
+        simpleAttackPoseHeld = false;
+    }
+
+    /// <summary>
+    /// 非正常结束时只解除姿势固定；回到 Empty 和淡出攻击层由战斗组件统一重置。
+    /// </summary>
+    public void CancelSimpleAttackPose()
+    {
+        simpleAttackPoseHeld = false;
+        simpleAttackHeldNormalizedTime = 0f;
     }
 
     /// <summary>
@@ -624,6 +694,50 @@ public class PlayerPresentationComponent : MonoBehaviour
             layerIndex,
             0f);
         return true;
+    }
+
+    private int GetSimpleStateHash(int layerIndex, string stateName)
+    {
+        if (animator == null || layerIndex < 0)
+        {
+            return 0;
+        }
+
+        int fullPathHash = Animator.StringToHash($"{DirectionalAttackLayerName}.{stateName}");
+        if (animator.HasState(layerIndex, fullPathHash))
+        {
+            return fullPathHash;
+        }
+
+        int shortNameHash = Animator.StringToHash(stateName);
+        return animator.HasState(layerIndex, shortNameHash) ? shortNameHash : 0;
+    }
+
+    private static bool IsSimpleState(AnimatorStateInfo stateInfo, string stateName)
+    {
+        return stateInfo.IsName($"{DirectionalAttackLayerName}.{stateName}") ||
+               stateInfo.IsName(stateName);
+    }
+
+    private void PinSimpleAttackPoseIfNeeded()
+    {
+        if (!simpleAttackPoseHeld || animator == null)
+        {
+            return;
+        }
+
+        int layerIndex = animator.GetLayerIndex(DirectionalAttackLayerName);
+        int attackStateHash = GetSimpleStateHash(layerIndex, SimpleAttackStateName);
+        if (layerIndex >= 0 && attackStateHash != 0)
+        {
+            PinSimpleAttackPose(layerIndex, attackStateHash);
+        }
+    }
+
+    private void PinSimpleAttackPose(int layerIndex, int attackStateHash)
+    {
+        animator.Play(attackStateHash, layerIndex, simpleAttackHeldNormalizedTime);
+        animator.Update(0f);
     }
 
     private void BeginAttackLayerFadeIn(float duration)

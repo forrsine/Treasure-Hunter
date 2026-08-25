@@ -9,6 +9,9 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class BossBattleHudUi : MonoBehaviour, IController
 {
+    // GameplayUiRoot 的 Canvas 排序为 5000，Boss 战关键信息需要稳定显示在它的上层。
+    private const int BossHudSortingOrder = 6000;
+
     [Header("Runtime References")]
     [SerializeField] private Canvas targetCanvas;
     [SerializeField] private RectTransform hudRoot;
@@ -123,7 +126,7 @@ public sealed class BossBattleHudUi : MonoBehaviour, IController
         }
 
         targetCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        targetCanvas.sortingOrder = 60;
+        targetCanvas.sortingOrder = BossHudSortingOrder;
 
         CanvasScaler scaler = GetComponent<CanvasScaler>();
         if (scaler == null)

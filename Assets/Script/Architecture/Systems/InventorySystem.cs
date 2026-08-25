@@ -1,4 +1,5 @@
 using QFramework;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -103,6 +104,89 @@ public sealed class InventorySystem : AbstractSystem
         }
 
         return Mathf.Min(amount, available);
+    }
+
+    /// <summary>
+    /// 生成独立的背包存档快照。空格不写入存档，格子下标用于恢复原有排列。
+    /// </summary>
+    public List<NInventoryItemSave> CreateSaveSnapshot()
+    {
+        var result = new List<NInventoryItemSave>();
+        for (int i = 0; i < model.Slots.Count; i++)
+        {
+            InventorySlotData slot = model.Slots[i];
+            if (slot.IsEmpty || string.IsNullOrWhiteSpace(slot.Item.ItemId))
+            {
+                continue;
+            }
+
+            result.Add(new NInventoryItemSave
+            {
+                slotIndex = i,
+                itemId = slot.Item.ItemId,
+                count = slot.Count
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 使用权威存档重建运行时背包。
+    /// 无效格子会被跳过而不是阻止角色进入，兼容以后删除或更名物品配置的情况。
+    /// </summary>
+    public void RestoreInventory(IReadOnlyList<NInventoryItemSave> savedItems)
+    {
+        model.Clear();
+        var occupiedSlots = new HashSet<int>();
+
+        if (savedItems != null)
+        {
+            for (int i = 0; i < savedItems.Count; i++)
+            {
+                NInventoryItemSave savedItem = savedItems[i];
+                if (!TryValidateSavedItem(savedItem, occupiedSlots, out InventoryItemDefinition item))
+                {
+                    continue;
+                }
+
+                model.Slots[savedItem.slotIndex].Set(item, savedItem.count);
+            }
+        }
+
+        // 批量恢复结束后只刷新一次 UI，避免逐格发送事件造成重复布局更新。
+        this.SendEvent(new InventoryChangedEvent());
+    }
+
+    private bool TryValidateSavedItem(
+        NInventoryItemSave savedItem,
+        HashSet<int> occupiedSlots,
+        out InventoryItemDefinition item)
+    {
+        item = null;
+        if (savedItem == null ||
+            savedItem.slotIndex < 0 || savedItem.slotIndex >= model.Slots.Count ||
+            savedItem.count <= 0 ||
+            !occupiedSlots.Add(savedItem.slotIndex))
+        {
+            Debug.LogWarning("背包存档包含无效或重复格子，已跳过该条数据。");
+            return false;
+        }
+
+        if (Database == null || !Database.TryGetItemById(savedItem.itemId, out item))
+        {
+            Debug.LogWarning($"背包存档中的物品不存在，已跳过：{savedItem.itemId}");
+            return false;
+        }
+
+        if (savedItem.count > item.MaxStack)
+        {
+            Debug.LogWarning($"背包物品数量超过单格上限，已跳过：{savedItem.itemId} x{savedItem.count}");
+            item = null;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

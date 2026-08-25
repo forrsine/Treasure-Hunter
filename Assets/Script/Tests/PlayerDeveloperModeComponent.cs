@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// 玩家开发者模式：集中管理只用于本地验证的快捷键，不把测试逻辑混入正式玩法规则。
-/// 正式发布包会拒绝开启；Unity 编辑器和 Development Build 中才可以使用。
+/// PC 演示包允许通过 F1 开启；其他平台仍只允许编辑器和 Development Build 使用。
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class PlayerDeveloperModeComponent : MonoBehaviour, IController
@@ -133,6 +133,11 @@ public sealed class PlayerDeveloperModeComponent : MonoBehaviour, IController
 
     private static bool IsDevelopmentEnvironment()
     {
+#if UNITY_STANDALONE
+        // 求职演示使用的 PC 包需要保留调试入口，即使没有勾选 Development Build 也允许 F1 开启。
+        return true;
+#else
         return Application.isEditor || Debug.isDebugBuild;
+#endif
     }
 }

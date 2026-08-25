@@ -197,6 +197,12 @@ public sealed class UserSaveCharacterProgressRequest
 
     [ProtoMember(6, Name = "attribute_upgrades")]
     public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new();
+
+    [ProtoMember(7, Name = "reset_after_death")]
+    public bool ResetAfterDeath { get; set; }
+
+    [ProtoMember(8, Name = "inventory_items")]
+    public List<NInventoryItemInfo> InventoryItems { get; } = new();
 }
 
 /// <summary>成长保存结果以及数据库确认后的角色数据。</summary>
@@ -283,6 +289,23 @@ public sealed class NCharacterInfo
 
     [ProtoMember(15, Name = "attribute_upgrades")]
     public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new();
+
+    [ProtoMember(16, Name = "inventory_items")]
+    public List<NInventoryItemInfo> InventoryItems { get; } = new();
+}
+
+/// <summary>角色背包中一个非空格子的网络数据。</summary>
+[ProtoContract]
+public sealed class NInventoryItemInfo
+{
+    [ProtoMember(1, Name = "slot_index")]
+    public int SlotIndex { get; set; }
+
+    [ProtoMember(2, Name = "item_id")]
+    public string ItemId { get; set; } = "";
+
+    [ProtoMember(3, Name = "count")]
+    public int Count { get; set; }
 }
 
 /// <summary>某种属性强化的持久化次数。</summary>

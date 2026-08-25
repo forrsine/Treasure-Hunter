@@ -187,42 +187,48 @@ public static class BossRoomSceneSetupTool
             roomRoot,
             new Vector3(0f, -thickness * 0.5f, 0f),
             new Vector3(width, thickness, length),
-            floorColor);
+            floorColor,
+            false);
 
         CreateArenaPiece(
             "BossArenaNorthWall",
             roomRoot,
             new Vector3(0f, height * 0.5f, halfLength + thickness * 0.5f),
             new Vector3(width + thickness * 2f, height, thickness),
-            wallColor);
+            wallColor,
+            true);
 
         CreateArenaPiece(
             "BossArenaSouthWall",
             roomRoot,
             new Vector3(0f, height * 0.5f, -halfLength - thickness * 0.5f),
             new Vector3(width + thickness * 2f, height, thickness),
-            wallColor);
+            wallColor,
+            true);
 
         CreateArenaPiece(
             "BossArenaEastWall",
             roomRoot,
             new Vector3(halfWidth + thickness * 0.5f, height * 0.5f, 0f),
             new Vector3(thickness, height, length + thickness * 2f),
-            wallColor);
+            wallColor,
+            true);
 
         CreateArenaPiece(
             "BossArenaWestWall",
             roomRoot,
             new Vector3(-halfWidth - thickness * 0.5f, height * 0.5f, 0f),
             new Vector3(thickness, height, length + thickness * 2f),
-            wallColor);
+            wallColor,
+            true);
 
         CreateArenaPiece(
             "BossArenaCeiling",
             roomRoot,
             new Vector3(0f, height + thickness * 0.5f, 0f),
             new Vector3(width + thickness * 2f, thickness, length + thickness * 2f),
-            ceilingColor);
+            ceilingColor,
+            true);
     }
 
     /// <summary>
@@ -233,7 +239,8 @@ public static class BossRoomSceneSetupTool
         Transform roomRoot,
         Vector3 position,
         Vector3 scale,
-        Color color)
+        Color color,
+        bool allowsCameraPassThrough)
     {
         GameObject piece = GameObject.CreatePrimitive(PrimitiveType.Cube);
         piece.name = objectName;
@@ -241,6 +248,11 @@ public static class BossRoomSceneSetupTool
         piece.transform.localPosition = position;
         piece.transform.localRotation = Quaternion.identity;
         piece.transform.localScale = scale;
+
+        if (allowsCameraPassThrough)
+        {
+            piece.AddComponent<CameraPassThroughOccluder>();
+        }
 
         Renderer renderer = piece.GetComponent<Renderer>();
         if (renderer == null)
@@ -273,7 +285,9 @@ public static class BossRoomSceneSetupTool
         camera.nearClipPlane = 0.1f;
         camera.farClipPlane = 1000f;
         cameraObject.AddComponent<AudioListener>();
-        return cameraObject.AddComponent<CameraCo>();
+        CameraCo cameraController = cameraObject.AddComponent<CameraCo>();
+        cameraObject.AddComponent<CameraOcclusionController>();
+        return cameraController;
     }
 
     /// <summary>

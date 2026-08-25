@@ -19,6 +19,9 @@ public sealed class PlayerSkillBarUi : MonoBehaviour, IController
     [SerializeField] private Text skill2Text;
     [SerializeField] private Text skill3Text;
 
+    [Header("Profession Skill Slots")]
+    [SerializeField] private GameObject skill3Slot;
+
     [Header("Cooldown Masks")]
     [SerializeField] private Image skill1CooldownMask;
     [SerializeField] private Image skill2CooldownMask;
@@ -32,6 +35,17 @@ public sealed class PlayerSkillBarUi : MonoBehaviour, IController
     public IArchitecture GetArchitecture()
     {
         return TreasureHunterArchitecture.Interface;
+    }
+
+    private void Awake()
+    {
+        // Prefab 会显式绑定槽位根节点；父节点回退只用于兼容旧 Prefab，避免只隐藏文字却残留技能图标。
+        if (skill3Slot == null && skill3Text != null && skill3Text.transform.parent != null)
+        {
+            skill3Slot = skill3Text.transform.parent.gameObject;
+        }
+
+        RefreshSkill3Visibility();
     }
 
     private void OnEnable()
@@ -65,7 +79,82 @@ public sealed class PlayerSkillBarUi : MonoBehaviour, IController
     {
         RefreshSlot(skill1Text, skill1CooldownMask, "1", FireballSkillId);
         RefreshSlot(skill2Text, skill2CooldownMask, "2", PoisonAreaSkillId);
-        RefreshSlot(skill3Text, skill3CooldownMask, "3", ScytheSpinSkillId);
+
+        // 技能3是配置驱动的职业专属槽位。非刺客隐藏整个根节点，图标、文字和冷却遮罩会一起消失。
+        if (RefreshSkill3Visibility())
+        {
+            RefreshSlot(skill3Text, skill3CooldownMask, "3", ScytheSpinSkillId);
+        }
+    }
+
+    /// <summary>
+    /// 根据技能配置和当前职业控制技能3槽位。
+    /// 不直接写死“classId == 4”，以后调整专属职业时只需要修改 SkillDefine.json。
+    /// </summary>
+    private bool RefreshSkill3Visibility()
+    {
+        SkillDefine skill = GetSkillDefine(ScytheSpinSkillId);
+        bool shouldShow = skill != null && skill.CanLearnByClass(GetCurrentClassId());
+
+        if (skill3Slot != null && skill3Slot.activeSelf != shouldShow)
+        {
+            skill3Slot.SetActive(shouldShow);
+        }
+
+        if (!shouldShow)
+        {
+            // 清理旧职业留下的显示状态，保证同一 UI 实例重新绑定刺客时从最新数据刷新。
+            if (skill3Text != null)
+            {
+                skill3Text.text = string.Empty;
+            }
+
+            ResetCooldownMask(skill3CooldownMask);
+        }
+
+        return shouldShow;
+    }
+
+    private int GetCurrentClassId()
+    {
+        PlayerModel playerModel = this.GetModel<PlayerModel>();
+        if (playerModel == null)
+        {
+            return 0;
+        }
+
+        if (playerModel.CharacterSave != null)
+        {
+            return playerModel.CharacterSave.classId;
+        }
+
+        return playerModel.CharacterDefine != null
+            ? playerModel.CharacterDefine.classId
+            : 0;
+    }
+
+    /// <summary>
+    /// 编辑器回归测试入口：检查专属技能槽位、文字和冷却遮罩是否完整装配。
+    /// </summary>
+    public bool ValidatePrefabReferences(bool logErrors = true)
+    {
+        bool isValid =
+            skill1Text != null &&
+            skill2Text != null &&
+            skill3Text != null &&
+            skill1CooldownMask != null &&
+            skill2CooldownMask != null &&
+            skill3CooldownMask != null &&
+            skill3Slot != null &&
+            skill3Text.transform.IsChildOf(skill3Slot.transform) &&
+            skill3CooldownMask.transform.IsChildOf(skill3Slot.transform);
+
+        if (!isValid && logErrors)
+        {
+            Debug.LogError("PlayerSkillBarUi 的技能槽位引用不完整，请检查 GameplayUiRoot Prefab。", this);
+        }
+
+        return isValid;
     }
 
     /// <summary>

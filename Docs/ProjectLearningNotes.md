@@ -4875,3 +4875,729 @@ README 中重点展示的完整玩法链路为：
 - Unity Prefab、Scene YAML 与 ScriptableObject 序列化
 - 跨场景运行时状态与分数合并
 - EditMode 回归测试与配置边界测试
+
+## 功能名称：Windows 构建 UI 稳定性与弓箭手连续攻击
+
+### 1. 实现目标
+
+修复编辑器与 Windows 包体表现不一致的问题：Boss 房间在包体中缺少玩家 HUD、登录背景不能适配分辨率、登录页无法直接退出，以及普通包无法开启开发者模式。同时把弓箭手普攻改成有明确攻速上限的长按连续射击，并降低单箭伤害。
+
+### 2. 涉及脚本
+
+- `BossRoomScene.unity`、`BossBattleHudUi.cs`：让 Boss 场景直接依赖公共玩家 UI，并保证 Boss 血条显示在最上层。
+- `LoginScene.unity`、`ApplicationQuitButton.cs`：完成登录画布适配、全屏背景和退出桌面入口。
+- `IGameplayInput.cs`、`InputCo.cs`：增加左键持续按住状态。
+- `PlayerCombatComponent.cs`、`CharacterDefine.json`：实现弓箭手 0.72 秒攻击间隔和 30 点基础攻击。
+- `PlayerDeveloperModeComponent.cs`：允许 PC 演示包使用 F1 调试入口。
+- `RangedCharacterPlayableTests.cs`、`StandaloneBuildConfigurationTests.cs`：保护连续射击、Boss UI 和登录场景装配。
+
+### 3. 调用流程
+
+`InputCo.GetMouseButton(0) -> IGameplayInput.LeftMouseHeld -> PlayerCombatComponent.CheckAttackInput -> 攻击间隔判断 -> StartImmediateArcherAttack -> PlayerRangedAttackComponent.Fire -> PlayerBasicAttackProjectile -> PlayerBasicAttackDamageResolver`。
+
+Boss UI 链路为：`BossRoomScene 直接引用 GameplayUiRoot Prefab -> 玩家 HUD 初始化`，同时 `BossRoomSceneBootstrap -> BossBattleHudUi -> sortingOrder 6000 -> Boss 血条覆盖显示`。
+
+### 4. 核心原理
+
+编辑器能够使用 `AssetDatabase` 按项目路径加载资源，但这个 API 不会进入最终包体。运行时需要通过场景引用、Resources 或 Addressables 建立构建依赖。本次让 Boss 场景直接引用公共 UI Prefab，使 Unity 构建时自动收集完整 HUD，也避免复制两套玩家界面。
+
+长按攻击不能简单地在每帧检测到按键后都发射，因为帧率越高伤害就越高。输入层只记录“当前是否按住”，战斗层维护剩余攻击间隔；第一箭立即触发，之后必须等 0.72 秒才能发下一箭。快速点击和持续按住都经过相同计时器，因此攻速稳定且不依赖电脑帧率。
+
+登录 Canvas 使用 1920×1080 参考分辨率和宽高混合缩放，背景采用四边拉伸。这样 UI 位置由锚点表达，而不是依赖某台电脑的固定像素尺寸。
+
+### 5. Unity 测试方式
+
+1. 从登录场景运行，切换 1280×720、1920×1080、2560×1440 和 16:10 分辨率，确认背景没有露边。
+2. 点击右上角“退出游戏”，编辑器应停止播放；Windows 包应直接退出桌面。
+3. 选择弓箭手进入主场景，单击立即发箭，按住左键后每 0.72 秒发一箭，快速连点不能突破间隔。
+4. 进入 Boss 房间，确认玩家 HUD、技能栏和 Boss 血条同时显示，Boss 血条位于最上层。
+5. 构建一个未勾选 Development Build 的 Windows 包，按 F1 后测试 L、P、O、N。
+6. 在 Test Runner 中运行 `RangedCharacterPlayableTests` 和 `StandaloneBuildConfigurationTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+我处理过一次 Unity 编辑器与正式包表现不一致的问题。Boss 玩家 UI 原来依赖编辑器专用的 AssetDatabase 兜底，所以编辑器正常、包体缺失；我改成让 Boss 场景直接引用公共 GameplayUiRoot Prefab，使构建系统能追踪资源依赖，并用 Canvas sortingOrder 管理 Boss HUD 层级。弓箭手方面，我把左键按住状态放在统一输入接口里，战斗组件用配置的 0.72 秒维护独立攻击间隔，保证长按和快速点击都不能绕过攻速。最后用 EditMode 测试直接检查构建场景装配，避免同类问题回归。
+
+### 7. 面试追问
+
+1. **为什么编辑器能加载但包体加载不到？** `AssetDatabase` 只存在于 UnityEditor 程序集，正式包不会包含；资源必须建立场景、Resources 或 Addressables 依赖。
+2. **为什么不在 Update 中按住就直接发箭？** 那会使攻击次数依赖帧率，必须用时间间隔控制真实攻击频率。
+3. **为什么快速点击也要受同一个冷却限制？** 如果点击和长按走两套规则，玩家可以用连点绕过平衡配置，输入方式会影响 DPS。
+4. **Canvas Scaler 的参考分辨率有什么作用？** 它把设计稿坐标映射到实际屏幕尺寸，配合锚点保持 UI 在不同分辨率下的相对位置。
+5. **为什么 Boss UI 单独使用更高 sortingOrder？** 玩家 HUD 和 Boss HUD 都是 Screen Space Overlay Canvas，排序值可以明确控制关键战斗信息的覆盖关系。
+
+### 8. 本次涉及知识点
+
+- Unity 构建资源依赖与 `AssetDatabase` 的编辑器边界
+- Prefab 场景引用和公共 UI 复用
+- Canvas Scaler、锚点与 Canvas 排序
+- `GetMouseButtonDown` 与 `GetMouseButton` 的区别
+- 基于时间的攻击频率和帧率无关设计
+- 输入层与战斗逻辑层解耦
+- 条件编译与 PC Standalone 调试入口
+- EditMode 场景装配回归测试
+
+## 功能名称：弓箭手高速连续射击平衡调整
+
+### 1. 实现目标
+
+将弓箭手普攻间隔从 0.72 秒缩短为 0.3 秒，让长按左键时的射击反馈更加紧凑；同时把基础攻击力从 30 降低为 15，避免单箭伤害和高攻速同时过强。
+
+### 2. 涉及脚本
+
+- `CharacterDefine.json`：保存弓箭手基础攻击力和普攻间隔配置。
+- `RangedCharacterPlayableTests.cs`：验证配置数值，并验证按住左键时不能绕过 0.3 秒攻击间隔。
+- `PlayerCombatComponent.cs`：继续读取职业配置控制弓箭手攻击冷却，本次无需修改战斗逻辑。
+
+### 3. 调用流程
+
+`CharacterDefine.json` -> `CharacterDefine` -> `PlayerCombatComponent.Initialize` -> `basicAttackDuration` -> `CheckAttackInput` -> `StartImmediateArcherAttack`
+
+### 4. 核心原理
+
+攻速和伤害属于职业配置数据，不需要为某个职业在战斗代码中增加写死分支。弓箭手完成一次射击后，战斗组件把冷却设置为配置中的 0.3 秒；冷却归零前，无论持续按住还是快速点击都不能发射下一箭。这样数值策划可以直接调整手感，而输入和攻击实现保持稳定。
+
+### 5. Unity 测试方式
+
+在 `MainScene` 选择弓箭手，单击左键应立即发射第一箭；持续按住左键时约每 0.3 秒发射一次，快速连点不能突破该间隔。攻击固定目标时，确认单箭基础伤害按 15 计算，并观察攻击动画和箭矢对象池是否稳定。
+
+### 6. 面试表达
+
+弓箭手的攻速和攻击力由职业配置统一管理，战斗组件只读取配置并执行冷却，不针对职业写死数值。这次我把射击间隔从 0.72 秒调整到 0.3 秒，同时把基础攻击力从 30 降到 15，并同步更新自动化测试。这样既改善了长按射击的操作反馈，也保留了数据驱动和防止快速点击绕过攻速的机制。
+
+### 7. 面试追问
+
+1. **为什么攻速要用时间而不是帧数？** 不同设备帧率不同，用秒计时可以保证实际攻击频率一致。
+2. **为什么数值写在配置文件中？** 数值调整不需要修改战斗逻辑，能够降低耦合并方便后续平衡迭代。
+3. **快速点击为什么不能提升攻速？** 点击和长按共用同一攻击冷却，避免输入方式破坏职业平衡。
+4. **伤害减半后 DPS 是否也减半？** 不会，因为攻速同时提升；调整后理论基础 DPS 约为每秒 50 点。
+5. **高攻速有什么性能风险？** 同屏投射物会增加，需要关注对象池容量、碰撞检测和特效开销。
+
+### 8. 本次涉及知识点
+
+- 数据驱动的职业数值配置
+- 攻击冷却与帧率无关计时
+- 长按输入与单帧输入的区别
+- 投射物对象池容量评估
+- 单次伤害、攻速与 DPS 的关系
+- 配置回归测试
+
+## 功能名称：弓箭手攻速微调与失败后返回角色选择
+
+### 1. 实现目标
+
+将弓箭手普攻间隔从 0.3 秒继续缩短为 0.25 秒，基础攻击力保持 15。游戏失败界面的“退出游戏”改为“返回角色选择”，点击后保存角色进度、结束当前角色会话，并返回选角界面，不再关闭客户端。
+
+### 2. 涉及脚本
+
+- `CharacterDefine.json`：配置弓箭手 0.25 秒普攻间隔。
+- `GameSessionUi.cs`：新版失败界面复用保存并返回选角流程。
+- `ReStartPanel.cs`：同步修改后备失败面板，避免不同路径行为不一致。
+- `RangedCharacterPlayableTests.cs`：验证弓箭手伤害和攻速配置。
+- `CharacterProgressPersistenceTests.cs`：验证失败界面文案和返回选角绑定。
+- `SceneFlowService.cs`：提供既有的玩法状态清理与返回选角流程，本次直接复用。
+
+### 3. 调用流程
+
+弓箭手攻击：`CharacterDefine.json -> PlayerCombatComponent.Initialize -> 0.25 秒冷却 -> StartImmediateArcherAttack -> 箭矢结算 15 点基础攻击`。
+
+失败返回：`玩家死亡 -> GameSessionUi.ShowGameOver -> 返回角色选择按钮 -> FlushAndLeave -> PrepareForSceneTransition -> SceneFlowService.ReturnToCharacterSelect -> LoadingScene -> CharacterSelectScene`。
+
+### 4. 核心原理
+
+弓箭手仍然使用配置驱动的攻击间隔，点击和长按共用同一个冷却，所以提高攻速不需要改输入或投射物代码。失败返回时先异步保存角色数据，成功后再恢复时间缩放、清理本局临时状态并切换场景；如果保存失败，玩家会留在失败界面重试，避免直接切场景造成进度丢失。
+
+### 5. Unity 测试方式
+
+在 `MainScene` 选择弓箭手，按住左键应约每 0.25 秒发射一箭，快速连点不能突破间隔。让玩家生命值归零，确认失败界面显示“返回角色选择”；点击后应经过 LoadingScene 返回 CharacterSelectScene，账号保持登录，并且重新进入角色后能读取最近保存的进度。
+
+### 6. 面试表达
+
+这次我继续通过职业配置把弓箭手攻击间隔调整为 0.25 秒，没有给战斗代码增加职业数值分支。游戏失败流程则从直接关闭程序改为先保存角色数据，再通过统一场景服务返回角色选择。场景服务负责恢复 Time.timeScale、清理背包和 Boss 等本局状态，同时保留账号登录态，使存档、UI 和场景切换的职责保持清晰。
+
+### 7. 面试追问
+
+1. **为什么失败后不能直接加载角色选择场景？** 需要先等待异步存档完成，否则可能丢失本局进度。
+2. **存档失败时怎么处理？** 保持失败面板并重新启用按钮，显示错误信息让玩家重试。
+3. **为什么返回选角不清除账号登录态？** 退出的是角色会话，不是账号会话，玩家应能直接重新选择角色。
+4. **为什么要恢复 Time.timeScale？** 失败界面会把时间缩放设为零，不恢复会让后续场景保持暂停。
+5. **为什么还要修改 ReStartPanel？** 它是旧版后备失败界面，同步修改可以避免边缘路径仍然退出程序。
+
+### 8. 本次涉及知识点
+
+- 配置驱动的攻击间隔
+- 单次伤害、攻击频率与 DPS
+- Coroutine 异步存档流程
+- 角色会话与账号会话的区别
+- 场景切换前状态清理
+- `Time.timeScale` 跨场景影响
+- UI 按钮事件绑定与回归测试
+
+## 功能名称：战士蓄力重击系统
+
+### 1. 实现目标
+
+给战士增加区别于刺客三段连击的职业机制：短按左键释放普通单次攻击，长按则在挥剑出手前固定上半身攻击姿势并积累伤害倍率。蓄力最多 1.6 秒，倍率从 1 倍线性提升到 3 倍；松手后恢复剩余动画并延迟 0.08 秒开启一次近战判定。蓄力期间保留低速移动，但禁止翻滚、跳跃和技能。
+
+### 2. 涉及脚本
+
+- `IGameplayInput.cs`、`InputCo.cs`：增加左键松开帧 `LeftMouseUp`，让状态机能准确区分按下、持续和释放。
+- `CharacterDefine.cs`、`CharacterDefine.json`：新增可选的 `CharacterChargedAttackDefine`，只为战士配置最大时间、倍率、动画固定点、命中延迟和移动限速。
+- `PlayerChargedAttackComponent.cs`：维护 `Inactive -> Windup -> Holding -> Releasing` 状态机和蓄力进度。
+- `PlayerCombatComponent.cs`：提供受控普攻开始、释放和取消入口，并在暴击结算后应用蓄力倍率。
+- `PlayerPresentationComponent.cs`：只固定 `Attack Layer.Attack` 的归一化时间，不暂停整个 Animator。
+- `PlayerRuntimeController.cs`、`PlayerRuntime.prefab`：装配蓄力组件，并协调技能禁用、移动限速和异常取消。
+- `PlayerChargeBarUi.cs`、`GameplayUiRoot.cs`、`GameplayUiRoot.prefab`：显示橙色/金色蓄力进度和当前倍率，主场景与 Boss 房间共用同一套 UI。
+- `WarriorChargedAttackTests.cs`：回归配置、短按、倍率封顶、动画固定、取消恢复、伤害和 UI 装配。
+
+### 3. 调用流程
+
+`InputCo -> IGameplayInput -> PlayerCombatComponent.CheckAttackInput -> PlayerChargedAttackComponent`。
+
+按下时：`BeginControlledBasicAttack -> PlayerPresentationComponent.SetCombo(1) -> 播放攻击前摇`。
+
+持续按住时：`TryHoldSimpleAttackPose(0.20) -> Holding -> ChargeProgress -> PlayerChargeBarUi`。
+
+松手时：`ReleaseSimpleAttackPose -> ReleaseControlledBasicAttack(倍率, 0.08秒) -> OpenWeaponHitWindow -> WeaponCo -> PlayerBasicAttackDamageResolver -> RollAttackDamage`。
+
+### 4. 核心原理
+
+这个功能用状态机管理“未攻击、前摇、保持、释放”，而不是在一个 Update 里堆很多布尔值。前摇阶段只播放动画，不开启伤害；动画达到 20% 后进入保持阶段，蓄力计时才开始。这样画面中的准备动作、UI 进度和真正伤害窗口能保持一致。
+
+动画固定没有使用 `Animator.speed = 0`，因为全局暂停会连基础移动层一起停止。表现组件在 `LateUpdate` 中把攻击层的 `Attack` 状态重新采样到 0.20，只固定上半身蒙版层；下半身仍可播放移动动画。松手时停止重复采样，Animator 会从固定点继续完成挥剑。
+
+伤害顺序是“基础攻击 -> 暴击 -> 蓄力倍率 -> 四舍五入”。本次攻击的倍率保存在战斗组件中，直到攻击窗口结束才重置，因此同一挥剑命中的多个目标使用相同倍率，而每个目标仍通过攻击窗口编号保证只受伤一次。
+
+蓄力 UI 只读取状态机公开的只读属性，不反向修改计时或倍率。这样更换 UI 样式不会影响战斗逻辑，主场景和 Boss 房间也能直接复用公共 Prefab。
+
+### 5. Unity 测试方式
+
+1. 在角色选择界面选择战士并进入 `MainScene`，短按左键，确认不显示蓄力条且按 1 倍伤害出手。
+2. 长按左键，确认攻击动画到出手前姿势后固定，技能栏上方出现 360×32 的蓄力条。
+3. 蓄力约 0.8 秒时确认文字接近 `蓄力 x2.0`；1.6 秒后变成金色并显示 `蓄力完成 x3.0`，继续按住不会自动出手。
+4. 蓄力期间尝试移动、翻滚、跳跃和技能：只能以最高 1.5 的速度移动，其他动作应被阻止；受到普通伤害后蓄力继续。
+5. 松开左键，确认动画自然播放剩余部分，0.08 秒后攻击盒开启一次，同一目标只结算一次伤害。
+6. 蓄力时打开暂停、触发升级选择或让角色死亡，确认动画恢复、攻击盒关闭、蓄力条隐藏。
+7. 在 `BossRoomScene` 重复长按测试，确认蓄力条位于技能栏上方且不遮挡 Boss 血条。
+8. 在 Test Runner 运行 `WarriorChargedAttackTests`，再运行全部 EditMode 测试。
+
+### 6. 面试表达
+
+为了让战士和刺客玩法区分开，我给战士做了一个蓄力重击。输入层统一提供鼠标按下、按住和松开，蓄力组件用四状态状态机控制前摇、保持和释放；战斗组件只提供受控普攻接口，松手前不会创建伤害窗口。动画上我没有暂停整个 Animator，而是在 LateUpdate 中只把带上半身蒙版的 Attack Layer 固定在 20% 归一化时间，所以角色蓄力时仍能低速移动。伤害先走原有暴击公式，再乘 1 到 3 倍的蓄力倍率，UI 只读取只读进度。这样的拆分既保留了现有刺客连击和弓箭手连射，也方便以后扩展霸体、蓄力特效或装备词条。
+
+### 7. 面试追问
+
+1. **为什么要用状态机？** 蓄力包含前摇、保持、释放和取消，不同阶段允许的输入与伤害行为不同；显式状态比多个布尔值组合更容易避免非法状态。
+2. **为什么不用 `Animator.speed = 0`？** 它会暂停所有动画层，下半身移动也会停止；固定单独攻击层可以保留低速移动表现。
+3. **蓄力倍率为什么在暴击后计算？** 这是明确的数值规则，能让暴击和蓄力同时生效；集中在 `RollAttackDamage` 后处理也避免每个目标重复写公式。
+4. **如何防止一刀多次伤害同一目标？** 每次开启攻击盒都会增加攻击窗口编号，`WeaponCo` 按目标和窗口去重；同一窗口只命中一次。
+5. **异常退出蓄力怎么处理？** 死亡、暂停、升级、对象禁用都调用统一取消入口，恢复攻击层、关闭碰撞盒并把倍率重置为 1。
+
+### 8. 本次涉及知识点
+
+- 有限状态机和输入边沿事件
+- `GetMouseButtonDown`、`GetMouseButton`、`GetMouseButtonUp`
+- Animator 分层、Avatar Mask、归一化时间与 `LateUpdate`
+- 受控攻击窗口和碰撞去重
+- 暴击与倍率的伤害计算顺序
+- 配置驱动的可选职业机制
+- UI 只读绑定与公共 Prefab 复用
+- Unity 生命周期中的取消与资源状态恢复
+- EditMode 动画、配置和 Prefab 装配测试
+
+## 功能名称：战士满蓄力反馈与临时减伤
+
+### 1. 实现目标
+
+战士蓄力达到 1.6 秒后，让角色以金黄色闪烁提示“重击准备完成”，并获得 15% 额外乘算减伤。减伤覆盖满蓄力保持和松手后的释放动画，攻击结束、取消、死亡、暂停或对象禁用时立即清除，使战士可以更稳定地完成重击，但不会变成完全无敌。
+
+### 2. 涉及脚本
+
+- `CharacterDefine.cs`、`CharacterDefine.json`：为战士蓄力配置增加 15% 满蓄力临时减伤。
+- `PlayerChargedAttackComponent.cs`：公开满蓄力防护是否生效及当前减伤值，并用原有状态机控制生命周期。
+- `PlayerCommands.cs`、`PlayerCombatSystem.cs`：让受伤命令携带可选临时减伤，并集中完成一次取整的乘算结算。
+- `PlayerHealthComponent.cs`：读取满蓄力状态、传递临时减伤，并统一管理受击红色和蓄力黄色材质反馈。
+- `PlayerRuntime.prefab`：配置金黄色 `#FFD54A` 和 0.18 秒闪烁间隔。
+- `WarriorChargedAttackTests.cs`：回归状态生命周期、68 点伤害结果、颜色优先级和恢复逻辑。
+
+### 3. 调用流程
+
+状态流程：`PlayerChargedAttackComponent.Holding -> ChargeProgress 达到 1 -> IsFullChargeGuardActive -> Releasing -> 攻击结束 -> Inactive`。
+
+受伤流程：`怪物/Boss/子弹 -> PlayerHealthComponent.Hit -> TakePlayerDamageCommand(15% 临时减伤) -> PlayerCombatSystem.TakeDamage -> PlayerModel 扣血 -> 受伤事件与飘字`。
+
+表现流程：`PlayerRuntimeController.Update -> PlayerHealthComponent.TickHitFlash -> 受击红色优先 -> 满蓄力黄色 -> 原始材质颜色`。
+
+### 4. 核心原理
+
+临时减伤没有直接加到玩家常驻的 `DamageReduction` 上，而是作为本次受伤命令的上下文参数传入战斗系统。战斗系统把常驻减伤和临时减伤分别转换成“剩余承伤倍率”后相乘，例如战士 20% 常驻减伤与 15% 临时减伤会得到 `100 × 0.8 × 0.85 = 68`，并在最后只进行一次四舍五入。这样不会突破常驻属性 40% 的成长规则，也不会污染存档。
+
+黄色和红色都需要修改同一批角色材质，因此由生命表现组件统一决定颜色优先级。材质实例只在绑定角色模型时缓存一次，Update 中只切换缓存材质的颜色；满蓄力不会关闭 Renderer，所以玩家能区分“黄色减伤提示”和“闪避无敌的显隐闪烁”。实际受到伤害时先显示红色，0.1 秒后如果防护仍生效就继续黄色闪烁。
+
+### 5. Unity 测试方式
+
+1. 在 `MainScene` 选择战士，蓄力未满时确认角色颜色不变。
+2. 按住左键 1.6 秒，确认蓄力条满后角色以金黄色闪烁，模型不会消失。
+3. 保持满蓄力受到攻击，记录掉血；取消蓄力后受到同一次攻击，满蓄力时应额外减少 15% 剩余伤害。
+4. 满蓄力受到实际伤害时应先闪红，随后恢复黄色；松手后黄色覆盖释放动画并在攻击结束时消失。
+5. 分别测试暂停、升级选择、死亡和切换场景，确认没有黄色材质或临时减伤残留。
+6. 在 `BossRoomScene` 重复验证，并在 Test Runner 运行 `WarriorChargedAttackTests` 和完整 EditMode 测试。
+
+### 6. 面试表达
+
+我在战士蓄力重击上增加了一个满蓄力防护机制。蓄力状态机达到 100% 后会公开一个只读防护状态，生命组件受击时把 15% 临时减伤作为命令参数传给战斗系统。系统没有修改玩家常驻属性，而是让常规减伤和临时减伤乘算，并且只在最终结果上取整，所以既不会影响存档，也不会挤占属性升级上限。表现层把受击红色、满蓄力黄色和角色原色放在同一个组件里按优先级仲裁，同时缓存材质避免每帧创建实例。这样逻辑、数据和视觉职责比较清楚，后续也容易扩展其他临时防御 Buff。
+
+### 7. 面试追问
+
+1. **为什么使用乘算减伤？** 乘算按剩余伤害继续减免，不会把临时效果直接堆到常驻上限上，数值更稳定。
+2. **为什么不直接修改 PlayerModel 的 DamageReduction？** 满蓄力是一次攻击期间的临时上下文，写进常驻模型容易在取消、保存或切场景时残留。
+3. **为什么伤害只取整一次？** 中途多次取整会让计算顺序改变最终数值，一次取整能保证公式结果一致。
+4. **红色和黄色同时触发怎么办？** 生命表现组件统一按红色受击、黄色蓄力、原色的顺序选择最终材质颜色。
+5. **为什么黄色闪烁不关闭 Renderer？** 显隐闪烁已经表示闪避无敌，黄色只改变颜色可以避免玩家误解状态含义。
+
+### 8. 本次涉及知识点
+
+- 临时战斗上下文与常驻角色属性的区别
+- 加算减伤与乘算减伤
+- 浮点数计算和最终一次取整
+- 有限状态机派生只读状态
+- 材质实例缓存与 Renderer 表现
+- 多种视觉状态的优先级仲裁
+- Command、System、Model 的职责边界
+- 对象禁用和场景切换时的临时状态清理
+
+## 功能名称：战士满蓄力旋转范围重斩
+
+### 1. 实现目标
+
+解决战士单体近战判定导致清怪效率偏低的问题。战士只有蓄满 1.6 秒后松手，才会在继续播放剩余攻击动画的同时原地旋转 360 度，并对自身周围 3 米内的所有可攻击目标结算一次 3 倍重击；短按和未满蓄力仍保持原有单体攻击。
+
+### 2. 涉及脚本
+
+- `CharacterDefine.cs`、`CharacterDefine.json`：配置 3 米范围、0.6 秒旋转时间和 360 度角度。
+- `PlayerChargedAttackComponent.cs`：识别满蓄力释放、按绝对进度旋转根节点，并在完成或取消时恢复原朝向。
+- `PlayerRuntimeController.cs`：在战斗输入后推进旋转，旋转期间只锁水平移动并保留重力。
+- `PlayerCombatComponent.cs`：延迟 0.08 秒执行一次圆形范围扫描，保持普通武器碰撞盒关闭。
+- `PlayerChargedSpinEffect.cs`：使用 `LineRenderer` 显示金黄色扩散圆环，并接入公共表现对象池。
+- `WarriorChargedAttackTests.cs`：回归配置、旋转进度、取消恢复、360 度命中、多 Collider 去重和特效复用。
+
+### 3. 调用流程
+
+`InputCo 松开左键 -> PlayerChargedAttackComponent.ReleaseAttack -> 判断 ChargeProgress == 1 -> PlayerCombatComponent.ReleaseControlledBasicAttack(3倍, 0.08秒, 3米)`。
+
+表现流程：`PlayerRuntimeController.Update -> TickFullChargeSpin -> 初始朝向 × 绝对旋转进度 -> 0.6秒后恢复初始朝向`。
+
+伤害流程：`TickEventlessAttackReleaseDelay -> ResolveControlledAreaAttack -> PlayerBasicAttackDamageResolver.ApplyInRadius -> HashSet按FighterInterface去重 -> 每个目标独立暴击与伤害结算`。
+
+### 4. 核心原理
+
+旋转不采用每帧 `Rotate(本帧角度)` 的累加写法，而是先记录释放瞬间的朝向，再根据 `计时 / 0.6秒` 得到绝对进度，直接计算“初始朝向乘当前角度”。这样帧率波动不会让最终朝向多转或少转；完成、暂停、死亡和对象禁用也都能回到同一份初始朝向。
+
+范围攻击复用现有 `ApplyInRadius`，通过固定长度的 Collider 数组避免每次攻击分配新数组，再用 `HashSet<FighterInterface>` 处理一个怪物拥有多个 Collider 的情况。满蓄力范围结算会替代武器攻击盒，而不是与攻击盒同时工作，因此每个目标只会受伤一次。每个目标进入公共伤害方法时会单独掷暴击，但都共享本次 3 倍蓄力倍率。
+
+移动锁定放在移动组件现有的 `movementBlocked` 参数上。该参数只让水平速度归零，`CharacterController.Move` 仍会处理垂直速度、重力与落地，避免旋转时在空中悬停。圆环表现从 `SkillVisualPool` 获取并回收，伤害逻辑即使找不到表现池也能独立完成。
+
+### 5. Unity 测试方式
+
+1. 在 `MainScene` 选择战士，短按或未满蓄力松手，确认不旋转、不出现圆环并继续使用原攻击盒。
+2. 蓄满后松手，确认角色在约 0.6 秒内原地转一圈；约 0.3 秒时应面向反方向，结束后恢复释放前朝向。
+3. 在角色前、后、左、右 3 米内放置目标，确认金色圆环出现且每个目标只受一次 3 倍基础伤害；3 米外不受伤。
+4. 旋转时按方向键、跳跃、翻滚和技能键：不能水平移动或执行其他动作，但从空中释放时仍应正常下落。
+5. 旋转中测试暂停、升级选择、死亡和禁用角色，确认旋转立即停止、朝向恢复、武器攻击盒保持关闭。
+6. 在 `BossRoomScene` 验证 Boss 只受到一次 3 倍伤害，并确认相机不会跟随角色朝向旋转。
+7. 在 Test Runner 运行 `WarriorChargedAttackTests`，再运行完整 EditMode 测试。
+
+### 6. 面试表达
+
+为了改善战士清怪慢的问题，我没有直接提高常驻攻击力，而是把满蓄力重击扩展成一个 360 度范围攻击。蓄力状态机只在进度达到 100% 时传入 3 米范围，战斗组件在松手 0.08 秒后用 `OverlapSphereNonAlloc` 扫描，并通过 `HashSet<FighterInterface>` 对多 Collider 目标去重；这次范围扫描会替代武器 Collider，避免重复伤害。表现上我记录释放前朝向，用 0.6 秒绝对进度驱动根节点旋转 360 度，完成或异常取消后统一恢复朝向。旋转期间只锁水平移动，重力仍由原移动组件处理，圆环特效则通过对象池复用。这样既提高了战士清怪能力，也保留了“需要满蓄力换取范围收益”的职业特色。
+
+### 7. 面试追问
+
+1. **为什么不用逐帧累加旋转角度？** 累加会受帧率和浮点误差影响，绝对进度能保证任意帧率都在 0.6 秒完成并恢复同一朝向。
+2. **怎样防止多 Collider 怪物重复受伤？** 物理查询用 Collider 数组收集结果，再把它们解析为 `FighterInterface`，通过 HashSet 保证同一战斗目标只进入一次结算。
+3. **为什么范围攻击要关闭武器碰撞盒？** 圆形扫描已经负责本次命中，如果武器盒同时开启，前方目标可能同时走两条伤害入口。
+4. **为什么每个目标可以独立暴击？** 范围扫描只负责筛选和去重，每个目标仍调用公共普通攻击伤害结算，所以暴击掷骰独立，而蓄力倍率保持一致。
+5. **原地旋转时为什么角色不会悬空？** 调度层只把移动组件的水平移动标记为阻塞，没有停止移动组件更新，垂直速度和重力仍会继续累积并交给 CharacterController。
+
+### 8. 本次涉及知识点
+
+- `Quaternion`、绝对旋转进度与浮点误差控制
+- `OverlapSphereNonAlloc` 非分配物理查询
+- `HashSet` 与多 Collider 目标去重
+- 伤害逻辑和攻击表现解耦
+- 水平移动锁定与重力保留
+- `LineRenderer` 程序化圆环
+- 对象池获取、状态重置与回收
+- 状态取消和角色朝向恢复
+- 配置驱动的职业差异化设计
+
+## 功能名称：刺客专属技能3槽位显隐
+
+### 1. 实现目标
+
+修复战士、法师和弓箭手也会显示刺客“镰刀大旋转”技能3图标的问题。非刺客进入玩法场景时隐藏整个技能3槽位，包括图标、按键文字、技能状态和冷却遮罩；刺客继续正常显示和刷新。
+
+### 2. 涉及脚本
+
+- `PlayerSkillBarUi.cs`：根据当前职业与技能配置控制技能3槽位根节点显隐。
+- `GameplayUiRoot.prefab`：显式绑定 `Skill3Slot`，确保隐藏的是完整槽位而不只是文字。
+- `PlayerSkillBarUiTests.cs`：验证职业1、2、3隐藏技能3，职业4显示，并保护技能1、2不受影响。
+
+### 3. 调用流程
+
+`PlayerSkillBarUi.RefreshAllSlots -> PlayerModel.CharacterSave/CharacterDefine -> SkillDataManager.GetSkill(2001) -> SkillDefine.CanLearnByClass -> Skill3Slot.SetActive`。
+
+### 4. 核心原理
+
+技能栏没有直接写死“刺客职业ID等于4”，而是复用技能配置中的 `isCommon` 和 `allowedClassIds`。UI先取得当前职业ID，再询问技能配置当前职业是否允许学习；不允许时隐藏 `Skill3Slot` 根节点，因此其下的图标、文字和冷却遮罩会一起消失。以后如果把大旋转改给其他职业，只需修改配置表，UI逻辑不用改。
+
+角色数据尚未初始化时职业ID为0，技能3会先保持隐藏；玩家模型完成初始化后，技能栏原有的刷新流程会重新判断并为刺客显示槽位。隐藏时还会清空旧文字和冷却状态，避免复用同一个UI实例时残留上一职业的表现。
+
+### 5. Unity 测试方式
+
+1. 分别选择战士、法师和弓箭手进入 `MainScene`，确认技能栏只显示技能1和技能2。
+2. 选择刺客进入 `MainScene`，确认技能3图标、数字3、名称、学习状态和冷却正常显示。
+3. 在 `BossRoomScene` 重复检查，两处场景应因复用同一个 `GameplayUiRoot.prefab` 而表现一致。
+4. 在 Test Runner 运行 `PlayerSkillBarUiTests` 和完整 EditMode 测试。
+
+### 6. 面试表达
+
+我修复了职业专属技能在其他职业技能栏中残留的问题。技能3槽位的显示不是直接判断刺客ID，而是读取当前玩家职业，再复用技能配置的 `CanLearnByClass` 规则。非允许职业会隐藏整个槽位根节点，所以图标、文字和冷却遮罩能同步消失；刺客则继续进入原有的等级和冷却刷新流程。这样技能规则和UI使用同一份配置来源，避免两套职业判断以后出现不一致。
+
+### 7. 面试追问
+
+1. **为什么隐藏整个槽位而不是单独隐藏文字和图片？** 根节点显隐可以一次覆盖图标、文字和冷却遮罩，减少遗漏状态。
+2. **为什么不直接判断 classId == 4？** 使用技能配置后，策划调整允许职业时不需要修改UI代码。
+3. **角色数据初始化前怎么处理？** 未取得有效职业ID时默认隐藏，模型初始化后的刷新会得到最终结果。
+4. **切换职业会不会残留旧文字？** 隐藏槽位时会同时清空文字并重置冷却遮罩。
+5. **Boss房间为什么不用再改一次？** 主场景和Boss房间引用同一个公共玩法UI Prefab。
+
+### 8. 本次涉及知识点
+
+- 配置驱动的职业限制
+- UI根节点显隐和子节点生命周期
+- Model只读数据查询
+- Prefab序列化引用
+- UI状态清理与复用
+- EditMode参数化回归测试
+
+## 功能名称：刺客高风险高回报平衡调整
+
+### 1. 实现目标
+
+解决刺客同时拥有最高攻击、最高移速、首段双判定和即时范围技能，导致输出高但失误代价不足的问题。本次保留刺客 44 攻击、6 移速、首段双击和技能3原伤害曲线，把生命从 280 调整为 240、基础减伤从 10% 调整为 5%，并为镰刀大旋转增加 0.35 秒命中前摇和 1.05 秒动作占用，使职业定位变成真正的“高风险高回报”。
+
+### 2. 涉及脚本
+
+- `CharacterDefine.json`：调整刺客生命和基础减伤，不修改爆发与移速。
+- `SkillDefine.cs`、`SkillDefine.json`：增加可选的技能出手承诺配置，并为技能3配置命中点、锁定时间和移动限速。
+- `SkillDataManager.cs`：校验命中延迟、动作时长和移动限速，阻止非法配置进入运行时。
+- `PlayerSkillCastComponent.cs`：管理技能3从前摇、命中到恢复控制的状态，并保证范围伤害只结算一次。
+- `PlayerRuntimeController.cs`：把承诺状态接入翻滚、跳跃、普攻、技能和移动限速调度。
+- `AssassinBalanceTests.cs`：保护刺客数值、技能曲线、延迟命中、单次结算、暂停冻结和禁用清理。
+
+### 3. 调用流程
+
+`InputCo 技能3松开 -> PlayerSkillCastComponent.TryCast -> TryCastPlayerSkillCommand -> 扣除MP并开始冷却 -> TryBeginCommittedScytheSpin -> 播放技能动画`。
+
+`PlayerRuntimeController.Update -> PlayerSkillCastComponent.TickCommittedCast -> 0.35秒到达命中点 -> ResolveScytheSpin -> DealDamageInRadius -> FighterInterface.Hit`。
+
+控制流程：`IsCommittedCastActive -> 禁止开始翻滚 -> 跳过新技能输入 -> PlayerCombatComponent因技能动画拒绝普攻 -> TickNormalMovement限速1.5并禁止跳跃 -> 1.05秒后恢复控制`。
+
+### 4. 核心原理
+
+“降低伤害”和“降低容错”不是同一件事。如果只降低攻击力，刺客仍然可以高速移动、立即结算范围伤害并迅速撤离，只是击杀时间变长。因此本次保留输出上限，通过降低等效生命和增加技能出手承诺，让错误时机释放技能会真实承受伤害。
+
+承诺配置放在技能静态数据中，而不是把 0.35、1.05 和 1.5 写死在技能脚本里。技能组件只负责推进计时：释放成功时先保存本次伤害和半径，命中点到达后以玩家当时的位置扫描范围；`committedHitResolved` 保证即使一帧跨过命中点也只结算一次。蓝量和冷却在技能规则系统中立即消费，表现组件只管理延迟伤害，因此死亡取消不会错误返还资源。
+
+运行时控制器负责动作优先级。它读取技能组件公开的只读状态，阻止翻滚和跳跃，把水平速度限制为 1.5，但仍调用移动组件处理重力和落地。暂停或升级选择时控制器不推进技能 Tick，`Time.deltaTime` 也为零，所以前摇与动作时长会冻结；死亡、禁用和切场景则清空待结算伤害，防止对象失效后继续命中。
+
+### 5. Unity 测试方式
+
+1. 重新选择刺客进入 `MainScene`，确认基础生命为 240，攻击和移动手感保持原样。
+2. 学会技能3，松开按键后观察：伤害不应立即出现，而是在约 0.35 秒的挥砍点结算。
+3. 技能动作的 1.05 秒内尝试翻滚、跳跃、普攻和其他技能，均不应执行；方向键只能让角色以最高 1.5 速度缓慢移动。
+4. 在前摇期间受到攻击，确认正常扣血且技能不会获得无敌、减伤或霸体；死亡时本次范围伤害不再发生。
+5. 在前摇期间暂停，等待后恢复，确认技能从原进度继续而不是在暂停中命中。
+6. 在 `BossRoomScene` 重复测试，确认技能原伤害、范围、蓝耗和冷却没有变化。
+7. 在 Test Runner 运行 `AssassinBalanceTests`、`SkillConfigValidationTests` 和完整 EditMode 测试。
+
+### 6. 面试表达
+
+我对刺客采用的是高风险高回报平衡，而不是直接砍伤害。排查后发现刺客不仅面板攻击和移速最高，首段攻击还有两次完整判定，专属范围技能又是即时结算并且可以很快撤离，所以问题核心是失误成本不足。我保留了爆发上限，把基础等效承伤降低，并为技能增加了配置驱动的出手承诺：释放时立即扣蓝和进入冷却，0.35 秒后才命中，1.05 秒内限制移动并禁止翻滚、跳跃、普攻和其他技能。技能组件管理命中状态，运行时控制器只读取状态处理输入优先级，伤害和控制没有塞在同一个类里，后续其他高威力技能也能复用这套配置。
+
+### 7. 面试追问
+
+1. **为什么不直接降低刺客攻击？** 直接降攻击只能降低输出，不会解决即时范围伤害和高速撤离带来的低风险问题。
+2. **为什么命中数据要在释放成功时保存？** 可以确保一次技能使用同一份攻击结果，不会因为前摇期间属性变化导致显示、消耗和伤害规则不一致。
+3. **为什么命中中心使用打击点时的位置？** 技能允许低速移动修正站位，玩家需要承担接近风险，同时仍有有限的操作空间。
+4. **怎样保证范围伤害只触发一次？** 状态中保存 `committedHitResolved`，跨过命中时间后立即置为 true，后续帧不会再次进入结算。
+5. **死亡取消为什么不返还蓝量和冷却？** 资源已经在规则层确认消费，死亡属于错误时机释放技能的代价；表现层也不应反向修改权威资源数据。
+
+### 8. 本次涉及知识点
+
+- 高风险高回报职业平衡
+- 等效生命与乘算减伤
+- 配置驱动的技能前摇和动作后摇
+- 动作状态、输入优先级与控制权管理
+- 延迟伤害的数据快照和单次结算
+- `Time.deltaTime`、暂停冻结与生命周期清理
+- 战斗逻辑、Unity表现和运行时调度解耦
+- EditMode配置及状态回归测试
+
+## 功能名称：Boss房间摄像机穿墙与遮挡恢复
+
+### 1. 实现目标
+
+解决 Boss 房间靠近墙体时，第三人称摄像机被避障射线强制推近、镜头穿到外侧后墙面继续挡住角色的问题。Boss 房间的四面墙和天花板允许镜头穿过；当它们位于角色与摄像机之间时临时停止渲染，离开视线后自动恢复，同时保留 Collider 限制战斗区域。
+
+### 2. 涉及脚本
+
+- `CameraCo.cs`：识别允许镜头穿过的遮挡物，不再用它们缩短镜头距离。
+- `CameraPassThroughOccluder.cs`：标记可穿透墙体并缓存其 Renderer。
+- `CameraOcclusionController.cs`：检测角色与镜头之间的标记墙体，管理隐藏和恢复。
+- `BossRoomSceneBootstrap.cs`：为动态生成的四面墙、天花板和 Boss 相机补齐组件。
+- `BossRoomSceneSetupTool.cs`：保证编辑器重新生成 Boss 场景时也得到相同装配。
+- `BossRoomCameraOcclusionTests.cs`：验证镜头穿墙、普通障碍避让、显示恢复和 Collider 保留。
+
+### 3. 调用流程
+
+`CameraCo.LateUpdate -> ResolveCameraPosition -> SphereCastAll -> ShouldIgnoreHit -> CameraPassThroughOccluder -> 保持期望镜头位置`。
+
+`CameraOcclusionController.LateUpdate -> 角色观察点到镜头的 RaycastNonAlloc -> 找到 CameraPassThroughOccluder -> Renderer.forceRenderingOff = true -> 遮挡消失后恢复原始值`。
+
+### 4. 核心原理
+
+镜头“被墙挡住”实际包含两个问题。第一层是物理避障：`CameraCo` 原本会从角色向镜头做球形检测，碰到墙就缩短距离，因此镜头突然贴近角色。现在墙体通过标记组件告诉相机“这个物体可以穿过”，只跳过这些墙，不会关闭主场景全部避障。
+
+第二层是渲染遮挡：即使相机位置能够穿墙，墙的模型仍可能位于角色和镜头之间。遮挡控制器在相机完成移动后做一次无分配射线检测，只把命中的标记墙设置为 `forceRenderingOff`。该属性只影响 Renderer，不会关闭 BoxCollider，所以画面能看到角色，但玩家和 Boss 仍无法走出房间。
+
+标记、镜头移动和遮挡表现拆成不同职责：标记描述物体属性，`CameraCo` 计算位置，遮挡控制器负责显示。射线缓冲、Renderer 引用和 HashSet 都会复用，避免每帧创建数组或反复查找组件。
+
+### 5. Unity 测试方式
+
+1. 打开 `BossRoomScene`，运行后靠近四面墙并旋转、拉远镜头，确认镜头不会突然贴近角色。
+2. 让镜头移动到墙外，确认遮挡墙立即隐藏，角色和 Boss 仍可见。
+3. 转回房间内部，确认墙体恢复；在墙角测试两面墙同时遮挡和恢复。
+4. 尝试让角色或 Boss 穿墙，确认墙体 Collider 始终有效。
+5. 返回 `MainScene` 靠近普通障碍物，确认原来的镜头避障仍然工作。
+6. 在 Test Runner 运行 `BossRoomCameraOcclusionTests` 和完整 EditMode 测试。
+
+### 6. 面试表达
+
+Boss 房间的相机问题我分成了位置避障和视觉遮挡两层处理。原相机会用 SphereCast 防止穿墙，我没有全局关闭它，而是给 Boss 墙体增加可穿透标记，让相机只忽略这些对象。镜头穿到墙外后，再由独立遮挡组件用 RaycastNonAlloc 检测角色到镜头之间的墙，通过 `forceRenderingOff` 临时隐藏 Renderer，但保留 Collider。这样主场景避障不受影响，Boss 房间又能始终看到角色，并且通过缓存射线数组和 Renderer 避免了每帧 GC。
+
+### 7. 面试追问
+
+1. **为什么不能只关闭摄像机碰撞？** 镜头能穿墙不代表角色可见，镜头在墙外时墙的 Renderer 仍会挡住画面。
+2. **为什么使用标记组件？** 可以精确指定哪些物体允许穿透，避免通过名字或全局 Layer 误伤其他障碍。
+3. **隐藏墙体为什么不关闭 GameObject？** 关闭 GameObject 会连 Collider 一起失效，玩家和 Boss 可能跑出战斗区域。
+4. **怎样避免每帧产生垃圾？** 使用 `RaycastNonAlloc` 固定缓冲区、缓存 Renderer，并复用 HashSet 保存当前遮挡物。
+5. **切场景时如何防止墙体一直隐藏？** `OnDisable` 会恢复记录的 Renderer 原始状态并清空缓存。
+
+### 8. 本次涉及知识点
+
+- 第三人称摄像机球形避障
+- 标记组件和职责拆分
+- `Physics.RaycastNonAlloc`
+- `Renderer.forceRenderingOff`
+- Collider与Renderer的职责区别
+- Unity脚本执行顺序与`LateUpdate`
+- 缓冲区、HashSet和每帧GC控制
+- 生命周期清理与状态恢复
+
+## 功能名称：角色死亡全进度重置与自动存档
+
+### 1. 实现目标
+
+解决角色死亡后返回选角仍保留等级的问题。死亡事件现在会立即请求一份专用重置存档，把角色恢复为 1 级、0 经验、0 属性强化、0 Boss 轮数和 0 累计宝箱；角色槽位、名称、职业和历史最高分继续保留。正常暂停返回选角仍使用普通保存，不会误清进度。
+
+### 2. 涉及脚本
+
+- `CharacterProgressSaveService.cs`：定义保存模式、合并并串行执行自动存档，死亡模式优先级最高。
+- `PlayerProgressSaveData.cs`：生成固定的死亡重置快照。
+- `PlayerProgressionSystem.cs`、`PlayerCommands.cs`：把数据源确认后的 1 级数据同步到运行时，同时保持玩家死亡。
+- `GameApiClient.cs`、`LocalGuestSaveService.cs`：向在线或游客数据源传递并校验死亡重置标记。
+- 客户端与服务端 `message.cs`、`UserService.cs`：增加协议字段并只允许严格的 1 级空进度绕过防回档校验。
+- `GameSessionUi.cs`、`ReStartPanel.cs`：返回和重开按钮等待存档完成，失败时停留在结算界面。
+
+### 3. 调用流程
+
+`PlayerCombatSystem.TakeDamage -> PlayerDiedEvent -> CharacterProgressSaveService.ResetAfterDeath -> PlayerProgressSaveData.ResetAfterDeath -> GameApiClient -> 游客JSON或服务端DB事务`。
+
+保存成功后：`数据源返回 NCharacter -> 更新 GameApiClient/SelectedCharacterState 缓存 -> ResetPlayerProgressAfterDeathCommand -> PlayerProgressionSystem -> 重置技能、按分类同步背包、重置Boss和宝箱运行时状态`。
+
+### 4. 核心原理
+
+原问题不是没有死亡存档，而是旧逻辑只清除了属性强化，等级和经验仍按长期进度发送。在线服务端和游客存档还有防回档校验，因此客户端直接改成 1 级会被拒绝。
+
+新的保存模式用优先级表达意图：普通保存、清本局强化、死亡全重置。多个请求重叠时只能提升优先级，死亡重置不会被按钮随后发起的普通保存覆盖。协议中的 `ResetAfterDeath` 不是无条件回档权限，数据源只接受“等级 1 且其余成长全部为 0”的固定数据，其他降级仍会被拒绝。
+
+本地运行时只在数据源成功后重置，避免网络失败造成客户端与存档分叉。模型复用完整初始化公式撤销所有强化属性，再把当前生命设回 0，所以失败界面背后不会复活；下一场景才会按 1 级角色正常生成满血状态。
+
+### 5. Unity 测试方式
+
+1. 选择角色进入 `MainScene`，通过正常玩法或开发者模式提升等级并获得属性强化。
+2. 击破宝箱、完成 Boss 后让角色死亡，观察失败界面并等待自动存档。
+3. 点击“返回角色选择”，确认槽位显示 1 级、0 经验、0 Boss 和 0 宝箱累计。
+4. 再次进入角色，确认基础属性和初始技能状态；药水应清空，材料与任务物品应保留，角色名称、职业和历史最高分也应保留。
+5. 重复测试死亡后的“重新开始”，确认直接以 1 级进入且旧等级不会写回来。
+6. 未死亡时从暂停界面返回，确认当前等级与进度正常保留。
+7. 分别测试游客和在线账号，并运行 `CharacterProgressPersistenceTests`、`GuestModePersistenceTests`。
+
+### 6. 面试表达
+
+这个功能表面上是死亡清等级，实际涉及自动存档并发和服务端防回档。我把保存请求拆成普通、清强化和死亡重置三种模式，并设置优先级，避免死亡自动存档和结算按钮同时保存时旧数据覆盖新数据。服务端没有直接关闭防回档，而是增加一个死亡重置标记，只接受严格的 1 级空进度。数据库确认成功后，客户端再同步角色缓存和运行时模型，同时保持生命为 0。这样在线、游客和 UI 流程使用同一套规则，存档失败也不会带着错误状态切场景。
+
+### 7. 面试追问
+
+1. **为什么不能直接在客户端把等级设为 1？** 客户端不是最终可信数据源，现有防回档会拒绝降级，而且恶意客户端可以伪造任意进度。
+2. **如何避免死亡存档被普通保存覆盖？** 保存模式按优先级合并，死亡重置最高；成功后还会先同步运行时模型，后续快照只能读到 1 级数据。
+3. **为什么数据源成功后才清本地状态？** 如果先清本地但网络或磁盘写入失败，客户端和权威存档会出现分叉。
+4. **为什么重置模型后角色不会复活？** 完整重算基础属性后显式把当前生命恢复为 0，只在新场景初始化时补满生命。
+5. **新增协议字段会破坏旧客户端吗？** Protobuf 新字段默认为 false，旧客户端仍走普通保存；但新客户端的死亡重置能力需要与新服务端一起发布。
+
+### 8. 本次涉及知识点
+
+- 事件驱动自动存档
+- 协程、防抖、请求串行化和优先级合并
+- Protobuf 向后兼容字段
+- 客户端不可信与服务端严格校验
+- 防回档规则与受控降级
+- 数据源确认后同步本地状态
+- 运行时模型、角色缓存与场景状态清理
+- 游客 JSON 和在线数据库双数据源测试
+
+## 功能名称：登录界面完整 PC 设置面板
+
+### 1. 实现目标
+
+让登录界面左上角的设置按钮打开一个可复用模态面板，支持主音量、音乐、音效、鼠标灵敏度、分辨率、无边框/窗口模式、六档画质、垂直同步和帧率上限。设置保存在本机 PlayerPrefs；音量和灵敏度即时预览，显示设置需要点击应用，并在分辨率或窗口模式改变后提供 10 秒安全确认。
+
+### 2. 涉及脚本
+
+- `GameSettingsData.cs`：定义本机设置数据、显示模式和显示风险差异判断。
+- `GameSettingsConfig.cs`：保存 AudioMixer、Music/Sounds 分组、默认值和可选帧率。
+- `GameSettingsService.cs`：负责首场景前初始化、数据校验、PlayerPrefs 存储和 Unity 全局设置应用。
+- `GameSettingsPanelController.cs`：维护打开快照与编辑草稿，处理即时预览、取消、应用和 10 秒回退。
+- `GameSettingsAssetSetupTool.cs`：生成配置资产和公共 Prefab，并把登录按钮持久绑定到面板。
+- `CameraCo.cs`：在原水平/垂直速度上乘本机灵敏度倍率。
+- `GameConfig.cs`、`BossRoomSceneBootstrap.cs`：把主玩法与 Boss BGM 接入 Music 分组。
+- `PlayerAudioComponent.cs`、`PlayerCo.cs`、`SlimeCo.cs`：把玩家和怪物音效接入 Sounds 分组。
+- `GameSettingsTests.cs`：验证数据换算、存储、资源引用、Prefab 和场景装配。
+
+### 3. 调用流程
+
+启动流程：`RuntimeInitializeOnLoadMethod -> GameSettingsService.GetOrCreate -> Resources.Load<GameSettingsConfig> -> PlayerPrefs/默认数据 -> Sanitize -> AudioListener/AudioMixer/Screen/QualitySettings/Application`。
+
+面板流程：`SettingButton -> GameSettingsPanelController.Open -> 保存 openingSnapshot -> 编辑 draft -> 滑块即时 PreviewAudioAndSensitivity -> Apply -> 普通设置直接 Save / 显示设置进入10秒确认 -> Keep 保存或 Revert 恢复快照`。
+
+玩法接入：`CameraCo.Update -> GameSettingsService.MouseSensitivityMultiplier`；`运行时 AudioSource 初始化 -> RouteMusicSource/RouteSoundsSource -> Main.mixer 分组`。
+
+### 4. 核心原理
+
+设置面板没有直接把每次 UI 变化写进 PlayerPrefs，而是使用“快照 + 草稿”。打开时复制当前设置作为快照，玩家只修改草稿；音量与灵敏度虽然即时预览，但取消或切场景时会恢复快照。这样 UI 交互和正式数据不会混在一起。
+
+分辨率和窗口模式可能导致黑屏，所以点击应用后先只改变运行时状态，不写入磁盘。玩家在 10 秒内确认才保存；取消、Esc、超时、对象禁用或切场景都会恢复整份旧快照。倒计时使用 `Time.unscaledDeltaTime`，以后复用到暂停界面时也不会被 `timeScale = 0` 冻结。
+
+音量分成三层：主音量使用 `AudioListener.volume`，音乐和音效通过 AudioMixer 暴露参数控制。滑块的 0～1 线性值用 `20 * Log10(value)` 转为分贝，0%固定为 -80dB。音源只在没有 Inspector 自定义分组时自动路由，避免覆盖已有美术或音频配置。
+
+全局服务在首场景加载前创建并 `DontDestroyOnLoad`，因此玩家即使直接从 MainScene 或 BossRoomScene 开始调试，也能读取同一份本机设置。分辨率列表会去重、过滤小于 1280×720 的普通选项，同时保留当前和已保存值，防止下拉框找不到正在使用的分辨率。
+
+### 5. Unity 测试方式
+
+1. 打开 `LoginScene`，确认 Canvas 最后一个子对象是 `GameSettingsPanel`，其根对象默认关闭，`SettingButton` 的 OnClick 指向 `Open`。
+2. 运行场景并点击左上角齿轮，拖动三个音量和灵敏度滑块，确认百分比与预览立即变化；点取消后恢复。
+3. 修改画质、VSync 和帧率，点击应用后关闭并重新打开，确认设置已保留；重启游戏确认 PlayerPrefs 持久化。
+4. 修改分辨率或窗口模式并应用，确认出现 10 秒提示；分别测试保留、主动恢复、Esc 和等待超时。
+5. 选择 MainScene 与 BossRoomScene，确认鼠标灵敏度生效，背景音乐受音乐音量控制，玩家和怪物声音受音效音量控制。
+6. 在 Test Runner 运行 `GameSettingsTests` 和完整 EditMode 测试，检查 Console 没有 Mixer 参数、空引用或场景绑定错误。
+
+### 6. 面试表达
+
+我把 PC 设置拆成数据、全局服务和 UI 三层。数据层只描述音量、分辨率和性能选项；服务在首场景前创建，负责 PlayerPrefs、合法性校验以及 AudioMixer、Screen 和 QualitySettings 的实际应用；面板只维护打开快照和编辑草稿。音量和灵敏度支持即时预览，但取消会恢复快照。分辨率和窗口模式应用后不会立刻落盘，而是进入 10 秒确认，超时自动回退，避免错误显示设置让玩家无法操作。音乐和音效也统一路由到了 Mixer 分组，后续暂停界面可以直接复用同一服务和 Prefab。
+
+### 7. 面试追问
+
+1. **为什么设置数据不能直接由 UI 修改？** 草稿和正式数据分开后，取消、回退和切场景清理都有明确边界，不会产生半应用状态。
+2. **为什么线性音量要转分贝？** AudioMixer 的暴露音量参数使用 dB；对数换算更符合声音强度的控制方式，0 需要使用一个足够低的有限值代替负无穷。
+3. **怎样防止错误分辨率导致永久黑屏？** 先保存运行时快照，应用后启动不受暂停影响的倒计时，只有确认才写 PlayerPrefs，其他退出路径统一恢复快照。
+4. **VSync 和帧率上限为什么不能同时控制？** 开启 VSync 时帧率由显示器刷新节奏控制，因此把 `targetFrameRate` 设为 -1 并禁用手动帧率选项；关闭后才应用玩家上限。
+5. **后续如何接入暂停菜单？** 设置服务和 Prefab 都不依赖 LoginPanel，暂停 UI 只需实例化同一 Prefab 并调用 `Open`，倒计时也已使用 unscaled time。
+
+### 8. 本次涉及知识点
+
+- ScriptableObject 静态配置与 Resources 启动加载
+- `RuntimeInitializeOnLoadMethod` 与 `DontDestroyOnLoad`
+- PlayerPrefs、JsonUtility 和版本字段
+- AudioMixer 分组、暴露参数与线性值/dB 换算
+- `Screen.SetResolution`、`FullScreenMode` 和安全回退
+- `QualitySettings`、VSync 与 `Application.targetFrameRate`
+- UI 快照/草稿、模态遮罩和事件注册注销
+- `Time.unscaledDeltaTime`
+- Prefab/场景自动装配工具与 EditMode 资源回归测试
+
+## 功能名称：角色背包分类持久化
+
+### 1. 实现目标
+
+解决背包只存在于运行时、返回选角或重新登录后物品全部丢失的问题。正常保存会保留角色全部背包；角色死亡时清除生命药水和魔法药水，同时保留经验结晶、Boss 核心和古代卷轴等材料或任务物品。
+
+### 2. 涉及脚本
+
+- `InventoryDatabase.cs`：根据稳定 `itemId` 查找物品静态配置。
+- `InventorySystem.cs`、`InventoryCommands.cs`：生成背包快照、校验并恢复24格运行时背包。
+- `PlayerProgressSaveData.cs`、`PlayerQueries.cs`：把背包加入角色成长快照，并在死亡模式中过滤消耗品。
+- `NCharacter.cs`：保存角色背包格数据，并在跨层传递时进行深拷贝。
+- `CharacterProgressSaveService.cs`、`SceneFlowService.cs`：监听背包变化、合并自动保存，并在进入角色时恢复权威背包。
+- `GameApiClient.cs`、客户端与服务端 `message.cs`：传输格子下标、物品ID和数量。
+- `LocalGuestSaveService.cs`：游客JSON背包保存、校验和版本1到版本2兼容。
+- `TCharacter.cs`、`UserService.cs`、`DBService.cs`：服务端白名单校验、事务保存和背包子表读取。
+
+### 3. 调用流程
+
+普通保存：`拾取/使用物品 -> InventorySystem -> InventoryChangedEvent -> CharacterProgressSaveService防抖 -> GetPlayerProgressSaveDataQuery -> GameApiClient -> 游客JSON或服务端数据库`。
+
+角色进入：`角色选择 -> 数据源返回NCharacter -> RestoreInventoryCommand -> InventorySystem.RestoreInventory -> InventoryChangedEvent刷新UI -> BeginSession开启后续自动存档`。
+
+角色死亡：`PlayerDiedEvent -> ResetAfterDeath -> 删除Consumable快照 -> 数据源事务保存 -> 返回权威NCharacter -> RestoreInventoryCommand -> 运行时只保留材料和任务物品`。
+
+### 4. 核心原理
+
+物品的名称、图标和效果属于静态配置，玩家拥有的数量属于运行时数据，两者不能一起序列化。存档只记录 `slotIndex + itemId + count`，加载时再从 `InventoryDatabase` 找回对应 ScriptableObject。这样资源引用不会写入JSON或网络协议，资源重新加载后仍可通过稳定ID识别物品。
+
+自动保存监听统一的 `InventoryChangedEvent`，拾取和使用物品不需要直接依赖存档服务。连续变化复用原有1秒防抖，降低磁盘和网络请求频率。进入角色时先恢复背包再开启存档会话，服务端确认后的死亡恢复也使用抑制标记，避免“加载数据”被误认为玩家再次修改。
+
+在线数据库使用 `CharacterInventoryItems` 子表，以角色ID和格子下标作为联合主键。角色成长、属性强化和背包在同一个事务中写入，任何一步失败都会整体回滚。服务端还会检查24格边界、重复格子、物品白名单、堆叠上限以及死亡请求不能携带药水。
+
+### 5. Unity 测试方式
+
+1. 进入 `MainScene`，拾取药水和材料，打开背包确认格子与数量。
+2. 进入 `BossRoomScene`再返回，确认运行时背包不变。
+3. 从暂停界面保存并返回选角，再次进入同一角色，确认全部物品及原格子恢复。
+4. 使用一瓶药水并等待约1秒，再返回选角，确认保存的是减少后的数量。
+5. 让角色死亡并返回选角，确认药水清空，经验结晶、Boss核心和古代卷轴保留。
+6. 分别用游客和在线账号重启客户端验证，并运行背包与角色存档专项测试。
+
+### 6. 面试表达
+
+我的背包持久化分成静态配置、运行时模型和存档DTO三层。ScriptableObject只描述物品是什么，InventoryModel记录当前24格状态，存档只发送格子下标、稳定物品ID和数量。背包变化通过事件触发防抖自动保存，正常退出保留全部物品，死亡时则根据物品分类移除消耗品、保留材料。在线端使用角色背包子表，并把成长、强化和背包放进同一事务，服务端还会校验物品白名单和堆叠上限。这样既避免Unity资源引用进入存档，也保证游客和在线账号使用同一套规则。
+
+### 7. 面试追问
+
+1. **为什么不直接序列化ScriptableObject？** 它是Unity资源引用，不适合跨客户端、服务器和JSON持久化；稳定ID更容易兼容资源重新加载和版本更新。
+2. **为什么还要保存格子下标？** 只保存总数量会改变玩家的背包排列；格子下标可以精确恢复UI位置，并可检测重复或越界数据。
+3. **怎样避免连续拾取造成大量网络请求？** 所有变化先发事件，存档服务把1秒内的变化合并为一次最新快照。
+4. **为什么背包使用独立数据库表？** 背包是一个角色对应多条格子记录，用子表符合一对多关系，也方便事务更新和角色删除时级联清理。
+5. **服务端能完全防止客户端伪造掉落吗？** 当前掉落仍由客户端结算，所以只能验证ID、数量和结构；进一步强化需要把掉落生成和拾取确认迁移到服务端权威逻辑。
+
+### 8. 本次涉及知识点
+
+- ScriptableObject静态配置与运行时数据分离
+- DTO、稳定ID和深拷贝
+- QFramework事件、Command和Query
+- 防抖自动保存与权威状态恢复
+- Protobuf字段兼容
+- JSON存档版本迁移
+- SQL一对多表、联合主键、外键和事务
+- 客户端不可信、白名单和边界校验

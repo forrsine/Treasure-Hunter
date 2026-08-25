@@ -63,6 +63,26 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
     private Material previewMaterial;
     private bool isPreviewActive;
     private int previewSkillId;
+    private bool isCommittedCastActive;
+    private bool committedHitResolved;
+    private float committedCastElapsed;
+    private float committedHitDelay;
+    private float committedLockDuration;
+    private float committedMovementSpeedLimit;
+    private int pendingCommittedDamage;
+    private float pendingCommittedRadius;
+
+    /// <summary>
+    /// 当前是否处于需要承担出手风险的技能动作中。
+    /// 运行时控制器只读取这个状态决定输入优先级，不直接参与技能伤害结算。
+    /// </summary>
+    public bool IsCommittedCastActive => isCommittedCastActive;
+
+    /// <summary>
+    /// 承诺动作期间允许的最高水平移动速度。
+    /// </summary>
+    public float CommittedMovementSpeedLimit => Mathf.Max(0.01f, committedMovementSpeedLimit);
+
     public IArchitecture GetArchitecture()
     {
         return TreasureHunterArchitecture.Interface;
@@ -83,6 +103,7 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
     /// </summary>
     public void Initialize(PlayerRuntimeController player)
     {
+        CancelCommittedCast();
         presentation = player != null ? player.Presentation : GetComponent<PlayerPresentationComponent>();
         combat = player != null ? player.GetComponent<PlayerCombatComponent>() : GetComponent<PlayerCombatComponent>();
         audioComponent = player != null ? player.Audio : GetComponent<PlayerAudioComponent>();
@@ -110,6 +131,13 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
     /// </summary>
     public void Tick()
     {
+        // 承诺动作进行中只推进自己的命中与收尾计时，不再读取新技能输入。
+        if (isCommittedCastActive)
+        {
+            TickCommittedCast(Time.deltaTime);
+            return;
+        }
+
         IGameplayInput input = GameplayRuntime.Instance.CurrentInput;
         if (input == null)
         {
@@ -344,6 +372,7 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
     private void OnDisable()
     {
         HideSkillPreview();
+        CancelCommittedCast();
     }
 
     private void OnDestroy()
@@ -398,7 +427,16 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
 
         if (skillId == ScytheSpinSkillId)
         {
-            PlayScytheSpinAnimation();
+            // 大旋转的蓝量和冷却已经在 Command 中消费。
+            // 配置了承诺动作时，伤害会延迟到动画打击点；旧配置仍保留即时释放兜底。
+            if (TryBeginCommittedScytheSpin(skill, levelData))
+            {
+                return;
+            }
+
+            PlayScytheSpinAnimation(scytheSpinAnimationDuration);
+            ResolveScytheSpin(levelData.radius, CalculateSkillDamage(levelData));
+            return;
         }
 
         switch (skill.GetSkillType())
@@ -412,9 +450,101 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
                 break;
 
             case SkillType.SelfAoe:
-                CastScytheSpin(levelData);
+                ResolveScytheSpin(levelData.radius, CalculateSkillDamage(levelData));
                 break;
         }
+    }
+
+    /// <summary>
+    /// 开始刺客大旋转的出手承诺窗口。
+    /// 伤害和半径在释放成功时保存，命中中心则在打击点读取角色当前位置，允许玩家低速修正站位。
+    /// </summary>
+    private bool TryBeginCommittedScytheSpin(SkillDefine skill, SkillLevelDefine levelData)
+    {
+        SkillCastCommitmentDefine commitment = skill != null ? skill.castCommitment : null;
+        if (commitment == null || !commitment.enabled || levelData == null)
+        {
+            return false;
+        }
+
+        float hitDelay = Mathf.Max(0f, commitment.hitDelay);
+        float lockDuration = Mathf.Max(0.01f, commitment.lockDuration);
+        float movementSpeedLimit = Mathf.Max(0.01f, commitment.movementSpeedLimit);
+        int damage = CalculateSkillDamage(levelData);
+        float radius = Mathf.Max(0f, levelData.radius);
+
+        // 先确保表现依赖完成初始化，再写入承诺状态。
+        // 否则缺少依赖时 PlayScytheSpinAnimation 内的补初始化会把刚建立的状态当作旧状态清掉。
+        PlayScytheSpinAnimation(lockDuration);
+
+        isCommittedCastActive = true;
+        committedHitResolved = false;
+        committedCastElapsed = 0f;
+        committedHitDelay = hitDelay;
+        committedLockDuration = lockDuration;
+        committedMovementSpeedLimit = movementSpeedLimit;
+        pendingCommittedDamage = damage;
+        pendingCommittedRadius = radius;
+
+        if (committedHitDelay <= 0f)
+        {
+            ResolvePendingCommittedHit();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 推进命中点和动作锁定时间。
+    /// 使用 Time.deltaTime 让暂停时自然冻结，同时用布尔标记保证跨越命中点的一帧只结算一次。
+    /// </summary>
+    private void TickCommittedCast(float deltaTime)
+    {
+        if (!isCommittedCastActive)
+        {
+            return;
+        }
+
+        committedCastElapsed = Mathf.Min(
+            committedLockDuration,
+            committedCastElapsed + Mathf.Max(0f, deltaTime));
+
+        if (!committedHitResolved && committedCastElapsed >= committedHitDelay)
+        {
+            ResolvePendingCommittedHit();
+        }
+
+        if (committedCastElapsed >= committedLockDuration)
+        {
+            CancelCommittedCast();
+        }
+    }
+
+    private void ResolvePendingCommittedHit()
+    {
+        if (!isCommittedCastActive || committedHitResolved)
+        {
+            return;
+        }
+
+        committedHitResolved = true;
+        ResolveScytheSpin(pendingCommittedRadius, pendingCommittedDamage);
+    }
+
+    /// <summary>
+    /// 清理尚未完成的承诺动作。
+    /// 死亡、切场景或对象禁用时调用；已经扣除的蓝量和冷却属于释放成本，不在表现组件里返还。
+    /// </summary>
+    public void CancelCommittedCast()
+    {
+        isCommittedCastActive = false;
+        committedHitResolved = false;
+        committedCastElapsed = 0f;
+        committedHitDelay = 0f;
+        committedLockDuration = 0f;
+        committedMovementSpeedLimit = 0f;
+        pendingCommittedDamage = 0;
+        pendingCommittedRadius = 0f;
     }
 
     /// <summary>
@@ -569,13 +699,12 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
     /// <summary>
     /// 镰刀旋转：以玩家自身为中心造成一次范围伤害。
     /// </summary>
-    private void CastScytheSpin(SkillLevelDefine levelData)
+    private void ResolveScytheSpin(float radius, int damage)
     {
         Vector3 center = transform.position;
         center.y += 1f;
 
-        int damage = CalculateSkillDamage(levelData);
-        DealDamageInRadius(center, levelData.radius, damage);
+        DealDamageInRadius(center, radius, damage);
 
         GameObject scytheVfx = SpawnVfxWithAutoDestroy(
             scytheSpinVfxPrefab,
@@ -585,17 +714,17 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
 
         if (scytheVfx != null)
         {
-            scytheVfx.transform.localScale = Vector3.one * levelData.radius * scytheSpinVfxScale;
+            scytheVfx.transform.localScale = Vector3.one * radius * scytheSpinVfxScale;
         }
         else
         {
-            SkillLineEffect.PlayScytheSpin(transform.position, levelData.radius);
+            SkillLineEffect.PlayScytheSpin(transform.position, radius);
         }
 
-        Debug.Log($"释放镰刀大旋转：伤害 {damage}，范围 {levelData.radius}");
+        Debug.Log($"释放镰刀大旋转：伤害 {damage}，范围 {radius}");
     }
 
-    private void PlayScytheSpinAnimation()
+    private void PlayScytheSpinAnimation(float animationDuration)
     {
         if (combat == null || presentation == null || audioComponent == null)
         {
@@ -610,7 +739,7 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
             audioComponent.PlaySkill();
         }
 
-        presentation?.PlaySkill(scytheSpinAnimationDuration);
+        presentation?.PlaySkill(animationDuration);
     }
 
     private int CalculateSkillDamage(SkillLevelDefine levelData)

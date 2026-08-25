@@ -202,6 +202,12 @@ namespace SkillBridge.Message
 
         [ProtoMember(6, Name = "attribute_upgrades")]
         public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new List<NAttributeUpgradeInfo>();
+
+        [ProtoMember(7, Name = "reset_after_death")]
+        public bool ResetAfterDeath { get; set; }
+
+        [ProtoMember(8, Name = "inventory_items")]
+        public List<NInventoryItemInfo> InventoryItems { get; } = new List<NInventoryItemInfo>();
     }
 
     /// <summary>角色成长保存结果，以及数据库确认后的最新角色数据。</summary>
@@ -288,6 +294,23 @@ namespace SkillBridge.Message
 
         [ProtoMember(15, Name = "attribute_upgrades")]
         public List<NAttributeUpgradeInfo> AttributeUpgrades { get; } = new List<NAttributeUpgradeInfo>();
+
+        [ProtoMember(16, Name = "inventory_items")]
+        public List<NInventoryItemInfo> InventoryItems { get; } = new List<NInventoryItemInfo>();
+    }
+
+    /// <summary>单个背包格的网络数据；物品身份使用稳定 itemId，不传递 Unity 资源引用。</summary>
+    [ProtoContract]
+    public class NInventoryItemInfo
+    {
+        [ProtoMember(1, Name = "slot_index")]
+        public int SlotIndex { get; set; }
+
+        [ProtoMember(2, Name = "item_id")]
+        public string ItemId { get; set; } = "";
+
+        [ProtoMember(3, Name = "count")]
+        public int Count { get; set; }
     }
 
     /// <summary>某一种属性被强化的次数；最终数值仍由客户端配置和成长公式计算。</summary>

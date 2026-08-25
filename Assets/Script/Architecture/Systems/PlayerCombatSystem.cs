@@ -78,7 +78,10 @@ public sealed class PlayerCombatSystem : AbstractSystem
     /// 顺序是：先判断是否还能受伤，再判断闪避，再计算减伤，最后广播血量变化事件。
     /// 这样近战、子弹、陷阱都能复用同一套规则。
     /// </summary>
-    public PlayerDamageResult TakeDamage(int incomingAttackPower, bool allowDodge)
+    public PlayerDamageResult TakeDamage(
+        int incomingAttackPower,
+        bool allowDodge,
+        float temporaryDamageReduction = 0f)
     {
         PlayerRuntimeStats stats = model.MutableStats;
         if (incomingAttackPower <= 0 || stats.CurrentHp <= 0)
@@ -92,9 +95,14 @@ public sealed class PlayerCombatSystem : AbstractSystem
             return new PlayerDamageResult(true, 0, false);
         }
 
+        // 常驻减伤和满蓄力临时减伤分别作用于剩余承伤，避免临时效果挤占属性成长上限。
+        // 两个倍率合并后只取整一次，保证 100 × 80% × 85% 精确结算为 68。
+        float persistentDamageMultiplier = 1f - Mathf.Clamp01(stats.DamageReduction);
+        float temporaryDamageMultiplier = 1f - Mathf.Clamp01(temporaryDamageReduction);
         int finalDamage = Mathf.Max(
             1,
-            Mathf.RoundToInt(incomingAttackPower * (1f - Mathf.Clamp01(stats.DamageReduction))));
+            Mathf.RoundToInt(
+                incomingAttackPower * persistentDamageMultiplier * temporaryDamageMultiplier));
         int hpBeforeHit = stats.CurrentHp;
         stats.CurrentHp = Mathf.Max(0, stats.CurrentHp - finalDamage);
         int actualDamage = hpBeforeHit - stats.CurrentHp;

@@ -714,6 +714,7 @@ public class PlayerCo : MonoBehaviour, FighterInterface
         }
 
         sfxSource.playOnAwake = false;
+        GameSettingsService.RouteSoundsSource(sfxSource);
     }
 
     /// <summary>

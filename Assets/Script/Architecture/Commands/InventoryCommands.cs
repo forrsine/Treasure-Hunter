@@ -31,6 +31,24 @@ public sealed class ResetInventoryCommand : AbstractCommand
 }
 
 /// <summary>
+/// 从角色存档恢复运行时背包。场景流程只传递数据，具体校验和格子写入仍由 InventorySystem 负责。
+/// </summary>
+public sealed class RestoreInventoryCommand : AbstractCommand
+{
+    private readonly System.Collections.Generic.IReadOnlyList<NInventoryItemSave> savedItems;
+
+    public RestoreInventoryCommand(System.Collections.Generic.IReadOnlyList<NInventoryItemSave> savedItems)
+    {
+        this.savedItems = savedItems;
+    }
+
+    protected override void OnExecute()
+    {
+        this.GetSystem<InventorySystem>().RestoreInventory(savedItems);
+    }
+}
+
+/// <summary>
 /// 使用指定背包格中的一件消耗品。
 /// Command 只负责协调背包系统与玩家资源系统；恢复公式和数量修改仍由各自 System 执行。
 /// </summary>

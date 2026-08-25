@@ -39,6 +39,9 @@ public sealed class GetPlayerProgressSaveDataQuery : AbstractQuery<PlayerProgres
             });
         }
 
+        saveData.InventoryItems.AddRange(
+            this.GetSystem<InventorySystem>().CreateSaveSnapshot());
+
         return saveData;
     }
 }

@@ -13,6 +13,7 @@ public sealed class GameplayUiRoot : MonoBehaviour
     [SerializeField] private PlayerAttributePanel attributePanel;
     [SerializeField] private PlayerLevelUpPanel levelUpPanel;
     [SerializeField] private InventoryPanel inventoryPanel;
+    [SerializeField] private PlayerChargeBarUi chargeBarUi;
 
     /// <summary>
     /// 运行时只做一次引用校验。
@@ -49,6 +50,7 @@ public sealed class GameplayUiRoot : MonoBehaviour
         else if (attributePanel == null) missing = nameof(attributePanel);
         else if (levelUpPanel == null) missing = nameof(levelUpPanel);
         else if (inventoryPanel == null) missing = nameof(inventoryPanel);
+        else if (chargeBarUi == null || !chargeBarUi.ValidatePrefabReferences(false)) missing = nameof(chargeBarUi);
 
         if (missing == null)
         {

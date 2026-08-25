@@ -17,6 +17,8 @@ public class InputCo : MonoBehaviour, IGameplayInput
     public float Yinput;
     public Vector3 MouseInput;
     public bool leftMouseDown;
+    public bool leftMouseHeld;
+    public bool leftMouseUp;
     public bool rollDown;
     public bool developerModeToggleDown;
     public bool debugAddLevelsDown;
@@ -37,6 +39,8 @@ public class InputCo : MonoBehaviour, IGameplayInput
     public float XInput => Xinput;
     public float YInput => Yinput;
     public bool LeftMouseDown => leftMouseDown;
+    public bool LeftMouseHeld => leftMouseHeld;
+    public bool LeftMouseUp => leftMouseUp;
     public bool RollDown => rollDown;
     public bool DeveloperModeToggleDown => developerModeToggleDown;
     public bool DebugAddLevelsDown => debugAddLevelsDown;
@@ -85,6 +89,8 @@ public class InputCo : MonoBehaviour, IGameplayInput
         MouseInput.Set(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"), Input.GetAxis("Mouse ScrollWheel"));
 
         leftMouseDown = Input.GetMouseButtonDown(0);
+        leftMouseHeld = Input.GetMouseButton(0);
+        leftMouseUp = Input.GetMouseButtonUp(0);
         rollDown = Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.LeftAlt);
         developerModeToggleDown = Input.GetKeyDown(KeyCode.F1);
         debugAddLevelsDown = Input.GetKeyDown(KeyCode.L);

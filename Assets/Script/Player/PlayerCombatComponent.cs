@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using QFramework;
 using UnityEngine;
 
@@ -9,6 +10,7 @@ using UnityEngine;
 public sealed class PlayerCombatComponent : MonoBehaviour, IController
 {
     private const int MaxCombo = 3;
+    private const int ChargedAreaOverlapCapacity = 64;
     private const float ProjectileReleaseRetryDelay = 0.05f;
     private const string ArcherClassKey = "Archer";
 
@@ -29,6 +31,8 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     private PlayerPresentationComponent presentation;
     private PlayerAudioComponent audioComponent;
     private PlayerRangedAttackComponent rangedAttack;
+    private PlayerChargedAttackComponent chargedAttack;
+    private PlayerSkillCastComponent skillCaster;
     private CharacterAnimationStyle animationStyle;
     private CharacterBasicAttackType basicAttackType;
     private bool isArcherBasicAttack;
@@ -51,10 +55,17 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     private bool isAttacking;
     private bool canComboNext;
     private bool queuedThirdComboAfterSecondAttack;
+    private float archerBasicAttackCooldownRemaining;
     private int nextAttackToken;
     private int activeAttackToken;
     private int releasedProjectileAttackToken = -1;
     private int projectileReleaseFailureLoggedToken = -1;
+    private bool isControlledBasicAttack;
+    private float activeBasicAttackDamageMultiplier = 1f;
+    private float activeControlledAttackAreaRadius;
+    // 满蓄力范围扫描复用固定缓冲和目标集合，避免每次重斩产生 GC，同时按 FighterInterface 去重。
+    private readonly Collider[] chargedAreaOverlapBuffer = new Collider[ChargedAreaOverlapCapacity];
+    private readonly HashSet<FighterInterface> chargedAreaHitTargets = new HashSet<FighterInterface>();
 
     public bool IsAttacking => isAttacking;
     public int CurrentCombo => currentCombo;
@@ -63,6 +74,7 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         ? weaponCollider.gameObject.layer
         : gameObject.layer;
     public bool IsProjectileBasicAttack => basicAttackType == CharacterBasicAttackType.Projectile;
+    public float ActiveBasicAttackDamageMultiplier => activeBasicAttackDamageMultiplier;
     public IArchitecture GetArchitecture() => TreasureHunterArchitecture.Interface;
 
     /// <summary>
@@ -74,6 +86,8 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         presentation = player != null ? player.Presentation : GetComponent<PlayerPresentationComponent>();
         audioComponent = player != null ? player.Audio : GetComponent<PlayerAudioComponent>();
         rangedAttack = player != null ? player.RangedAttack : GetComponent<PlayerRangedAttackComponent>();
+        chargedAttack = player != null ? player.ChargedAttack : GetComponent<PlayerChargedAttackComponent>();
+        skillCaster = player != null ? player.GetComponent<PlayerSkillCastComponent>() : GetComponent<PlayerSkillCastComponent>();
 
         CharacterDefine define = player != null ? player.EntryDefine : null;
         animationStyle = define != null
@@ -92,6 +106,10 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
             define != null &&
             (define.classId == 3 ||
              string.Equals(define.classKey, ArcherClassKey, System.StringComparison.OrdinalIgnoreCase));
+        archerBasicAttackCooldownRemaining = 0f;
+        isControlledBasicAttack = false;
+        activeBasicAttackDamageMultiplier = 1f;
+        activeControlledAttackAreaRadius = 0f;
 
         if (weaponCollider == null)
         {
@@ -126,11 +144,17 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
             currentTimer -= Time.deltaTime;
             if (currentTimer <= 0f)
             {
+                if (isControlledBasicAttack)
+                {
+                    isControlledBasicAttack = false;
+                }
+
                 ResetCombo();
             }
         }
 
         UpdateComboTimer();
+        TickArcherBasicAttackCooldown(Time.deltaTime);
         CheckAttackInput();
     }
 
@@ -181,6 +205,9 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         fallbackHitboxTimer = 0f;
         eventlessAttackReleaseDelayTimer = -1f;
         activeAttackToken = 0;
+        isControlledBasicAttack = false;
+        activeBasicAttackDamageMultiplier = 1f;
+        activeControlledAttackAreaRadius = 0f;
         ClearScriptedFallbackAnimationEvents();
         WeaponDisable();
 
@@ -210,17 +237,7 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
             return;
         }
 
-        attackHitWindowId++;
-
-        if (weaponCollider != null)
-        {
-            weaponCollider.enabled = true;
-        }
-
-        if (audioComponent != null && audioComponent.AutoPlayActions)
-        {
-            audioComponent.PlayAttack(currentCombo);
-        }
+        OpenWeaponHitWindow();
     }
 
     /// <summary>
@@ -255,6 +272,9 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         fallbackHitboxTimer = 0f;
         eventlessAttackReleaseDelayTimer = -1f;
         activeAttackToken = 0;
+        isControlledBasicAttack = false;
+        activeBasicAttackDamageMultiplier = 1f;
+        activeControlledAttackAreaRadius = 0f;
         ClearScriptedFallbackAnimationEvents();
         ForceWeaponDisable();
     }
@@ -267,7 +287,80 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     {
         PlayerAttackRoll roll = this.SendCommand(new RollPlayerAttackCommand());
         isCritical = roll.IsCritical;
-        return roll.Damage;
+        // 蓄力倍率在暴击掷骰完成后统一应用，所以满蓄力暴击能同时获得两种加成。
+        return Mathf.Max(1, Mathf.RoundToInt(roll.Damage * activeBasicAttackDamageMultiplier));
+    }
+
+    /// <summary>
+    /// 蓄力组件开始受控普攻：立即播放前摇，但暂不安排攻击盒。
+    /// currentTimer 使用正无穷，确保玩家满蓄力后继续保持姿势时不会被普通攻击超时打断。
+    /// </summary>
+    public bool BeginControlledBasicAttack()
+    {
+        if (isAttacking || IsProjectileBasicAttack)
+        {
+            return false;
+        }
+
+        ClearScriptedFallbackAnimationEvents();
+        ForceWeaponDisable();
+        fallbackHitboxTimer = 0f;
+        eventlessAttackReleaseDelayTimer = -1f;
+        queuedThirdComboAfterSecondAttack = false;
+        queuedThirdComboReleaseTimer = -1f;
+        canComboNext = false;
+
+        isControlledBasicAttack = true;
+        activeBasicAttackDamageMultiplier = 1f;
+        activeControlledAttackAreaRadius = 0f;
+        isAttacking = true;
+        currentCombo = 1;
+        activeAttackToken = ++nextAttackToken;
+        currentTimer = float.PositiveInfinity;
+        PlayAttackPresentation();
+        return true;
+    }
+
+    /// <summary>
+    /// 松开蓄力后恢复普通攻击超时，并按配置延迟结算一次攻击。
+    /// areaRadius 大于 0 时改用圆形扫描并保持武器盒关闭；否则沿用原近战攻击盒。
+    /// 倍率会保持到本次攻击结束，保证范围内每个目标使用同一份蓄力规则。
+    /// </summary>
+    public bool ReleaseControlledBasicAttack(
+        float damageMultiplier,
+        float hitDelay,
+        float areaRadius = 0f)
+    {
+        if (!isControlledBasicAttack || !isAttacking || currentCombo != 1)
+        {
+            return false;
+        }
+
+        activeBasicAttackDamageMultiplier = Mathf.Max(1f, damageMultiplier);
+        activeControlledAttackAreaRadius = Mathf.Max(0f, areaRadius);
+        ForceWeaponDisable();
+        currentTimer = GetAttackTimeout();
+        eventlessAttackReleaseDelayTimer = Mathf.Max(0f, hitDelay);
+        if (eventlessAttackReleaseDelayTimer <= 0f)
+        {
+            ResolveEventlessAttackRelease();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 取消尚未结算的受控普攻，供死亡、暂停、升级和对象禁用统一清理状态。
+    /// </summary>
+    public void CancelControlledBasicAttack()
+    {
+        if (!isControlledBasicAttack && !isAttacking)
+        {
+            return;
+        }
+
+        isControlledBasicAttack = false;
+        ResetCombo();
     }
 
     /// <summary>
@@ -328,22 +421,44 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
 
     private void CheckAttackInput()
     {
+        if (skillCaster != null && skillCaster.IsCommittedCastActive)
+        {
+            return;
+        }
+
         if (presentation != null && presentation.IsSkillAnimationPlaying)
         {
             return;
         }
 
         IGameplayInput input = GameplayRuntime.Instance.CurrentInput;
-        if (input == null || !input.LeftMouseDown)
+        if (input == null)
         {
             return;
         }
 
-        // 弓箭手采用“每次点击立即发射”：不等待动画事件，也不丢弃上一段攻击期间的新点击。
-        // 每次点击都会创建新攻击令牌，旧动画 shoot 事件和计时兜底因此无法重复生成第二支箭。
+        // 配置了蓄力机制的职业优先接管左键；未配置职业返回 false 后继续走原有流程。
+        if (chargedAttack != null && chargedAttack.TryHandleBasicAttackInput(input))
+        {
+            return;
+        }
+
+        // 弓箭手允许按住左键持续攻击，但每一箭都必须经过职业攻击时长限制。
+        // 冷却不会因为快速连点而重置，因此玩家无法通过高频点击绕过攻速配置。
         if (isArcherBasicAttack)
         {
+            if (!input.LeftMouseHeld || archerBasicAttackCooldownRemaining > 0f)
+            {
+                return;
+            }
+
             StartImmediateArcherAttack();
+            archerBasicAttackCooldownRemaining = Mathf.Max(0.01f, basicAttackDuration);
+            return;
+        }
+
+        if (!input.LeftMouseDown)
+        {
             return;
         }
 
@@ -383,7 +498,7 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     }
 
     /// <summary>
-    /// 弓箭手即时普攻入口：每个 LeftMouseDown 都重新播放动作并在同一帧发射一支箭。
+    /// 弓箭手即时普攻入口：每次通过攻速检查后都重新播放动作并在同一帧发射一支箭。
     /// 技能动画已在 CheckAttackInput 前置过滤，因此这里不会打断技能释放。
     /// </summary>
     private void StartImmediateArcherAttack()
@@ -402,6 +517,22 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
         currentTimer = GetAttackTimeout();
         PlayAttackPresentation();
         TryReleaseRangedBasicAttack();
+    }
+
+    /// <summary>
+    /// 推进弓箭手普通攻击间隔。
+    /// 使用独立计时而不是依赖动画是否播放完成，保证长按和快速点击遵守同一套攻速规则。
+    /// </summary>
+    private void TickArcherBasicAttackCooldown(float deltaTime)
+    {
+        if (archerBasicAttackCooldownRemaining <= 0f)
+        {
+            return;
+        }
+
+        archerBasicAttackCooldownRemaining = Mathf.Max(
+            0f,
+            archerBasicAttackCooldownRemaining - Mathf.Max(0f, deltaTime));
     }
 
     /// <summary>
@@ -660,7 +791,43 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
             return;
         }
 
+        if (isControlledBasicAttack && activeControlledAttackAreaRadius > 0f)
+        {
+            ResolveControlledAreaAttack();
+            return;
+        }
+
         BeginEventlessAttackHitbox();
+    }
+
+    /// <summary>
+    /// 满蓄力旋转重斩只在延迟到达时扫描一次圆形范围。
+    /// 这里不打开武器 Collider，防止同一个目标同时被范围扫描和物理攻击盒重复结算。
+    /// </summary>
+    private void ResolveControlledAreaAttack()
+    {
+        float areaRadius = activeControlledAttackAreaRadius;
+        activeControlledAttackAreaRadius = 0f;
+        eventlessAttackReleaseDelayTimer = -1f;
+        ForceWeaponDisable();
+        attackHitWindowId++;
+
+        Physics.SyncTransforms();
+        PlayerBasicAttackDamageResolver.ApplyInRadius(
+            this,
+            transform.position,
+            areaRadius,
+            transform,
+            null,
+            chargedAreaOverlapBuffer,
+            chargedAreaHitTargets);
+        chargedAreaHitTargets.Clear();
+        PlayerChargedSpinEffect.Play(transform.position, areaRadius);
+
+        if (audioComponent != null && audioComponent.AutoPlayActions)
+        {
+            audioComponent.PlayAttack(currentCombo);
+        }
     }
 
     private bool HasPendingProjectileRelease()
@@ -676,7 +843,8 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
     private void BeginEventlessAttackHitbox()
     {
         eventlessAttackReleaseDelayTimer = -1f;
-        WeaponEnable();
+        // 受控普攻会屏蔽动画事件，但松手后的代码计时仍必须能打开攻击盒。
+        OpenWeaponHitWindow();
         fallbackHitboxTimer = Mathf.Max(
             0.05f,
             presentation != null
@@ -740,7 +908,8 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
                 scriptedFallbackCombo > 0 &&
                 currentCombo == scriptedFallbackCombo;
 
-            WeaponDisable();
+            // 代码计时属于战斗组件内部收尾，不能被“忽略动画事件”的受控蓄力状态挡住。
+            ForceWeaponDisable();
             if (finishedSecondScriptedHitbox && presentation != null)
             {
                 presentation.FadeOutAttackLayerAfterScriptedAttack();
@@ -792,7 +961,23 @@ public sealed class PlayerCombatComponent : MonoBehaviour, IController
 
     private bool ShouldIgnoreCombatAnimationEvent()
     {
-        return presentation != null && presentation.IsSkillAnimationPlaying;
+        return isControlledBasicAttack ||
+               (presentation != null && presentation.IsSkillAnimationPlaying);
+    }
+
+    private void OpenWeaponHitWindow()
+    {
+        attackHitWindowId++;
+
+        if (weaponCollider != null)
+        {
+            weaponCollider.enabled = true;
+        }
+
+        if (audioComponent != null && audioComponent.AutoPlayActions)
+        {
+            audioComponent.PlayAttack(currentCombo);
+        }
     }
 
     private void ForceWeaponDisable()

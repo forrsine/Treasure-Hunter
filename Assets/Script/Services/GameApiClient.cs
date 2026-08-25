@@ -456,6 +456,7 @@ public class GameApiClient : MonoBehaviour
         PlayerProgressSaveData progress,
         int vaultDestroyedCount,
         int completedBossCount,
+        bool resetAfterDeath,
         Action<bool, string, NCharacter> onDone)
     {
         if (!IsLoggedIn || progress == null)
@@ -474,6 +475,7 @@ public class GameApiClient : MonoBehaviour
                     progress,
                     vaultDestroyedCount,
                     completedBossCount,
+                    resetAfterDeath,
                     out localCharacter,
                     out localMessage);
             if (localSuccess)
@@ -514,7 +516,8 @@ public class GameApiClient : MonoBehaviour
             Exp = progress.Exp,
             PendingAttributeUpgradeCount = progress.PendingAttributeUpgradeCount,
             VaultDestroyedCount = vaultDestroyedCount,
-            CompletedBossCount = completedBossCount
+            CompletedBossCount = completedBossCount,
+            ResetAfterDeath = resetAfterDeath
         };
 
         for (int i = 0; i < progress.AttributeUpgrades.Count; i++)
@@ -529,6 +532,22 @@ public class GameApiClient : MonoBehaviour
             {
                 AttributeType = upgrade.attributeType,
                 UpgradeCount = upgrade.upgradeCount
+            });
+        }
+
+        for (int i = 0; i < progress.InventoryItems.Count; i++)
+        {
+            NInventoryItemSave item = progress.InventoryItems[i];
+            if (item == null)
+            {
+                continue;
+            }
+
+            request.InventoryItems.Add(new NInventoryItemInfo
+            {
+                SlotIndex = item.slotIndex,
+                ItemId = item.itemId ?? "",
+                Count = item.count
             });
         }
 
@@ -746,6 +765,21 @@ public class GameApiClient : MonoBehaviour
             {
                 attributeType = upgrade.AttributeType,
                 upgradeCount = upgrade.UpgradeCount
+            });
+        }
+
+        foreach (NInventoryItemInfo item in info.InventoryItems)
+        {
+            if (item == null)
+            {
+                continue;
+            }
+
+            character.inventoryItems.Add(new NInventoryItemSave
+            {
+                slotIndex = item.SlotIndex,
+                itemId = item.ItemId,
+                count = item.Count
             });
         }
 

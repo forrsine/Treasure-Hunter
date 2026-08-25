@@ -17,6 +17,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     [SerializeField] private PlayerProgressionComponent progression;
     [SerializeField] private PlayerAudioComponent audioComponent;
     [SerializeField] private PlayerRangedAttackComponent rangedAttack;
+    [SerializeField] private PlayerChargedAttackComponent chargedAttack;
     [SerializeField] private PlayerSkillCastComponent skillCaster;
     [SerializeField] private PlayerDeveloperModeComponent developerMode;
 
@@ -28,6 +29,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     public PlayerPresentationComponent Presentation => presentation;
     public PlayerAudioComponent Audio => audioComponent;
     public PlayerRangedAttackComponent RangedAttack => rangedAttack;
+    public PlayerChargedAttackComponent ChargedAttack => chargedAttack;
     public IPlayerStatsReadOnly Stats => this.GetModel<PlayerModel>().Stats;
     public NCharacter EntrySave => entrySave;
     public CharacterDefine EntryDefine => entryDefine;
@@ -72,8 +74,17 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
         health.TickInvincibility();
         developerMode.Tick();
 
+        if (Stats.CurrentHp <= 0)
+        {
+            chargedAttack.CancelCharge();
+            skillCaster.CancelCommittedCast();
+            health.TickHitFlash();
+            return;
+        }
+
         if (Stats.IsUpgradeSelectionActive || Time.timeScale <= 0f)
         {
+            chargedAttack.CancelCharge();
             health.TickHitFlash();
             return;
         }
@@ -86,16 +97,34 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
             return;
         }
 
-        if (movement.TryStartRoll(combat.IsAttacking))
+        bool isCommittedSkillActive = skillCaster.IsCommittedCastActive;
+        if (movement.TryStartRoll(combat.IsAttacking || isCommittedSkillActive))
         {
             return;
         }
 
-        skillCaster.Tick();
+        // 蓄力前摇、保持和释放阶段都不读取技能输入，避免技能动画抢占同一个上半身攻击层。
+        if (!chargedAttack.IsChargeAttackActive)
+        {
+            skillCaster.Tick();
+        }
+
+        // 技能 Tick 可能在本帧刚进入或结束承诺动作，因此移动与输入限制必须重新读取一次状态。
+        isCommittedSkillActive = skillCaster.IsCommittedCastActive;
         combat.Tick();
+        // 满蓄力松手的同一帧就开始旋转，让根节点转向和上半身攻击动画保持同步。
+        chargedAttack.TickFullChargeSpin(Time.deltaTime);
         // 攻击不再阻塞水平移动，但会限制移动速度上限，避免边攻击边高速奔跑导致动作表现发飘。
-        float horizontalSpeedLimit = combat.IsAttacking ? movement.AttackMoveSpeedLimit : -1f;
-        movement.TickNormalMovement(false, combat.IsAttacking, horizontalSpeedLimit);
+        float horizontalSpeedLimit = chargedAttack.IsChargeAttackActive
+            ? chargedAttack.MovementSpeedLimit
+            : isCommittedSkillActive
+                ? skillCaster.CommittedMovementSpeedLimit
+                : combat.IsAttacking ? movement.AttackMoveSpeedLimit : -1f;
+        // 旋转重斩只锁水平移动；TickNormalMovement 仍会执行重力、落地和动画状态同步。
+        movement.TickNormalMovement(
+            chargedAttack.IsFullChargeSpinActive,
+            combat.IsAttacking || isCommittedSkillActive,
+            horizontalSpeedLimit);
         health.ApplyHealthRegen();
         movement.ApplyStaminaRecovery();
         health.TickHitFlash();
@@ -108,6 +137,8 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     {
         this.UnRegisterEvent<PlayerExperienceGainedEvent>(HandleExperienceGained);
         this.UnRegisterEvent<PlayerHealedEvent>(HandlePlayerHealed);
+        chargedAttack?.CancelCharge();
+        skillCaster?.CancelCommittedCast();
 
         if (health != null)
         {
@@ -188,6 +219,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
         progression = EnsureComponent(progression);
         audioComponent = EnsureComponent(audioComponent);
         rangedAttack = EnsureComponent(rangedAttack);
+        chargedAttack = EnsureComponent(chargedAttack);
         skillCaster = EnsureComponent(skillCaster);
         developerMode = EnsureComponent(developerMode);
     }
@@ -200,6 +232,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     {
         movement.Initialize(this);
         combat.Initialize(this);
+        chargedAttack.Initialize(this);
         rangedAttack.Initialize(this);
         health.Initialize(this);
         progression.Initialize(this);

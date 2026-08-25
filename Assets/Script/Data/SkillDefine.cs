@@ -43,6 +43,22 @@ public class SkillDefineTable
 }
 
 /// <summary>
+/// 技能出手承诺配置：描述技能从按键释放到命中、恢复控制之间的风险窗口。
+/// 只有需要限制走位和延迟命中的技能才配置该节点，普通技能保持 null 并沿用原有即时流程。
+/// </summary>
+[Serializable]
+public class SkillCastCommitmentDefine
+{
+    public bool enabled;
+    // 从成功扣蓝并进入冷却开始，到实际结算伤害之间的延迟。
+    public float hitDelay;
+    // 整个动作占用时间；占用期间不能翻滚、跳跃、普攻或释放其他技能。
+    public float lockDuration;
+    // 动作占用期间允许的最高水平移动速度。
+    public float movementSpeedLimit;
+}
+
+/// <summary>
 /// 单个技能的静态配置。
 /// 这里只保存不会在战斗中频繁变化的数据，例如技能名字、职业限制、最高等级和每级数值。
 /// 玩家是否已经学会、当前冷却剩多久，不放在这里，后面会放到 PlayerSkillModel。
@@ -100,6 +116,12 @@ public class SkillDefine
     /// 第一版统一写 5，表示 5 级后才可能学到。
     /// </summary>
     public int unlockLevel;
+
+    /// <summary>
+    /// 可选的技能出手承诺配置。
+    /// 刺客大旋转使用该配置制造前摇和走位风险，未配置的技能不会改变原释放方式。
+    /// </summary>
+    public SkillCastCommitmentDefine castCommitment;
 
     /// <summary>
     /// 每一级的技能数值配置。

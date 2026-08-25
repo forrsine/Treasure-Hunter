@@ -30,7 +30,7 @@ public sealed class RangedCharacterPlayableTests
 
     [TestCase(2, 0.85f, 0.5f, 14f, 0.9f, 0.18f, "#7D6BFFFF",
         CharacterProjectileTrajectory.Arc, 3f, 0.7f, true, 1.5f)]
-    [TestCase(3, 0.72f, 0.4f, 12f, 1.25f, 0.12f, "#FFFFFFFF",
+    [TestCase(3, 0.25f, 0.4f, 12f, 1.25f, 0.12f, "#FFFFFFFF",
         CharacterProjectileTrajectory.Straight, 0f, 1f, false, 0f)]
     public void RangedConfiguration_HasCompleteProjectileParameters(
         int classId,
@@ -61,6 +61,83 @@ public sealed class RangedCharacterPlayableTests
         Assert.That(define.projectileVisualScale, Is.EqualTo(visualScale).Within(0.001f));
         Assert.That(define.projectileApplyTint, Is.EqualTo(applyTint));
         Assert.That(define.projectileExplosionRadius, Is.EqualTo(explosionRadius).Within(0.001f));
+    }
+
+    [Test]
+    public void ArcherBalance_UsesFifteenAttackAndConfiguredCadence()
+    {
+        CharacterDefine define = LoadDefine(3);
+
+        Assert.That(define.attack, Is.EqualTo(15f).Within(0.001f));
+        Assert.That(define.basicAttackDuration, Is.EqualTo(0.25f).Within(0.001f));
+    }
+
+    [Test]
+    public void ArcherHeldAttack_FiresOnlyAfterConfiguredInterval()
+    {
+        GameObject runtimeInstance = null;
+        IGameplayInput previousInput = GameplayRuntime.Instance.CurrentInput;
+        TestGameplayInput testInput = new TestGameplayInput
+        {
+            LeftMouseHeldValue = true
+        };
+
+        try
+        {
+            CharacterDefine archerDefine = LoadDefine(3);
+            GameObject runtimePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerRuntimePrefabPath);
+            GameObject visualPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                "Assets/Resources/Characters/Archer.prefab");
+            runtimeInstance = Object.Instantiate(runtimePrefab);
+            GameObject visualInstance = Object.Instantiate(visualPrefab, runtimeInstance.transform);
+            PlayerRuntimeController runtime = runtimeInstance.GetComponent<PlayerRuntimeController>();
+            InvokePrivateMethod(runtime, "CacheComponents");
+            FieldInfo entryDefineField = typeof(PlayerRuntimeController).GetField(
+                "entryDefine",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(entryDefineField, Is.Not.Null);
+            entryDefineField.SetValue(runtime, archerDefine);
+
+            PlayerPresentationComponent presentation =
+                runtimeInstance.GetComponent<PlayerPresentationComponent>();
+            PlayerCombatComponent combat = runtimeInstance.GetComponent<PlayerCombatComponent>();
+            PlayerRangedAttackComponent rangedAttack =
+                runtimeInstance.GetComponent<PlayerRangedAttackComponent>();
+            // 本测试只验证输入与攻速，不初始化生命组件，避免 EditMode 创建临时受击材质干扰断言。
+            presentation.BindVisual(visualInstance, archerDefine);
+            rangedAttack.Initialize(runtime);
+            combat.Initialize(runtime);
+            GameplayRuntime.Instance.RegisterInput(testInput);
+
+            InvokePrivateMethod(combat, "CheckAttackInput");
+            Assert.That(rangedAttack.ActiveProjectileCount, Is.EqualTo(1));
+
+            // 按住期间重复检查不会每帧发射，未满 0.25 秒仍保持一支箭。
+            InvokePrivateMethod(combat, "CheckAttackInput");
+            InvokePrivateMethod(
+                combat,
+                "TickArcherBasicAttackCooldown",
+                archerDefine.basicAttackDuration - 0.01f);
+            InvokePrivateMethod(combat, "CheckAttackInput");
+            Assert.That(rangedAttack.ActiveProjectileCount, Is.EqualTo(1));
+
+            InvokePrivateMethod(combat, "TickArcherBasicAttackCooldown", 0.02f);
+            InvokePrivateMethod(combat, "CheckAttackInput");
+            Assert.That(rangedAttack.ActiveProjectileCount, Is.EqualTo(2));
+        }
+        finally
+        {
+            GameplayRuntime.Instance.UnregisterInput(testInput);
+            if (previousInput != null)
+            {
+                GameplayRuntime.Instance.RegisterInput(previousInput);
+            }
+
+            if (runtimeInstance != null)
+            {
+                Object.DestroyImmediate(runtimeInstance);
+            }
+        }
     }
 
     [TestCase(1)]
@@ -361,6 +438,8 @@ public sealed class RangedCharacterPlayableTests
             runtimeInstance = Object.Instantiate(runtimePrefab);
             GameObject visualInstance = Object.Instantiate(visualPrefab, runtimeInstance.transform);
             PlayerRuntimeController runtime = runtimeInstance.GetComponent<PlayerRuntimeController>();
+            // EditMode 实例化不会执行正常 PlayMode 的 Awake，手动完成运行时组件缓存后再复现生成器装配。
+            InvokePrivateMethod(runtime, "CacheComponents");
             // 完全复现 GameplayCharacterSpawner：先绑定模型，再设置位置和应用角色数据。
             runtime.BindCharacterVisual(visualInstance, define);
             runtimeInstance.transform.SetPositionAndRotation(
@@ -398,8 +477,10 @@ public sealed class RangedCharacterPlayableTests
             // 从公共输入接口进入攻击，而不是直接调用 StartFirstAttack，防止测试绕过真实故障点。
             GameplayRuntime.Instance.RegisterInput(testInput);
             testInput.LeftMouseDownValue = true;
+            testInput.LeftMouseHeldValue = true;
             InvokePrivateMethod(combat, "CheckAttackInput");
             testInput.LeftMouseDownValue = false;
+            testInput.LeftMouseHeldValue = false;
             Assert.That(combat.IsAttacking, Is.True);
             Assert.That(combat.CurrentCombo, Is.EqualTo(1));
 
@@ -448,10 +529,22 @@ public sealed class RangedCharacterPlayableTests
 
             if (classId == 3)
             {
-                // 上一段攻击动画尚未结束时再次点击，也必须立即再生成且只生成一支箭。
+                // 攻击间隔内快速连点不能绕过攻速限制。
                 testInput.LeftMouseDownValue = true;
+                testInput.LeftMouseHeldValue = true;
                 InvokePrivateMethod(combat, "CheckAttackInput");
                 testInput.LeftMouseDownValue = false;
+                testInput.LeftMouseHeldValue = false;
+                Assert.That(rangedAttack.ActiveProjectileCount, Is.EqualTo(1));
+
+                // 冷却结束后即使没有新的按下帧，只要仍处于长按状态就会自动发射下一箭。
+                InvokePrivateMethod(
+                    combat,
+                    "TickArcherBasicAttackCooldown",
+                    define.basicAttackDuration + 0.01f);
+                testInput.LeftMouseHeldValue = true;
+                InvokePrivateMethod(combat, "CheckAttackInput");
+                testInput.LeftMouseHeldValue = false;
                 Assert.That(rangedAttack.ActiveProjectileCount, Is.EqualTo(2));
                 PlayerBasicAttackProjectile secondClickProjectile =
                     Object.FindObjectsOfType<PlayerBasicAttackProjectile>(true)
@@ -578,9 +671,15 @@ public sealed class RangedCharacterPlayableTests
             Physics.SyncTransforms();
 
             combat.ResetCombo();
+            InvokePrivateMethod(
+                combat,
+                "TickArcherBasicAttackCooldown",
+                define.basicAttackDuration + 0.01f);
             testInput.LeftMouseDownValue = true;
+            testInput.LeftMouseHeldValue = true;
             InvokePrivateMethod(combat, "CheckAttackInput");
             testInput.LeftMouseDownValue = false;
+            testInput.LeftMouseHeldValue = false;
             if (classId == 2)
             {
                 InvokePrivateMethod(combat, "TickEventlessAttackReleaseDelay", releaseDelay + 0.01f);
@@ -713,6 +812,8 @@ public sealed class RangedCharacterPlayableTests
                 BindingFlags.Instance | BindingFlags.NonPublic);
             Assert.That(prewarmCountField, Is.Not.Null);
             prewarmCountField.SetValue(rangedAttack, 1);
+            // EditMode 不走 PlayerRuntimeController.Awake，先补齐依赖再绑定职业表现。
+            InvokePrivateMethod(runtime, "CacheComponents");
             runtime.BindCharacterVisual(visualInstance, archerDefine);
             runtimeInstance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             runtime.ApplyCharacterEntryData(save, archerDefine);
@@ -947,11 +1048,15 @@ public sealed class RangedCharacterPlayableTests
     private sealed class TestGameplayInput : IGameplayInput
     {
         public bool LeftMouseDownValue { get; set; }
+        public bool LeftMouseHeldValue { get; set; }
+        public bool LeftMouseUpValue { get; set; }
 
         public float XInput => 0f;
         public float YInput => 0f;
         public Vector3 MouseInput => Vector3.zero;
         public bool LeftMouseDown => LeftMouseDownValue;
+        public bool LeftMouseHeld => LeftMouseHeldValue;
+        public bool LeftMouseUp => LeftMouseUpValue;
         public bool RollDown => false;
         public bool DeveloperModeToggleDown => false;
         public bool DebugAddLevelsDown => false;

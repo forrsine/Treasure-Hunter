@@ -7,8 +7,8 @@ using System.Collections;
 /// 
 /// 新手阅读顺序：
 /// 1. 这个脚本挂在一个 UI 面板物体上。
-/// 2. EnsureUi 会自动创建标题、分数文本、重新开始按钮和退出按钮。
-/// 3. ReStart 重新加载主场景，ExitGame 在编辑器里停止播放/打包后退出程序。
+/// 2. EnsureUi 会自动创建标题、分数文本、重新开始按钮和返回角色选择按钮。
+/// 3. ReStart 重新加载主场景，ReturnToCharacterSelect 保存后返回角色选择界面。
 /// 4. ShowRuntimeGameOver 会暂停游戏、显示鼠标、刷新本局分数和最高分。
 /// </summary>
 [ExecuteAlways]
@@ -97,13 +97,13 @@ public class ReStartPanel : MonoBehaviour
     }
 
     /// <summary>
-    /// 点击“退出游戏”时保存分数并退出播放/程序。
+    /// 点击“返回角色选择”时保存分数，并结束当前角色会话。
     /// </summary>
-    public void ExitGame()
+    public void ReturnToCharacterSelect()
     {
-        // 退出前也保存分数。
+        // 返回选角前保存本局分数，账号登录态由 SceneFlowService 保留。
         PersistCurrentScore();
-        StartCoroutine(SaveAndExit());
+        StartCoroutine(SaveAndReturnToCharacterSelect());
     }
 
     private IEnumerator ResetProgressAndRestart()
@@ -115,14 +115,16 @@ public class ReStartPanel : MonoBehaviour
             string message = "";
             if (summaryText != null)
             {
-                summaryText.text = "正在清空本局强化并保存...";
+                summaryText.text = "正在重置死亡进度并保存...";
             }
 
-            yield return saveService.FlushNow(true, (result, resultMessage, _) =>
-            {
-                success = result;
-                message = resultMessage;
-            });
+            yield return saveService.FlushNow(
+                CharacterProgressSaveMode.ResetAfterDeath,
+                (result, resultMessage, _) =>
+                {
+                    success = result;
+                    message = resultMessage;
+                });
 
             if (!success)
             {
@@ -138,18 +140,25 @@ public class ReStartPanel : MonoBehaviour
         SceneFlowService.RestartGameplay();
     }
 
-    private IEnumerator SaveAndExit()
+    private IEnumerator SaveAndReturnToCharacterSelect()
     {
         CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
         if (saveService != null && saveService.IsSessionActive)
         {
             bool success = false;
             string message = "";
-            yield return saveService.FlushAndLeave(false, (result, resultMessage) =>
+            if (summaryText != null)
             {
-                success = result;
-                message = resultMessage;
-            });
+                summaryText.text = "正在重置死亡进度并返回角色选择...";
+            }
+
+            yield return saveService.FlushAndLeave(
+                CharacterProgressSaveMode.ResetAfterDeath,
+                (result, resultMessage) =>
+                {
+                    success = result;
+                    message = resultMessage;
+                });
 
             if (!success)
             {
@@ -162,11 +171,7 @@ public class ReStartPanel : MonoBehaviour
         }
 
         RestoreGameplayState();
-#if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-#else
-        Application.Quit();
-#endif
+        SceneFlowService.ReturnToCharacterSelect();
     }
 
     /// <summary>
@@ -289,11 +294,11 @@ public class ReStartPanel : MonoBehaviour
     }
 
     /// <summary>
-    /// 创建或查找重新开始、退出游戏两个按钮。
+    /// 创建或查找重新开始、返回角色选择两个按钮。
     /// </summary>
     private void EnsureButtons()
     {
-        // 创建/查找两个按钮：重新开始、退出游戏。
+        // 创建/查找两个按钮：重新开始、返回角色选择。
         restartButton = FindChildButton(RestartButtonObjectName);
         if (restartButton == null)
         {
@@ -315,7 +320,7 @@ public class ReStartPanel : MonoBehaviour
         }
 
         ConfigureButton(restartButton, "重新开始", ReStart);
-        ConfigureButton(quitButton, "退出游戏", ExitGame);
+        ConfigureButton(quitButton, "返回角色选择", ReturnToCharacterSelect);
     }
 
     /// <summary>

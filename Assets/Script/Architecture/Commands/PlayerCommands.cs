@@ -62,16 +62,24 @@ public sealed class TakePlayerDamageCommand : AbstractCommand<PlayerDamageResult
 {
     private readonly int incomingAttackPower;
     private readonly bool allowDodge;
+    private readonly float temporaryDamageReduction;
 
-    public TakePlayerDamageCommand(int incomingAttackPower, bool allowDodge)
+    public TakePlayerDamageCommand(
+        int incomingAttackPower,
+        bool allowDodge,
+        float temporaryDamageReduction = 0f)
     {
         this.incomingAttackPower = incomingAttackPower;
         this.allowDodge = allowDodge;
+        this.temporaryDamageReduction = temporaryDamageReduction;
     }
 
     protected override PlayerDamageResult OnExecute()
     {
-        return this.GetSystem<PlayerCombatSystem>().TakeDamage(incomingAttackPower, allowDodge);
+        return this.GetSystem<PlayerCombatSystem>().TakeDamage(
+            incomingAttackPower,
+            allowDodge,
+            temporaryDamageReduction);
     }
 }
 
@@ -182,6 +190,25 @@ public sealed class ClearPlayerRunUpgradeProgressCommand : AbstractCommand
     protected override void OnExecute()
     {
         this.GetSystem<PlayerProgressionSystem>().ClearRunUpgradeProgress();
+    }
+}
+
+/// <summary>
+/// 数据源确认死亡重置成功后，把服务器返回的 1 级角色同步到运行时模型。
+/// 该命令不会复活玩家，失败界面仍保持死亡状态，下一场景才会正常生成满血角色。
+/// </summary>
+public sealed class ResetPlayerProgressAfterDeathCommand : AbstractCommand
+{
+    private readonly NCharacter confirmedCharacter;
+
+    public ResetPlayerProgressAfterDeathCommand(NCharacter confirmedCharacter)
+    {
+        this.confirmedCharacter = confirmedCharacter;
+    }
+
+    protected override void OnExecute()
+    {
+        this.GetSystem<PlayerProgressionSystem>().ResetProgressAfterDeath(confirmedCharacter);
     }
 }
 

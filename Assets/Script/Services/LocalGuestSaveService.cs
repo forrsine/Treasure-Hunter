@@ -11,7 +11,8 @@ using UnityEngine;
 /// </summary>
 public sealed class LocalGuestSaveService
 {
-    public const int CurrentSaveVersion = 1;
+    public const int CurrentSaveVersion = 2;
+    private const int MinimumSupportedSaveVersion = 1;
     public const int CharacterSlotCount = 4;
 
     private const string SaveDirectoryName = "Saves";
@@ -191,6 +192,7 @@ public sealed class LocalGuestSaveService
         PlayerProgressSaveData progress,
         int vaultDestroyedCount,
         int completedBossCount,
+        bool resetAfterDeath,
         out NCharacter savedCharacter,
         out string message)
     {
@@ -213,7 +215,9 @@ public sealed class LocalGuestSaveService
                 currentCharacter,
                 vaultDestroyedCount,
                 completedBossCount,
+                resetAfterDeath,
                 out List<NAttributeUpgradeSave> normalizedUpgrades,
+                out List<NInventoryItemSave> normalizedInventory,
                 out message))
         {
             return false;
@@ -229,6 +233,7 @@ public sealed class LocalGuestSaveService
         updatedCharacter.vaultDestroyedCount = vaultDestroyedCount;
         updatedCharacter.completedBossCount = completedBossCount;
         updatedCharacter.attributeUpgrades = normalizedUpgrades;
+        updatedCharacter.inventoryItems = normalizedInventory;
 
         if (!TryWrite(candidate, out message))
         {
@@ -309,7 +314,7 @@ public sealed class LocalGuestSaveService
             return false;
         }
 
-        if (save.version != CurrentSaveVersion)
+        if (save.version < MinimumSupportedSaveVersion || save.version > CurrentSaveVersion)
         {
             error = $"不支持的存档版本 {save.version}";
             return false;
@@ -355,8 +360,24 @@ public sealed class LocalGuestSaveService
                 error = $"槽位 {character.slotIndex}：{error}";
                 return false;
             }
+
+            character.inventoryItems = character.inventoryItems ?? new List<NInventoryItemSave>();
+            if (!TryValidateInventoryList(
+                    character.inventoryItems,
+                    false,
+                    true,
+                    out List<NInventoryItemSave> normalizedInventory,
+                    out error))
+            {
+                error = $"槽位 {character.slotIndex}：{error}";
+                return false;
+            }
+
+            character.inventoryItems = normalizedInventory;
         }
 
+        // 版本1没有背包字段，缺失列表按空背包迁移；下一次成功保存时写回版本2。
+        save.version = CurrentSaveVersion;
         error = "";
         return true;
     }
@@ -366,11 +387,49 @@ public sealed class LocalGuestSaveService
         NCharacter current,
         int vaultDestroyedCount,
         int completedBossCount,
+        bool resetAfterDeath,
         out List<NAttributeUpgradeSave> normalizedUpgrades,
+        out List<NInventoryItemSave> normalizedInventory,
         out string error)
     {
         normalizedUpgrades = new List<NAttributeUpgradeSave>();
-        if (progress == null || progress.Level < 1 || progress.Level > 999 || progress.Exp < 0)
+        normalizedInventory = new List<NInventoryItemSave>();
+
+        if (progress == null)
+        {
+            error = "角色进度不能为空。";
+            return false;
+        }
+
+        if (!TryValidateInventoryList(
+                progress.InventoryItems,
+                resetAfterDeath,
+                false,
+                out normalizedInventory,
+                out error))
+        {
+            return false;
+        }
+
+        if (resetAfterDeath)
+        {
+            bool isExactDeathReset = progress.Level == 1 &&
+                progress.Exp == 0 &&
+                progress.PendingAttributeUpgradeCount == 0 &&
+                vaultDestroyedCount == 0 &&
+                completedBossCount == 0 &&
+                progress.AttributeUpgrades.Count == 0;
+            if (!isExactDeathReset)
+            {
+                error = "死亡重置数据必须全部归零。";
+                return false;
+            }
+
+            error = "";
+            return true;
+        }
+
+        if (progress.Level < 1 || progress.Level > 999 || progress.Exp < 0)
         {
             error = "等级或经验数据非法。";
             return false;
@@ -403,6 +462,71 @@ public sealed class LocalGuestSaveService
             return false;
         }
 
+        error = "";
+        return true;
+    }
+
+    /// <summary>
+    /// 校验并规范化游客背包。游客与在线模式使用相同的格子、物品白名单和死亡保留规则。
+    /// </summary>
+    private static bool TryValidateInventoryList(
+        IEnumerable<NInventoryItemSave> inventoryItems,
+        bool resetAfterDeath,
+        bool skipUnknownItems,
+        out List<NInventoryItemSave> normalizedInventory,
+        out string error)
+    {
+        normalizedInventory = new List<NInventoryItemSave>();
+        InventoryDatabase database = Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath);
+        if (database == null)
+        {
+            error = "背包数据库未加载。";
+            return false;
+        }
+
+        var usedSlots = new HashSet<int>();
+        if (inventoryItems != null)
+        {
+            foreach (NInventoryItemSave savedItem in inventoryItems)
+            {
+                if (savedItem == null ||
+                    savedItem.slotIndex < 0 || savedItem.slotIndex >= database.Capacity ||
+                    !usedSlots.Add(savedItem.slotIndex) ||
+                    savedItem.count <= 0)
+                {
+                    error = "背包格子、物品ID或数量非法。";
+                    return false;
+                }
+
+                if (!database.TryGetItemById(savedItem.itemId, out InventoryItemDefinition item))
+                {
+                    if (skipUnknownItems)
+                    {
+                        Debug.LogWarning($"游客存档中的物品配置已不存在，加载时跳过：{savedItem.itemId}");
+                        continue;
+                    }
+
+                    error = "背包格子、物品ID或数量非法。";
+                    return false;
+                }
+
+                if (savedItem.count > item.MaxStack)
+                {
+                    error = "背包格子、物品ID或数量非法。";
+                    return false;
+                }
+
+                if (resetAfterDeath && item.Category == InventoryItemCategory.Consumable)
+                {
+                    error = "死亡重置存档不能保留消耗品。";
+                    return false;
+                }
+
+                normalizedInventory.Add(savedItem.Clone());
+            }
+        }
+
+        normalizedInventory.Sort((left, right) => left.slotIndex.CompareTo(right.slotIndex));
         error = "";
         return true;
     }

@@ -79,13 +79,14 @@ public static class SceneFlowService
     public static void StartGameplay(NCharacter selectedCharacter)
     {
         SelectedCharacterState.SetCharacter(selectedCharacter);
+        // 先恢复权威角色背包，再开启存档会话；这样恢复事件不会被误判成一次玩家修改。
+        TreasureHunterArchitecture.Interface.SendCommand(
+            new RestoreInventoryCommand(selectedCharacter != null ? selectedCharacter.inventoryItems : null));
         CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
         if (saveService != null)
         {
             saveService.BeginSession(selectedCharacter);
         }
-        // 选择角色代表开始新的角色会话，背包从空状态重新累计。
-        TreasureHunterArchitecture.Interface.SendCommand(new ResetInventoryCommand());
         GameplayRuntime.Instance.ClearVaultProgressCache();
         BossRunProgressState.RestorePersistentProgress(
             selectedCharacter != null ? selectedCharacter.vaultDestroyedCount : 0,

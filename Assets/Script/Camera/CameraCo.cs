@@ -7,7 +7,7 @@ using UnityEngine;
 /// 1. Update 读取鼠标输入，计算镜头角度和缩放距离。
 /// 2. LateUpdate 在玩家移动后再更新摄像机位置，减少画面抖动。
 /// 3. ResolveCameraPosition 用球形射线检测墙体，防止镜头穿墙。
-/// 4. ShouldIgnoreHit 排除玩家、怪物、子弹、金库等不该挡镜头的物体。
+/// 4. ShouldIgnoreHit 排除玩家、怪物、子弹、金库以及允许镜头穿过的遮挡物。
 /// </summary>
 public class CameraCo : MonoBehaviour
 {
@@ -84,9 +84,12 @@ public class CameraCo : MonoBehaviour
             return;
         }
 
+        // 灵敏度只作为原 Inspector 速度的倍率，不改变镜头原有水平/垂直手感比例。
+        float sensitivityMultiplier = GameSettingsService.MouseSensitivityMultiplier;
+
         // 鼠标 X 控制水平旋转，鼠标 Y 控制上下俯仰。
-        x += input.MouseInput.x * xSpeed * Time.deltaTime;
-        y -= input.MouseInput.y * ySpeed * Time.deltaTime;
+        x += input.MouseInput.x * xSpeed * sensitivityMultiplier * Time.deltaTime;
+        y -= input.MouseInput.y * ySpeed * sensitivityMultiplier * Time.deltaTime;
         y = ClampAngle(y, yMinLimit, yMaxlimit);
 
         // 玩家有移动输入时，让玩家朝向跟随摄像机水平角。
@@ -194,6 +197,15 @@ public class CameraCo : MonoBehaviour
         }
 
         if (hitTransform.root == target.root)
+        {
+            return true;
+        }
+
+        // 带此标记的墙仍保留物理碰撞，只是不再把摄像机推回角色身边。
+        // 墙体的显示隐藏交给 CameraOcclusionController 单独处理，避免镜头逻辑直接控制表现层。
+        CameraPassThroughOccluder passThroughOccluder =
+            hitTransform.GetComponentInParent<CameraPassThroughOccluder>();
+        if (passThroughOccluder != null && passThroughOccluder.isActiveAndEnabled)
         {
             return true;
         }

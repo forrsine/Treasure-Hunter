@@ -317,42 +317,48 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
             roomRoot,
             new Vector3(0f, -thickness * 0.5f, 0f),
             new Vector3(width, thickness, length),
-            floorColor);
+            floorColor,
+            false);
 
         CreateOrUpdateArenaPiece(
             "BossArenaNorthWall",
             roomRoot,
             new Vector3(0f, height * 0.5f, halfLength + thickness * 0.5f),
             new Vector3(width + thickness * 2f, height, thickness),
-            wallColor);
+            wallColor,
+            true);
 
         CreateOrUpdateArenaPiece(
             "BossArenaSouthWall",
             roomRoot,
             new Vector3(0f, height * 0.5f, -halfLength - thickness * 0.5f),
             new Vector3(width + thickness * 2f, height, thickness),
-            wallColor);
+            wallColor,
+            true);
 
         CreateOrUpdateArenaPiece(
             "BossArenaEastWall",
             roomRoot,
             new Vector3(halfWidth + thickness * 0.5f, height * 0.5f, 0f),
             new Vector3(thickness, height, length + thickness * 2f),
-            wallColor);
+            wallColor,
+            true);
 
         CreateOrUpdateArenaPiece(
             "BossArenaWestWall",
             roomRoot,
             new Vector3(-halfWidth - thickness * 0.5f, height * 0.5f, 0f),
             new Vector3(thickness, height, length + thickness * 2f),
-            wallColor);
+            wallColor,
+            true);
 
         CreateOrUpdateArenaPiece(
             "BossArenaCeiling",
             roomRoot,
             new Vector3(0f, height + thickness * 0.5f, 0f),
             new Vector3(width + thickness * 2f, thickness, length + thickness * 2f),
-            ceilingColor);
+            ceilingColor,
+            true);
     }
 
     /// <summary>
@@ -363,7 +369,8 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         Transform roomRoot,
         Vector3 position,
         Vector3 scale,
-        Color color)
+        Color color,
+        bool allowsCameraPassThrough)
     {
         GameObject piece = GameObject.Find(objectName);
         if (piece == null)
@@ -376,6 +383,12 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         piece.transform.localPosition = position;
         piece.transform.localRotation = Quaternion.identity;
         piece.transform.localScale = scale;
+
+        if (allowsCameraPassThrough && piece.GetComponent<CameraPassThroughOccluder>() == null)
+        {
+            // 墙体仍用 BoxCollider 限制战斗区域，只额外允许 Boss 镜头穿过并隐藏其渲染。
+            piece.AddComponent<CameraPassThroughOccluder>();
+        }
 
         Renderer renderer = piece.GetComponent<Renderer>();
         if (renderer == null)
@@ -499,18 +512,23 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
     private CameraCo EnsureGameplayCamera()
     {
         CameraCo cameraController = FindObjectOfType<CameraCo>();
-        if (cameraController != null)
+        if (cameraController == null)
         {
-            return cameraController;
+            GameObject cameraObject = new GameObject("Main Camera");
+            cameraObject.tag = "MainCamera";
+            cameraObject.transform.position = new Vector3(0f, 5f, -12f);
+            cameraObject.transform.rotation = Quaternion.Euler(22f, 0f, 0f);
+            cameraObject.AddComponent<Camera>();
+            cameraObject.AddComponent<AudioListener>();
+            cameraController = cameraObject.AddComponent<CameraCo>();
         }
 
-        GameObject cameraObject = new GameObject("Main Camera");
-        cameraObject.tag = "MainCamera";
-        cameraObject.transform.position = new Vector3(0f, 5f, -12f);
-        cameraObject.transform.rotation = Quaternion.Euler(22f, 0f, 0f);
-        cameraObject.AddComponent<Camera>();
-        cameraObject.AddComponent<AudioListener>();
-        return cameraObject.AddComponent<CameraCo>();
+        if (cameraController.GetComponent<CameraOcclusionController>() == null)
+        {
+            cameraController.gameObject.AddComponent<CameraOcclusionController>();
+        }
+
+        return cameraController;
     }
 
     /// <summary>
@@ -543,6 +561,7 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         bossBattleBgmSource.loop = loopBossBattleMusic;
         bossBattleBgmSource.volume = bossBattleMusicVolume;
         bossBattleBgmSource.spatialBlend = 0f;
+        GameSettingsService.RouteMusicSource(bossBattleBgmSource);
 
         AudioClip musicToPlay = bossBattleMusic != null
             ? bossBattleMusic
