@@ -57,8 +57,12 @@ public sealed class Character : IPostResponser
         Info.PendingAttributeUpgradeCount = data.PendingAttributeUpgradeCount;
         Info.VaultDestroyedCount = data.VaultDestroyedCount;
         Info.CompletedBossCount = data.CompletedBossCount;
+        Info.MerchantIntroCompleted = data.MerchantIntroCompleted;
         Info.AttributeUpgrades.Clear();
         Info.InventoryItems.Clear();
+        Info.EquippedItems.Clear();
+        Info.PurchasedLimitedShopItemIds.Clear();
+        Info.QuestProgress.Clear();
 
         foreach ((int attributeType, int upgradeCount) in data.AttributeUpgradeCounts)
         {
@@ -76,6 +80,26 @@ public sealed class Character : IPostResponser
                 SlotIndex = item.SlotIndex,
                 ItemId = item.ItemId,
                 Count = item.Count
+            });
+        }
+
+        foreach (TEquippedItem item in data.EquippedItems)
+        {
+            Info.EquippedItems.Add(new NEquippedItemInfo
+            {
+                EquipmentSlot = item.EquipmentSlot,
+                ItemId = item.ItemId
+            });
+        }
+
+        Info.PurchasedLimitedShopItemIds.AddRange(data.PurchasedLimitedShopItemIds);
+        foreach (TQuestProgress progress in data.QuestProgress)
+        {
+            Info.QuestProgress.Add(new NQuestProgressInfo
+            {
+                QuestId = progress.QuestId,
+                State = progress.State,
+                CurrentCount = progress.CurrentCount
             });
         }
     }
@@ -100,7 +124,8 @@ public sealed class Character : IPostResponser
             CompletedBossCount = Info.CompletedBossCount,
             mapId = Info.mapId,
             Gold = Info.Gold,
-            SlotIndex = Info.SlotIndex
+            SlotIndex = Info.SlotIndex,
+            MerchantIntroCompleted = Info.MerchantIntroCompleted
         };
 
         foreach (NAttributeUpgradeInfo upgrade in Info.AttributeUpgrades)
@@ -119,6 +144,26 @@ public sealed class Character : IPostResponser
                 SlotIndex = item.SlotIndex,
                 ItemId = item.ItemId,
                 Count = item.Count
+            });
+        }
+
+        foreach (NEquippedItemInfo item in Info.EquippedItems)
+        {
+            copy.EquippedItems.Add(new NEquippedItemInfo
+            {
+                EquipmentSlot = item.EquipmentSlot,
+                ItemId = item.ItemId
+            });
+        }
+
+        copy.PurchasedLimitedShopItemIds.AddRange(Info.PurchasedLimitedShopItemIds);
+        foreach (NQuestProgressInfo progress in Info.QuestProgress)
+        {
+            copy.QuestProgress.Add(new NQuestProgressInfo
+            {
+                QuestId = progress.QuestId,
+                State = progress.State,
+                CurrentCount = progress.CurrentCount
             });
         }
 

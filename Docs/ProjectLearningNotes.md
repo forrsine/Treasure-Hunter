@@ -1,4 +1,4 @@
-# Treasure Hunter 项目学习记录
+# 宝藏猎手项目学习记录
 
 > 本文档记录已经实际落地并验证过的功能。重点关注职责划分、调用流程、Unity 配置、测试方法和面试表达。
 
@@ -5601,3 +5601,1042 @@ Boss 房间的相机问题我分成了位置避障和视觉遮挡两层处理。
 - JSON存档版本迁移
 - SQL一对多表、联合主键、外键和事务
 - 客户端不可信、白名单和边界校验
+
+## 功能名称：淘宝 UI 素材标准化导入
+
+### 1. 实现目标
+
+把 49 个淘宝 PSD 从设计源文件整理成 Unity 可直接使用的 UI Sprite 素材库。导出以实用组件为单位，移除英文示例文字和数值，保留按钮底图、图标、边框、进度条分层等可复用图形，同时保留原始 PSD/JPG 方便追溯。
+
+### 2. 涉及脚本
+
+- `Tools/UiAssetPipeline/export_ui_assets.py`：读取显式清单、解析 PSD 图层、过滤文字、导出 PNG，并生成中英文目录和分类预览图。
+- `Tools/UiAssetPipeline/export_manifest.json`：记录来源 PSD、图层路径、输出名、中文用途、组件角色、排除规则和九宫格 Border。
+- `PurchasedUiSpriteImportPostprocessor.cs`：只对淘宝 UI 专用目录应用 Unity Sprite 导入设置，并提供重导和校验菜单。
+- `PurchasedUiSpriteImportRules.json`：把每张实际 PNG 和 Unity 九宫格规则对应起来。
+- `PurchasedUiAssetLibraryTests.cs`：检查源文件数量、命名、功能图标数量、导入参数、九宫格和未完成下载文件。
+- `Docs/UiAssetCatalog.md`、`Docs/UiAssetCatalog.csv`：按英文 Sprite 名或中文用途查询素材来源。
+
+### 3. 调用流程
+
+`原始 PSD -> export_manifest.json -> export_ui_assets.py -> RuntimeSprites 分类 PNG -> PurchasedUiSpriteImportPostprocessor -> Unity Sprite -> Image / Button / Slider 等 UI 组件`。
+
+目录流程：`导出记录 -> CSV/Markdown 素材目录 -> 分类缩略预览图 -> 根据英文名或中文用途反查来源 PSD 和原图层路径`。
+
+### 4. 核心原理
+
+PSD 是设计源文件，运行时真正需要的是可以组合的图形组件。导出器不会把五千多个底层形状逐个输出，而是按按钮、面板、图标、背景和条形组件等语义层级合成；普通文字交给 TextMeshPro，这样文本可以本地化、动态变化，也不会因为放大而模糊。
+
+按钮的渐变、描边和阴影合并为一张底图，血条和进度条拆成 Background、Fill、Frame，滑动条拆成 Track、Fill、Handle。可拉伸的矩形组件配置九宫格，让四角保持原尺寸、只拉伸中间区域；图标、圆形按钮、背景和 Fill 不设置 Border。
+
+功能图标使用固定 104×104 透明画布，只做居中而不缩放图形本身，因此放到同一个 RectTransform 时更容易对齐和换色。内容像素、分类、组件角色和原图层语义完全一致时才共用一个 PNG，外观相近但用途不同的变体仍然保留。
+
+Unity 后处理器先判断资源路径，只影响 `淘宝ui素材` 目录。运行时 PNG 统一导成 Single Sprite、Full Rect、100 PPU、Bilinear、Clamp、关闭 Mipmap并启用透明通道；PSD/JPG 保持 Default，只用于查看设计参考。
+
+### 5. Unity 测试方式
+
+1. 等 Unity 完成首次导入，在 Project 窗口打开 `Assets/AllResources/淘宝ui素材/RuntimeSprites`，确认十个分类目录和英文命名 Sprite。
+2. 执行 `Tools/Treasure Hunter/UI Assets/Apply Import Settings`，统一重新应用导入设置。
+3. 执行 `Tools/Treasure Hunter/UI Assets/Validate Library`，Console 应显示素材库校验通过且没有 Error。
+4. 在 Sprite Editor 查看带 Border 的按钮或面板，确认九宫格不越界；把它放进 Image，选择 Sliced 后拉宽和拉高，确认四角不变形。
+5. 分别组合血条的 Background、Fill、Frame，以及滑动条的 Track、Fill、Handle，确认层级和透明边缘正确。
+6. 打开 `Docs/UiAssetCatalog.md` 和分类预览图，根据中英文名称反查来源 PSD 与图层路径。
+
+### 6. 面试表达
+
+我把购买的 49 个 PSD 做成了一套可复现的 UI 资源管线。离线工具用显式清单记录每个组件的来源图层、英文名、中文用途和九宫格参数，导出时按组件语义合并效果、过滤示例文字，并把进度条和滑动条拆成可动态控制的层。Unity 端用限定目录的 AssetPostprocessor 统一 Sprite 导入设置，不会影响项目其他贴图；另外提供菜单校验和 EditMode 测试，检查命名、数量、透明通道、Border 与导入参数。这样资源不仅能用，还能从运行时文件追溯回 PSD，后续换版本也可以稳定重导。
+
+### 7. 面试追问
+
+1. **为什么不直接把 PSD 当运行时资源？** PSD 图层多、导入开销大且包含示例界面；运行时 PNG 更可控，PSD 只保留作设计源和追溯依据。
+2. **为什么文字不一起切进按钮？** TextMeshPro 才能支持动态文本、本地化、清晰缩放和无障碍字号；底图与文字分离也更容易复用。
+3. **九宫格解决什么问题？** 它固定四角和边缘厚度，只拉伸中间区域，避免圆角、描边和阴影随 RectTransform 一起变形。
+4. **怎样防止 AssetPostprocessor 影响其他图片？** 在预处理入口先判断规范化资源路径，只有专用素材根目录和 RuntimeSprites 子目录会进入对应设置分支。
+5. **如何保证重新导出不会静默切错层？** 清单同时记录图层索引和完整路径，Dry Run 会重新解析并比较路径，还会检查 PSD 数量、缺失图层和大小写重名。
+
+### 8. 本次涉及知识点
+
+- PSD 图层树、合成范围和透明通道
+- 数据驱动导出清单与可复现资源管线
+- Unity TextureImporter 与 AssetPostprocessor
+- Sprite Mesh Type、PPU、Filter、Wrap、Mipmap 和 Max Size
+- UGUI Image 的 Simple、Sliced、Filled 模式
+- 九宫格 Border 与可拉伸 UI
+- TextMeshPro 与图文分离
+- 内容哈希去重、命名规范和资源追溯
+- Editor 菜单、批处理导入和 EditMode 资源测试
+
+## 功能名称：淘宝 UI 设置界面换肤
+
+### 1. 实现目标
+
+把登录场景原来的居中设置弹窗替换成 1920×1080 全屏淘宝 `Setting.psd` 风格页面，同时保留主音量、音乐音量、音效音量、鼠标灵敏度、分辨率、显示模式、画质、垂直同步和帧率上限等全部 PC 设置功能。换肤只改变表现层，不修改设置数据、存档、AudioMixer 或运行时业务规则。
+
+### 2. 涉及脚本
+
+- `GameSettingsAssetSetupTool.cs`：集中加载淘宝 Sprite，生成全屏两栏设置 Prefab，并替换 LoginScene 的设置入口图标和点击绑定。
+- `GameSettingsTests.cs`：检查设置页背景、Slider 三层、VSync 双状态、Dropdown 标准层级、确认弹窗和场景入口绑定。
+- `GameSettingsPanel.prefab`：生成后的共享设置界面，继续由原 `GameSettingsPanelController` 驱动。
+- `LoginScene.unity`：保存新的 Prefab 实例，并让淘宝齿轮按钮调用设置面板的 `Open`。
+
+### 3. 调用流程
+
+打开页面：`LoginScene SettingButton -> GameSettingsPanelController.Open -> 读取当前设置 -> 填充 Slider / Dropdown / Toggle -> 显示全屏设置页`。
+
+应用设置：`玩家修改控件 -> Controller 更新草稿 -> 点击应用 -> GameSettingsService 应用并保存 -> 若分辨率或显示模式变化，打开淘宝确认弹窗 -> 保留或在 10 秒后恢复`。
+
+返回页面：`顶部淘宝返回箭头或 Esc -> Controller.Cancel -> 放弃未应用草稿 -> 关闭设置页`。
+
+### 4. 核心原理
+
+这次修改把“界面长什么样”和“设置怎样生效”分开处理。`GameSettingsPanelController` 仍然只负责读取控件、维护草稿和调用设置服务；Editor 生成工具负责创建 RectTransform、绑定 Sprite 和组织控件层级。因此以后再次生成 Prefab 不会恢复旧皮肤，换另一套美术资源时也不必改设置业务逻辑。
+
+Slider 仍使用 UGUI 的 `fillRect` 和 `handleRect`，但可见图片分别换成淘宝 Background、Fill、Handle。Toggle 的底图表示 Off，勾选图表示 On；Dropdown 保留 `Template/Viewport/Content/Item` 标准结构，避免换肤后破坏展开、滚动和选择逻辑。
+
+按钮、Dropdown 和弹窗底板使用 Sliced 九宫格，只拉伸中间区域，保护圆角、描边和阴影；图标、背景、Fill 与 Handle 使用 Simple。所有中文标题和动态数值仍由 `Text` 渲染，没有烘焙进图片，因此可以继续按运行时数据更新。
+
+### 5. Unity 测试方式
+
+1. 执行 `Treasure Hunter/UI/Create Or Refresh Login Settings`，等待 Console 编译和资源刷新完成。
+2. 打开 `LoginScene`，点击淘宝齿轮，确认出现全屏背景、顶部返回、左右两栏和底部按钮。
+3. 分别拖动四个 Slider、切换三个显示 Dropdown、VSync 和帧率上限，确认文字与草稿同步变化。
+4. 点击恢复默认、应用、顶部返回和 Esc，确认原有行为不变。
+5. 改变分辨率或显示模式并应用，确认淘宝确认弹窗出现；验证保留设置、恢复设置和 10 秒自动回退。
+6. 在 1920×1080、2560×1440 和窗口模式下观察布局与 Dropdown 展开层级，并运行 `GameSettingsTests`。
+
+### 6. 面试表达
+
+我给项目的 PC 设置页做了一次表现层换肤，但没有改原来的设置业务逻辑。我把淘宝 PSD 切出的背景、按钮、Slider 三层、开关和图标集中放进 Editor 生成工具，由工具稳定生成 Prefab 和场景引用；运行时仍由原 Controller 维护设置草稿、存档和显示回退。可拉伸控件使用九宫格，Slider、Toggle 和 Dropdown 保留 UGUI 规定的功能层级，并用 EditMode 测试检查 Sprite 来源和引用完整性。这样既降低了美术资源与业务逻辑的耦合，也避免后续重生成 Prefab 时丢失皮肤修改。
+
+### 7. 面试追问
+
+1. **为什么不直接在 Prefab 上手工换图？** 这个 Prefab 原本由 Editor 工具生成，手工修改下次刷新会丢失；把皮肤写入生成源才能保证结果可复现。
+2. **Slider 为什么要拆成三张图？** Background 表示总范围，Fill 表示当前值，Handle 表示交互位置；UGUI 可以分别控制它们，动态变化时不需要重新生成图片。
+3. **Dropdown 换肤最容易出什么问题？** 如果删除或改坏 `Template/Viewport/Content/Item`，下拉列表会无法展开、裁剪或选择，所以这次只替换可见 Graphic，不改变标准结构。
+4. **九宫格为什么适合按钮和弹窗？** 它固定四角与边缘，只拉伸中心，按钮尺寸变化时圆角、描边和阴影不会被整体拉扁。
+5. **怎样证明换肤没有影响业务？** 没有修改 Controller、Service、配置和存档文件；同时原数据规则测试与新增的 Prefab/场景资源测试全部通过。
+
+### 8. 本次涉及知识点
+
+- UGUI Image、Button、Slider、Toggle 和 Dropdown 层级
+- RectTransform 锚点与 1920×1080 参考分辨率
+- Sprite Simple 与 Sliced 九宫格
+- 表现层和业务逻辑分离
+- Editor 工具生成 Prefab 与场景持久绑定
+- SerializedObject 自动绑定私有序列化字段
+- UnityEvent 持久监听
+- EditMode Prefab、Sprite 和场景回归测试
+## 功能名称：Boss 装备系统与淘宝装备背包 UI
+
+### 1. 实现目标
+
+在原 24 格背包上增加六个穿戴槽，使 Boss 每次死亡额外掉落一件四职业通用装备。装备固定属性会实时影响玩家最终面板，并按角色保存；死亡只清理局内消耗品和强化，不清理背包装备或穿戴状态。
+
+### 2. 涉及脚本
+
+- `EquipmentTypes.cs`：稳定槽位、属性枚举、固定属性修改器和操作结果。
+- `EquipmentModel.cs`：只保存六个槽位当前穿戴的数据。
+- `EquipmentSystem.cs`：处理穿戴、原子交换、卸下、属性差值结算和存档恢复。
+- `InventoryPanel.cs` / `EquipmentSlotView.cs`：显示淘宝全屏装备背包并发送装备命令。
+- `BossLootDropController.cs` / `InventoryDatabase.cs`：保留三个材料球并追加一个独立装备球。
+- `LocalGuestSaveService.cs`、客户端/服务端协议和 `DBService.cs`：完成角色级永久存档与服务端边界校验。
+
+### 3. 调用流程
+
+`B 输入 -> InventoryPanel -> EquipInventoryItemCommand -> EquipmentSystem -> InventorySystem + EquipmentModel -> PlayerRuntimeStats -> EquipmentChangedEvent / PlayerStatsChangedEvent -> UI 与自动存档`
+
+`BossDied -> BossLootDropController -> InventoryDatabase 独立装备权重池 -> WorldLootPool -> WorldItemPickup -> AddInventoryItemCommand`
+
+### 4. 核心原理
+
+装备配置描述“这件物品是什么、属于哪个槽、加什么属性”，背包和装备模型描述“玩家现在拥有什么、穿着什么”，UI 只负责显示和发送命令。换装时旧装备直接写回新装备所在的来源格，所以其余格子全满也能安全交换；卸下则先确认有空格，失败时两个模型都不改变。属性不是在每次穿戴时盲目累加，而是重新汇总六个槽位，用新旧总值差更新玩家属性，因此重复穿脱不会漂移。最大血蓝变化保留当前比例，成长计算会先排除装备部分再套成长公式。
+
+游客存档升级到 v3，旧 v1/v2 因没有装备字段会迁移为空装备栏。在线模式把角色主表、强化、背包和穿戴栏放在同一数据库事务中，服务端校验物品白名单、重复槽位和物品槽位是否匹配。
+
+### 5. Unity 测试方式
+
+打开 `MainScene`，选择任意职业进入游戏。击败 Boss 后应看到三个材料球和一个装备球；拾取后按 `B`，在右侧选中装备点击“装备”，左侧对应槽位出现图标且最终属性立即变化。再次拾取同槽装备可直接交换；选中左侧装备可卸下。1-9 级戒指槽显示锁定，10 级后可穿戴。切场景、死亡和重新登录后检查背包装备与穿戴状态仍存在。
+
+### 6. 面试表达
+
+这个装备系统我拆成配置、运行时模型、规则系统和 UI 四层。装备用 ScriptableObject 配置槽位与固定属性，背包只记录拥有状态，EquipmentModel 只记录穿戴状态，所有写操作统一经过 EquipmentSystem。换装采用来源格原子交换，所以背包满时也不会丢装备；属性用整套装备汇总后的差值结算，避免重复穿脱产生数值漂移。持久化同时支持游客 JSON 和在线数据库，在线端会在同一事务中保存背包与装备并做白名单、重复槽位和槽位匹配校验。
+
+### 7. 面试追问
+
+1. 为什么 UI 不直接改装备槽？答：避免绕过等级、容量和槽位校验，也便于存档、测试和以后联网复用同一规则。
+2. 背包满了为什么还能换装？答：旧装备直接替换来源格的新装备，不需要寻找额外空格。
+3. 如何避免属性重复叠加？答：每次汇总六槽总属性，只把新旧差值应用到玩家最终属性。
+4. 为什么最大生命切装要保留比例？答：避免通过反复切装免费回血，也让战斗中的换装结果连续。
+5. 后续随机词条怎么扩展？答：把固定修改器扩成装备实例数据，静态定义仍保存基础信息，实例单独保存词条和强化等级。
+
+### 8. 本次涉及知识点
+
+- ScriptableObject 数据驱动与静态数据/运行时数据分离
+- Command、Query、Event 与 UI/业务解耦
+- 原子状态交换、失败不变式和事件驱动刷新
+- 属性差值结算、百分比属性上限和血蓝比例保持
+- 对象池复用 Boss 世界掉落物
+- JSON 版本迁移、protobuf 字段兼容、数据库事务与白名单校验
+## 功能名称：背包装备 UI 手动排版入口
+
+### 1. 实现目标
+
+把共享的背包装备界面直接开放到 Unity Prefab Mode 中编辑，让布局问题可以通过 Scene 视图手动调整并保存，同时避免常规装备数据生成流程覆盖美术排版。
+
+### 2. 涉及脚本
+
+- `InventoryFeatureSetupTool.cs`：提供一键打开并定位背包装备窗口的编辑器菜单，同时让批处理入口保留现有 UI。
+- `GameplayUiRoot.prefab`：背包装备布局的唯一保存位置，MainScene 与 BossRoomScene 共用这份 Prefab。
+
+### 3. 调用流程
+
+Unity 菜单 -> `OpenEquipmentInventoryLayoutForEditing` -> 打开 `GameplayUiRoot.prefab` -> 进入 Prefab Mode -> 选中 `InventoryOverlay/InventoryWindow` -> Scene 视图手动排版 -> `Ctrl+S` 保存 Prefab
+
+### 4. 核心原理
+
+Prefab 可以理解成多场景共同使用的 UI 模板。布局直接保存在共享 Prefab 上，比把 Prefab 拆开放进每个场景更安全：只需调整一次，两个玩法场景就会同步更新，也不会产生两份逐渐不一致的 UI。运行时仍由 `InventoryPanel.Start` 隐藏界面，因此 Prefab 编辑态保持可见不会导致开局自动打开背包。
+
+常规 Setup 与批处理现在只补齐装备数据和缺失资源；已经存在 `InventoryPanel` 时不会重建 UI。只有明确点击带 `Overwrites Manual Layout` 字样并经过二次确认的菜单，才会恢复默认布局。
+
+### 5. Unity 测试方式
+
+1. 点击 `Tools/Treasure Hunter/UI/Edit Equipment Inventory Layout`。
+2. 在打开的 Prefab Mode 中调整 `InventoryWindow` 子节点位置与尺寸。
+3. 按 `Ctrl+S` 保存，然后退出 Prefab Mode。
+4. 运行 MainScene，按 `B` 检查新布局；再进入 BossRoomScene 检查布局是否同步。
+
+### 6. 面试表达
+
+背包装备 UI 是两个玩法场景共用的，所以我没有把 Prefab Unpack 成两份场景对象，而是提供了一个编辑器入口，直接进入共享 Prefab 的排版节点。策划或美术可以在 Scene 视图里调整并保存，两个场景会自动同步。同时我把数据生成和 UI 重建拆开，普通配置刷新不会覆盖手动布局，只有显式确认的恢复菜单才会重建默认 UI。
+
+### 7. 面试追问
+
+- 为什么不直接 Unpack？答：Unpack 后每个场景会形成独立副本，后续容易出现布局不一致。
+- 编辑态显示会不会导致运行时开局显示？答：不会，运行时由 `InventoryPanel.Start` 统一隐藏。
+- 怎么避免生成工具覆盖美术调整？答：常规生成只补数据，已有 UI 不重建；破坏性重建放在单独的确认菜单中。
+- 为什么选择 Prefab Mode？答：它能隔离编辑共享资源，并且修改结果会传播到所有 Prefab 实例。
+- 如果节点被误删怎么办？答：可以使用带二次确认的默认 UI 重建菜单恢复结构。
+
+### 8. 本次涉及知识点
+
+- Unity Prefab Mode 与共享 Prefab
+- `AssetDatabase.OpenAsset`
+- `PrefabStageUtility`
+- 编辑器菜单与 Selection 定位
+- 数据生成流程和美术资源编辑解耦
+
+## 功能名称：Fungi 商人、金币掉落与淘宝商店系统
+
+### 1. 实现目标
+
+把出生点附近的 Fungi 改造成可交互商人。当前角色第一次靠近按 `E` 只显示引导台词并立即记录，之后按 `E` 直接打开全屏淘宝商店。小怪、金库和 Boss 提供分层金币产出，金币、首次对话与装备限购记录都按角色永久保存，死亡不会清除。
+
+### 2. 涉及脚本
+
+- `EconomyModel.cs` / `EconomySystem.cs`：保存并校验当前角色金币，统一处理增加、消费、恢复和 9,999,999 上限。
+- `ShopModel.cs` / `ShopSystem.cs`：维护首次对话与限购集合，并协调目录、钱包和背包完成原子购买。
+- `ShopCatalog.cs` / `EconomyConfig.cs`：分别配置 16 个固定商品和怪物、金库、Boss 的金币平衡。
+- `MerchantNpcController.cs`：检测三米范围内的玩家，把 `E` 输入转换成首次对话或打开商店事件。
+- `MerchantShopPanel.cs` / `ShopItemCardView.cs` / `GoldHudView.cs`：显示交互提示、对话、分类商品卡、购买反馈和常驻金币。
+- `MonsterGoldRewardController.cs`：监听 Slime 正式死亡事件，金币直接到账，不创建大量地面对象。
+- `VaultGoldRewardController.cs` / `BossGoldRewardController.cs`：生成重要金币地面拾取物，并保留已有材料和装备掉落。
+- `WorldGoldPool.cs` / `WorldGoldPickup.cs`：复用金库与 Boss 金币对象，负责悬浮、旋转、90 秒生命周期和触碰收取。
+- `ShopFeatureSetupTool.cs`：可重复生成配置、六件入门装备、金币与商人 Prefab、淘宝商店 UI，并装配 MainScene。
+- `LocalGuestSaveService.cs`、网络协议、`DBService.cs`、`UserService.cs`：完成游客 v4 迁移和在线同事务保存、白名单及边界校验。
+
+### 3. 调用流程
+
+首次交互：`InputCo(E) -> MerchantNpcController -> CompleteMerchantIntroCommand -> ShopSystem -> MerchantIntroCompletedEvent（立即存档） -> MerchantDialogueRequestedEvent -> MerchantShopPanel`。
+
+再次交互和购买：`MerchantNpcController -> ShopOpenRequestedEvent -> MerchantShopPanel -> PurchaseShopItemCommand -> ShopSystem 只读预检 -> EconomySystem + InventorySystem + ShopModel -> GoldChangedEvent / InventoryChangedEvent / ShopPurchaseCompletedEvent -> UI 刷新与立即存档`。
+
+金币产出：`SlimeCo.Died -> MonsterGoldRewardController -> AddGoldCommand`；`BoxCo.OnVaultDestroyed / BossDied -> 奖励控制器 -> WorldGoldPool.Get -> WorldGoldPickup.OnTriggerEnter -> AddGoldCommand -> Release`。
+
+### 4. 核心原理
+
+这个功能把静态配置、角色状态、业务规则和 UI 分开。`ShopCatalog` 只描述卖什么和价格，`EconomyModel` 与 `ShopModel` 只记录当前角色的金币与购买进度，所有写操作必须通过 System。UI 因此不能绕过金币、背包容量或限购校验，未来换皮肤时也不用改经济规则。
+
+购买前先完成目录、限购、余额和背包容量四项只读检查；任何一项失败都不改变状态。通过后在 Unity 主线程内完成扣款和加物品，极端异常会退款，最后才写限购并广播完成事件。这种设计强调“失败时状态不变”的事务思路。当前服务端不宣称校验真实击杀来源，但会校验金币范围、物品白名单、限购 ID、重复记录和槽位结构。
+
+普通怪一次有 18 只，所以采用死亡后直接到账，避免同时生成大量金币对象与物理触发器；金库和 Boss 的高价值奖励需要拾取表现，才使用独立对象池。两类奖励共享同一钱包命令，但表现和性能策略不同。
+
+商店、对话、背包和暂停都需要控制 `Time.timeScale` 与鼠标状态。`GameSessionUi` 统一维护优先级：对话/商店在最上层，之后是背包和暂停；`Esc` 一次只关闭当前最上层，商店打开时 `B` 和重复 `E` 会被阻挡。
+
+游客存档从 v1-v3 迁移到 v4 时补成 0 金币、未对话和空限购集合。在线存档把金币、成长、背包、装备和限购记录放在同一 SQL 事务内，任一子表写入失败都会整体回滚。死亡快照只重置成长和消耗品，经济字段原样进入同一次保存，因此不会丢失刚获得但仍在防抖窗口内的金币。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，确认出生点附近仍是原位置、旋转和大小的 Fungi；靠近约三米后显示“按 E 与 Fungi 交谈”。
+2. 第一次按 `E`，确认只出现指定台词；关闭后再次按 `E`，应直接打开 1920×1080 淘宝 ShopChest 商店。
+3. 检查全部、消耗品、装备、材料四个分类；购买药水应可重复，购买装备后卡片应显示“已售罄”。
+4. 用金币不足和 24 格背包全满两种情况购买，确认不扣金币、不加物品、不写限购。
+5. 清理 12 只 Slime1 与 6 只 Slime2，确认金币直接到账；击破金库和 Boss 后各出现一个金色悬浮拾取物，原材料球和装备球数量不变。
+6. 购买铜纹戒指，低于十级时可以买但不能穿；十级后复用装备系统正常穿戴。
+7. 验证 `Esc`、顶部返回、`B` 冲突、暂停与鼠标状态；再测试切场景、死亡、退出重登和四角色存档隔离。
+8. 运行 `EconomyShopSystemTests`、`ShopFeatureAssetTests`、`GuestModePersistenceTests` 与 `CharacterProgressPersistenceTests`，并执行服务端 `dotnet build`。
+
+### 6. 面试表达
+
+我把商店系统拆成经济模型、商店进度模型、业务系统和表现层。商品与金币产出由 ScriptableObject 配置，UI 只发送购买命令；ShopSystem 会按目录、限购、余额和背包容量顺序预检，失败时不改变任何状态，成功后统一更新钱包、背包和限购记录。普通怪金币直接到账以减少对象数量，金库和 Boss 的高价值金币使用独立对象池提供拾取表现。持久化同时支持游客 JSON 版本迁移和在线 SQL 事务，金币、装备、背包与限购会作为一个角色快照保存，并由服务端做结构和白名单校验。
+
+### 7. 面试追问
+
+1. **为什么钱包不直接放在商店 UI 中？** 钱包还会被怪物、任务和拾取物使用，放进独立 EconomySystem 才能保证所有来源共享上限、事件和存档规则。
+2. **怎样保证购买失败不扣钱？** 先做全部只读预检，再在主线程内提交；背包写入出现理论外异常时还有退款保护，限购记录只在成功后写入。
+3. **为什么普通怪和 Boss 的金币表现不同？** 18 只普通怪同时生成物理对象会增加实例、Collider 和 GC 压力；重要奖励数量少，适合用对象池保留反馈感。
+4. **客户端结算金币安全吗？** 当前是作品原型，服务端只做结构、范围和白名单校验，不宣称验证击杀；商业联网项目应由权威服务端结算掉落或校验战斗事件。
+5. **首次对话为什么按角色保存？** 每个角色的引导进度独立，角色切换不会串档；完成事件立即保存，避免玩家看完台词后立刻退出又重复出现。
+6. **为什么要数据库事务？** 主表、背包、装备和限购子表必须同时成功，否则可能出现扣了金币却没有物品，或已有商品又能重复购买。
+7. **对象池回收时最重要的是什么？** 重置金额、生命周期、Transform 和配置状态，防止上一次拾取物的数据残留到下一次复用。
+
+### 8. 本次涉及知识点
+
+- QFramework Command、Query、Event 与领域模型
+- ScriptableObject 商品目录和数值配置
+- 事务式购买、预检、退款保护和失败不变式
+- UGUI ScrollRect、Mask、GridLayoutGroup 与模态优先级
+- Trigger、运动学 Rigidbody 与玩家身份识别
+- 对象池生命周期、状态重置和性能取舍
+- 防抖保存与关键事件立即保存
+- JSON v1-v3 到 v4 迁移和角色隔离
+- protobuf 向后兼容字段编号
+- SQL 主表、子表、事务回滚和服务端白名单校验
+
+## 功能名称：商人对话与商品卡可读性、鼠标锁定修复
+
+### 1. 实现目标
+
+修复 Fungi 首次对话和商店商品卡在深色淘宝底板上看不清、文字与图标重叠，以及关闭商店后鼠标没有重新锁定的问题。修复只调整商人 UI 的指定子节点，不重建背包装备 UI，也不改变购买、金币和存档规则。
+
+### 2. 涉及脚本
+
+- `ShopFeatureSetupTool.cs`：更新新生成商店的默认颜色与排版，并提供只修复现有节点的非破坏性菜单。
+- `MerchantShopPanel.cs`：关闭最后一个商人模态时确定性恢复玩法鼠标状态。
+- `UiCursorStateUtility.cs`：新增统一的“锁定并隐藏鼠标”入口。
+- `ShopFeatureAssetTests.cs` / `UiCursorStateTests.cs`：保护文字对比度、卡片分区、淘宝底板和鼠标状态。
+
+### 3. 调用流程
+
+视觉生成：`ShopFeatureSetupTool -> BuildMerchantUi/CreateProductCard -> 高对比颜色 + Outline + 固定 RectTransform 分区 -> GameplayUiRoot.prefab`。
+
+退出商店：`返回按钮或 Esc -> MerchantShopPanel.CloseShop -> RestoreGameplayStateIfNoModal -> UiCursorStateUtility.EnsureHiddenAndLocked -> 镜头重新接收鼠标移动`。
+
+### 4. 核心原理
+
+UGUI 的 `offsetMin/offsetMax` 在锚点重合时表示矩形边界，而不是“位置和大小”。旧商品名称把 `offsetMax.y` 写成正数，导致文字区域越过卡片顶部并压到图标上。现在把卡片按从顶部向下的固定区域分成图标、名称、说明、价格和按钮，各区域之间保留间距，因此不会依赖子节点渲染顺序来掩盖重叠。
+
+深色背景上的深棕文字即使字号足够也缺少亮度对比。修复使用暖白和金色前景，并增加深色一像素描边，让文字在不同图标颜色和分辨率下仍然清楚。
+
+鼠标状态属于全局状态，而且会跨场景或模态界面保留。商店关闭时恢复缓存值会把打开前偶然的解锁状态继续保留下来。由于商人交互只能从正常玩法进入，关闭最后一个商人模态时直接恢复 `Locked + hidden` 更符合确定性状态切换。
+
+### 5. Unity 测试方式
+
+1. 运行 MainScene，首次与 Fungi 对话，检查名称为金色、正文为暖白色且没有压在固定装备图案上。
+2. 再次按 E 打开商店，检查商品图标上方和内部没有文字遮挡，名称、属性说明和价格均清楚可见。
+3. 切换全部、消耗品、装备和材料分类，重点检查带两条属性和等级提示的装备卡。
+4. 分别通过顶部返回和 Esc 关闭商店，确认鼠标隐藏、锁定并重新控制镜头。
+5. 在 1920×1080、2560×1440 和窗口模式下复核五列布局。
+
+### 6. 面试表达
+
+这次问题不是单纯换一个字体颜色。我先检查了淘宝底板的实际明暗和 RectTransform 数据，发现旧代码误把 offsetMax 当成高度，导致名称区域跨过卡片顶部并覆盖图标。我把商品卡划分成互不重叠的固定区域，再用高对比颜色和 Outline 保证可读性。鼠标恢复则从“恢复可能错误的缓存值”改成确定性的玩法状态切换，同时保留 Time.timeScale 的原值恢复。
+
+### 7. 面试追问
+
+- `offsetMin` 和 `offsetMax` 是什么？答：它们是 RectTransform 相对锚点矩形的下左、上右边界偏移，具体含义会随锚点是否拉伸而变化。
+- 为什么不用调整子节点顺序解决遮挡？答：顺序只能决定谁画在上面，不能解决两个控件占用同一区域的问题。
+- 为什么还要加 Outline？答：商品图标颜色不固定，描边可以在浅色和深色局部背景上同时保持文字边缘清晰。
+- 为什么关闭商店不恢复 Cursor 缓存？答：商店只允许从正常玩法打开，目标状态明确；恢复偶然缓存值反而会传播错误状态。
+- 怎样避免生成工具覆盖手调布局？答：默认生成值和当前 Prefab 都修正，但现有资源使用定点修复，只更新指定子节点，不删除整棵 UI。
+
+### 8. 本次涉及知识点
+
+- RectTransform 锚点、Pivot、offsetMin/offsetMax
+- UGUI 渲染顺序与真正布局冲突的区别
+- Text Outline 和颜色对比度
+- 全局 Cursor 状态与确定性状态恢复
+- PrefabContents 非破坏性编辑
+- UI 资源生成器与当前 Prefab 同步
+
+## 功能名称：商店金币显示、扣款反馈与鼠标滚轮浏览
+
+### 1. 实现目标
+
+商店每次打开时显示当前角色的真实金币余额，购买成功后立即显示扣除金额并用颜色变化强化反馈。商品列表提高鼠标滚轮灵敏度，并在重新打开商店或切换分类时回到顶部，解决默认灵敏度过低造成的“看起来不能滚动”问题。
+
+### 2. 涉及脚本
+
+- `MerchantShopPanel.cs`：查询并显示金币、监听购买结果、播放扣款高亮、控制商品列表滚动位置。
+- `ShopFeatureSetupTool.cs`：为新生成和已有的商店 Prefab 统一配置 ScrollRect，并保存面板引用。
+- `ShopFeatureAssetTests.cs`：验证金币文本、滚动方向、灵敏度、Viewport 和 Content 引用。
+- `GameplayUiRoot.prefab`：保存 ProductScroll 的灵敏度以及 MerchantShopPanel 对 ScrollRect 的引用。
+
+### 3. 调用流程
+
+打开商店：`MerchantNpcController -> ShopOpenRequestedEvent -> MerchantShopPanel -> GetGoldQuery -> EconomySystem -> ShopGoldText`。
+
+购买商品：`ShopItemCardView -> MerchantShopPanel -> PurchaseShopItemCommand -> ShopSystem -> EconomySystem.TrySpendGold -> GoldChangedEvent -> 刷新余额 -> ShopPurchaseCompletedEvent -> 扣款 Toast + 金币高亮`。
+
+浏览商品：`鼠标滚轮 -> EventSystem -> ScrollRect.OnScroll -> Content 纵向移动`。
+
+### 4. 核心原理
+
+金币真实数据仍由 EconomySystem 管理，商店 UI 不保存自己的余额副本。打开商店时主动查询一次，余额变化时再通过事件刷新，这样既能保证首次显示正确，也不需要在 Update 中每帧查询。
+
+购买反馈只在 ShopPurchaseCompletedEvent 后播放，因此金币不足、背包已满或退款保护触发时不会误报成功。由于商店打开后游戏时间暂停，高亮恢复使用 WaitForSecondsRealtime，不受 Time.timeScale 为 0 的影响。
+
+ScrollRect 原本已经具备 Viewport、Mask 和自动扩展高度的 Content，但默认灵敏度 1 每格滚轮只能移动约一个像素。提高灵敏度即可恢复正常手感，不需要重建商品 UI。分类变化时只重建一次布局并把 normalizedPosition 设为顶部，不产生每帧布局开销。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，运行游戏并获得一定金币。
+2. 靠近 Fungi，完成首次对话后再次按 E 打开商店。
+3. 检查右上角“当前金币”是否与 HUD 一致。
+4. 购买一件商品，检查余额立即减少，Toast 显示“金币 -价格”，金币文字短暂变为橙红色后恢复。
+5. 金币不足时再次购买，确认没有扣款高亮且余额不变。
+6. 鼠标放在商品卡和商品区空白位置滚轮，确认只能上下滚动。
+7. 滚到底部后切换分类或关闭重开商店，确认列表回到顶部。
+
+### 6. 面试表达
+
+商店金币显示我没有放在 Update 里轮询，而是采用“打开时主动查询、变化时事件刷新”的方式。购买命令由 ShopSystem 统一校验余额、背包容量和限购，只有收到购买成功事件后，UI 才显示扣款金额和高亮，所以失败不会产生错误反馈。商店会暂停游戏时间，因此反馈协程使用真实时间。商品列表本身已有 ScrollRect，问题是默认滚动灵敏度只有 1，我保留原布局，只提高纵向灵敏度并在切换分类时重置到顶部。
+
+### 7. 面试追问
+
+1. **为什么打开商店还要主动查询金币？** 事件只能通知之后发生的变化，主动查询可以保证 UI 第一次显示时就拿到当前状态。
+2. **为什么不让 UI 直接扣金币？** 钱包规则属于业务层，放在 System 中才能被商店、任务和掉落共同复用，并保证失败不改变余额。
+3. **为什么高亮使用 WaitForSecondsRealtime？** 商店打开时 Time.timeScale 为 0，普通 WaitForSeconds 不会继续计时。
+4. **为什么提高灵敏度而不是自己读取鼠标滚轮？** ScrollRect 已统一处理拖动、惯性、边界和事件冒泡，复用标准组件更简单可靠。
+5. **为什么分类切换时强制重建布局？** 商品显隐会改变 Content 高度，先更新布局再设置顶部位置，ScrollRect 才能用正确边界计算滚动位置。
+
+### 8. 本次涉及知识点
+
+- QFramework Command、Query、Event
+- UGUI ScrollRect、Viewport、Mask 与 ContentSizeFitter
+- LayoutRebuilder 与事件触发式 UI 刷新
+- Coroutine 与 WaitForSecondsRealtime
+- 购买事务、失败不变式和表现层解耦
+- Prefab 序列化引用与编辑器资产测试
+
+## 功能名称：F1 热键开发者模式
+
+### 1. 实现目标
+
+把原来只支持少量 L/P/O/N 快捷键的调试组件改成 F1-F8 开发者模式。它可以临时开启极高攻击、无敌和技能零冷却，也能通过正式业务入口增加金币、补足本轮五次宝箱、升一级和回满蓝，方便快速验证四职业、商店、Boss 入口与技能战斗。
+
+### 2. 涉及脚本
+
+- `DeveloperModeModel/System`：保存并处理不进入存档的高攻、无敌和零冷却状态。
+- `DeveloperModeCommands/Queries`：为 MonoBehaviour 和战斗系统提供统一读写入口。
+- `PlayerDeveloperModeComponent`：读取 F1-F8、调用 Command 并显示 IMGUI 状态概览。
+- `PlayerCombatSystem` / `PlayerSkillSystem`：在正式伤害和技能规则入口读取临时开发者状态。
+- `BoxCo`：连续执行正式击破结算，并只跳过开发测试中的重生等待表现。
+- `DeveloperModeSystemTests`：验证状态可逆、正式进度入口和本轮宝箱补足。
+
+### 3. 调用流程
+
+临时战斗开关：`InputCo -> PlayerDeveloperModeComponent -> ToggleDeveloper...Command -> DeveloperModeSystem -> DeveloperModeModel -> PlayerCombatSystem / PlayerSkillSystem`。
+
+进度操作：`F4/F6/F7 -> AddGoldCommand / AddPlayerLevelsForDevelopmentCommand / FullRestorePlayerManaCommand -> 原有 System -> Event -> UI 与自动存档`。
+
+宝箱补足：`F5 -> VaultsUntilNextBoss -> BoxCo.BreakRepeatedlyForDevelopment -> HandleDestroyed -> 奖励、掉落、OnVaultDestroyed -> BossRunProgressState -> Boss 入口`。
+
+### 4. 核心原理
+
+开发者高攻没有直接把 `PlayerRuntimeStats.AttackPower` 改成大数，而是在每次伤害结算时读取“有效攻击力”。这相当于在账本外加一张临时测试券：装备、升级和存档看到的仍是真实攻击，普通攻击与技能伤害结算时才额外加 10,000，所以关闭功能后不会反向计算，也不会发生属性漂移。
+
+无敌放在统一 `TakeDamage` 入口，是为了让近战、子弹和 Boss 攻击共享同一个判断。技能零冷却也放在 `PlayerSkillSystem`：开启时先清掉已有 CD，以后释放不再写入新 CD，但扣蓝仍走正式资源系统。
+
+金币、等级和宝箱进度属于用户明确要求保留的测试进度，因此继续调用正式 Command/System 并触发存档。高攻、无敌和零冷却只保存在运行时 DeveloperModeModel，关闭 F1 或销毁玩家组件时统一清空，不扩展存档协议。
+
+F5 使用“补足本轮”而不是固定增加五次。例如当前已经完成 2/5，只正式结算剩余 3 次。连续结算仍调用宝箱原来的奖励和事件，只跳过等待动画，既能快速测试，又不会绕开 Boss 解锁链路。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene` 运行游戏，按 F1，确认左上角显示开发者状态与 F2-F8 说明。
+2. 按 F2 后用普通攻击和职业技能攻击怪物，确认两者都额外获得 10,000 攻击；再次按 F2 恢复。
+3. 按 F3 后让小怪、子弹和 Boss 命中，确认生命不减少；再次按 F3 恢复承伤。
+4. 按 F4，确认金币增加 10,000；按 F6，确认只升一级；消耗魔法后按 F7，确认回满蓝。
+5. 先释放一个技能进入 CD，再按 F8，确认现有 CD 立即清除且可连续释放，魔法仍正常减少。
+6. 在宝箱进度 0/5、2/5 或 4/5 时按 F5，确认只补足到 5/5、奖励正常并生成 Boss 入口。
+7. 开启 F2、F3、F8 后再次按 F1，确认三个临时效果全部关闭；重新登录时只保留金币、等级和宝箱进度。
+
+### 6. 面试表达
+
+我把开发者模式拆成输入表现层和运行时规则层。F1-F8 由玩家组件读取，但高攻、无敌和零冷却保存在独立 Model，并通过 Command 和 Query 修改。高攻采用伤害结算时叠加，不直接修改角色基础属性，所以装备切换、升级和存档不会出现数值漂移；无敌与零冷却分别接在统一受伤和技能释放入口。金币、等级和宝箱则复用正式系统，让开发测试覆盖真实事件和存档链路。宝箱快捷键只补足本轮剩余次数，不会提前污染下一轮进度。
+
+### 7. 面试追问
+
+1. **为什么高攻不直接改 AttackPower？** 直接改值需要记录并恢复旧值，而且装备、升级也会同时改它，很容易还原错误；结算时叠加天然可逆。
+2. **为什么开发者状态也要 Model/System？** 多个战斗模块都需要读取同一状态，集中管理能避免 MonoBehaviour 静态变量散落，也方便自动测试。
+3. **无敌为什么不把减伤设为 100%？** 正式减伤有 95% 上限且至少扣 1 点血；在受伤入口明确返回 0 更符合无敌语义。
+4. **0CD 为什么还要清除旧冷却？** 只阻止新 CD 不会处理已经释放的技能，玩家开启后仍需等待；先清空才能立即反馈。
+5. **连续击破宝箱会绕过奖励吗？** 不会，每次仍调用正式 HandleDestroyed，只跳过多次测试之间的重生动画等待。
+6. **哪些内容会保存？** 金币、等级和宝箱进度走正式事件并保存；高攻、无敌、0CD 只存在当前运行时。
+7. **正式上线如何关闭？** 当前按作品演示约定在 PC 包保留；商业发布时可将环境判断改为只允许 Editor 或 Development Build，或使用编译宏彻底裁剪。
+
+### 8. 本次涉及知识点
+
+- QFramework Model、System、Command 与 Query
+- 临时状态和持久化状态的边界
+- 伤害结算管线与统一规则入口
+- 可逆属性修饰与避免数值漂移
+- 技能 CD、资源消耗和运行时数据
+- IMGUI 调试覆盖层
+- 事件驱动的宝箱奖励和 Boss 解锁
+- EditMode 单元测试与静态进度清理
+
+## 功能名称：Mushroom NPC 持久化任务系统
+
+### 1. 实现目标
+
+在不影响 Fungi 商店的前提下，增加一个独立 Mushroom 任务 NPC。玩家靠近后按 E 打开“蘑菇委托”，可以同时接取“击杀 5 只红色史莱姆”和“击杀 8 只绿色史莱姆”两条一次性任务；只有接取后的正式死亡才计数，完成后必须返回 NPC 手动领取 50/80 金币。
+
+任务状态、击杀数量和已领取状态属于角色长期数据。在线角色写入 SQL Server 的任务子表，游客角色写入 v5 JSON；角色死亡只重置原有战斗成长，不清除任务。
+
+### 2. 涉及脚本
+
+- `QuestCatalog / QuestTypes`：定义稳定任务 ID、目标怪物、目标数量、金币奖励和四阶段状态。
+- `QuestModel / QuestSystem`：维护角色运行时任务进度，统一处理接取、击杀、完成、领奖和恢复。
+- `QuestCommands / QuestQueries / QuestEvents`：为怪物、UI 和存档提供解耦的读写入口。
+- `MonsterQuestProgressReporter`：监听每个 SlimeCo 实例的 Died 事件，按 MonsterKind 上报一次正式死亡。
+- `QuestNpcController`：处理 Mushroom 的 3 米触发区、E 键交互和头顶问号显隐。
+- `QuestPanel / QuestListItemView`：根据 QuestCatalog 生成任务卡，显示进度、奖励和状态按钮。
+- `CharacterProgressSaveService / GameApiClient / LocalGuestSaveService`：处理立即保存、防抖保存、网络映射和游客 v5 迁移。
+- 服务端 `QuestPersistenceRules / DBService / UserService`：校验白名单与状态不可回退，并在角色保存事务中读写 `CharacterQuestProgress`。
+- `QuestFeatureSetupTool`：幂等创建配置、Prefab、淘宝 UI 视图和 MainScene 引用。
+- `QuestSystemTests / QuestFeatureAssetTests`：验证领域规则、金币原子性和资源完整性。
+
+### 3. 调用流程
+
+接取任务：`Player Input(E) -> QuestNpcController -> QuestPanelOpenRequestedEvent -> QuestPanel -> AcceptQuestCommand -> QuestSystem -> QuestModel -> QuestAcceptedEvent -> UI 刷新 + 立即保存`。
+
+击杀计数：`SlimeCo.DoDie -> Died -> MonsterQuestProgressReporter -> RecordMonsterDefeatedCommand -> QuestSystem -> QuestProgressChangedEvent -> UI 按需刷新 + 防抖保存`。
+
+领取奖励：`QuestListItemView -> QuestPanel -> ClaimQuestRewardCommand -> QuestSystem 检查金币上限 -> AddGoldCommand -> EconomySystem -> GoldChangedEvent -> Gold HUD + 立即保存`。
+
+角色恢复：`SceneFlowService -> RestoreQuestProgressCommand -> QuestSystem -> QuestModel -> QuestProgressRestoredEvent -> NPC 问号与任务面板刷新`。
+
+在线持久化：`GetPlayerProgressSaveDataQuery -> GameApiClient -> Protobuf -> UserService 校验 -> DBService 事务 -> CharacterQuestProgress`。
+
+### 4. 核心原理
+
+任务目录和角色进度分开保存。QuestCatalog 像“任务策划表”，只说明任务是什么；QuestModel 像“角色任务日志”，只记录这个角色接了没有、杀了几只、领了没有。这样改奖励或目标数量不会直接修改角色运行时数据，换 UI 也不会影响任务规则。
+
+任务只能按照 `Available -> Active -> ReadyToClaim -> Claimed` 向前推进。未接取时不会计数，达到目标后数量封顶，已领奖后不能再次接取或领取。奖励先检查能否完整放入金币上限，再通过 AddGoldCommand 发放；如果不能完整领取，任务保持 ReadyToClaim，避免“金币只加一部分但任务已经消失”。
+
+MonsterKind 与 SlimeType 分开：MonsterKind 表示红色或绿色这种稳定玩法身份，SlimeType 继续表示近战或远程行为。任务不通过材质颜色和 Prefab 名称猜怪物类型，因此以后换模型、材质或攻击方式也不会统计错。
+
+对象池中的史莱姆会反复启用和停用，所以死亡上报组件在 OnEnable 注册、OnDisable 注销。它只监听 SlimeCo 首次进入死亡状态时发出的 Died，不把对象池回收、场景清理或普通 Destroy 当成击杀。
+
+存档方面，接取和领奖是关键状态切换，立即请求保存；连续击杀可能很密集，使用一秒防抖合并请求。游客旧档没有 questProgress 时解释为“全部可接取”，在线服务端则用稳定 ID 白名单、唯一记录、目标数量和不可回退规则保护数据。
+
+### 5. Unity 测试方式
+
+1. 打开 `Assets/Scenes/MainScene.unity` 并运行，确认右侧 Fungi 商店仍正常，左侧 x=-3.4 的 Mushroom 头顶有问号。
+2. 靠近 Mushroom，确认只出现“按 E 查看蘑菇委托”，按 E 后游戏暂停、鼠标解锁并打开任务面板。
+3. 两条任务都接取，分别击杀红色与绿色史莱姆；重新打开面板，确认只增加对应任务，数量显示为 `当前/目标`。
+4. 红色达到 5、绿色达到 8 后回到 NPC，分别领取 50 和 80 金币，确认 Gold HUD 立即变化且按钮变为“已领取”。
+5. 按 ESC 和关闭按钮检查面板关闭、时间恢复、鼠标重新锁定；同时验证背包、商店、暂停和任务面板不会一起打开。
+6. 分别用游客和在线角色退出再进入，检查 Active、ReadyToClaim 和 Claimed 状态都能恢复；角色死亡后检查任务仍保留。
+7. 在 Test Runner 中运行 QuestSystemTests、QuestFeatureAssetTests、CharacterProgressPersistenceTests 和 GuestModePersistenceTests。
+
+### 6. 面试表达
+
+这个任务系统我分成静态配置、运行时逻辑和表现三层。QuestCatalog 用 ScriptableObject 配任务 ID、目标怪物、数量和奖励；QuestModel 只保存角色进度；QuestSystem 通过 Command 处理接取、击杀和领奖，并用 Event 通知 UI 和存档。史莱姆死亡通过独立上报组件订阅 Died 事件，对象池复用时成对注册注销。领奖复用统一 AddGoldCommand，并在状态切换前检查金币能否完整放入。任务数据同时接入游客 JSON 和在线 SQL 子表，服务端会校验白名单、数量范围和状态不可回退。这样新增任务主要是加配置，怪物、UI、经济和存档之间不会直接互相修改数据。
+
+### 7. 面试追问
+
+1. **为什么用 ScriptableObject 配任务？** 静态任务数据可以在 Inspector 调整并被多个角色共享，运行时角色进度单独存 Model，避免修改共享资源。
+2. **为什么不直接在 SlimeCo 里写任务逻辑？** SlimeCo 只负责战斗死亡，独立 Reporter 把死亡转换为任务命令，后续移除任务或增加别的统计系统都不需要改怪物核心逻辑。
+3. **怎样避免对象池重复统计？** Died 只在一次生命首次死亡时触发，Reporter 在 OnEnable/OnDisable 成对注册，回收和清场不会主动发送任务命令。
+4. **领奖为什么要先检查金币上限？** 奖励和任务状态应当是一个不可分割的业务结果；空间不足就不改任何数据，避免部分奖励或任务丢失。
+5. **任务 UI 为什么不每帧刷新？** UI 在接取、进度变化、领奖和存档恢复事件发生时刷新，减少无效查询和布局重建。
+6. **游客旧档怎样兼容？** 存档版本升到 v5，v1-v4 缺少任务字段时初始化为空列表；空列表在运行时代表所有目录任务为 Available。
+7. **服务端是否权威判定击杀？** 当前项目战斗仍由客户端驱动，首版服务端只校验任务数据结构和不可回退；商业项目应由服务端战斗事件推进任务，客户端只显示结果。
+
+### 8. 本次涉及知识点
+
+- ScriptableObject 数据驱动配置
+- QFramework Model、System、Command、Query、Event
+- 有限状态机与单向状态迁移
+- 事件驱动 UI 和模态窗口输入互斥
+- 对象池生命周期与事件注册/注销
+- 原子奖励、金币上限和失败不变式
+- Protobuf 向后兼容字段扩展
+- SQL 子表、事务保存和数据白名单校验
+- JSON 存档版本迁移与游客旧档兼容
+- EditMode 领域测试与 Prefab 资源测试
+
+## 功能名称：商店与任务对话 UI 统一及任务排版入口
+
+### 1. 实现目标
+
+把“风叶长靴”原来容易误认成叶子的图标换成明确的长靴图标；让 Fungi 的首次对话复用 Mushroom 任务窗口的视觉语言，同时保留原有“知道了 -> 打开商店”交互流程。任务面板和任务条目增加专用编辑菜单，打开 Prefab 后直接显示并选中需要排版的节点，方便在 Unity 中手动调整。
+
+### 2. 涉及脚本
+
+- `InventoryFeatureSetupTool`：为风叶长靴保存跨目录鞋子图标路径，防止重新装配后退回旧图标。
+- `ShopFeatureSetupTool`：把 Fungi 对话迁移到任务窗口背景、金色标题、暖色正文和任务绿色按钮，并升级视觉迁移版本。
+- `QuestFeatureSetupTool`：提供任务面板与任务条目的 Prefab Mode 编辑入口；重建菜单增加覆盖警告。
+- `GameplayUiRoot.prefab`：保存新版 Fungi 对话布局，并让 QuestModal 在编辑态可见。
+- `ShopFeatureAssetTests / QuestFeatureAssetTests`：保护鞋子图标、统一背景、按钮资源、任务面板可见状态和序列化引用。
+
+### 3. 调用流程
+
+Fungi 对话：`MerchantNpcController -> MerchantShopPanel 显示 FirstDialogue -> Fungi 对话窗口 -> 点击“知道了” -> MerchantShopPanel 打开 ShopPanel`。
+
+任务排版：`Unity 菜单 Tools/Treasure Hunter/Quest/Edit Quest Panel Layout -> AssetDatabase.OpenAsset -> PrefabStage -> 显示 QuestModal、隐藏 QuestPrompt -> 选中 QuestModal/Panel -> 手动拖拽并 Ctrl+S`。
+
+运行时隐藏：`实例化 GameplayUiRoot -> QuestPanel.Start -> panelRoot.SetActive(false) -> 玩家与 Mushroom 交互后再打开`。
+
+### 4. 核心原理
+
+视觉统一只替换表现层资源和 RectTransform 参数，没有替换 MerchantShopPanel，也没有改商店业务事件。Fungi 仍使用自己的首次对话和“知道了”按钮，只是背景、文字层级和按钮素材与 Mushroom 任务窗口一致。因此 UI 风格统一，但两个 NPC 的功能职责不会混在一起。
+
+QuestModal 在 Prefab 资产中保持激活，是为了让编辑者打开 Prefab 就能看到面板；进入游戏时 QuestPanel.Start 会主动关闭它。可以把这理解为“编辑态默认展开，运行态初始化收起”，既方便排版，又不改变玩家看到窗口的时机。
+
+编辑器菜单通过 PrefabStage 定位真实的 Prefab 内容，不在场景实例上做临时修改。菜单会选中并聚焦 `QuestModal/Panel`；任务重建入口明确提示会覆盖手调布局，减少误操作。生成工具和当前资源同时更新，避免以后重跑工具后样式回退。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene` 运行，查看背包或商店中的风叶长靴，确认显示为鞋子图标。
+2. 第一次靠近 Fungi 按 E，确认对话使用与 Mushroom 任务面板相同的公会背景、居中金色标题和任务绿色按钮。
+3. 点击“知道了”，确认仍正常进入商店；关闭和再次打开商店，确认原逻辑不变。
+4. 退出 Play Mode，执行 `Tools/Treasure Hunter/Quest/Edit Quest Panel Layout`，确认进入 GameplayUiRoot 的 Prefab Mode，QuestModal 已显示且 Panel 被选中。
+5. 手动移动 Title、Content 或 Feedback，按 Ctrl+S；关闭后重新打开，确认排版保留。
+6. 执行 `Edit Quest List Item Layout`，确认可以单独编辑任务卡 Prefab。
+7. 打开带 `Overwrites Manual Layout` 的任务重建菜单，确认 Unity 会先弹出覆盖警告，测试时选择取消。
+
+### 6. 面试表达
+
+这次我没有把商店对话逻辑改成任务逻辑，而是只统一表现层。Fungi 继续由 MerchantShopPanel 控制首次对话和商店开启，背景、标题、正文和按钮素材则复用任务 UI 的视觉规范。任务面板为了方便美术和策划手调，我增加了 PrefabStage 编辑入口：菜单会打开 GameplayUiRoot、显示运行时默认隐藏的 QuestModal，并自动选中核心面板；运行时再由 QuestPanel.Start 关闭。生成工具也增加覆盖警告，并用资产测试保护图标、Sprite 和节点状态，避免重新生成导致回退。
+
+### 7. 面试追问
+
+1. **为什么不让 Fungi 直接复用 QuestPanel？** 两者业务职责不同，复用整个面板会让商店依赖任务组件；这里只复用视觉资源，耦合更低。
+2. **Prefab 里 QuestModal 激活会不会开局显示？** 不会，QuestPanel.Start 在第一帧渲染前主动把 panelRoot 关闭，交互后才重新打开。
+3. **为什么需要专门的编辑菜单？** GameplayUiRoot 层级较深且窗口默认隐藏，菜单能稳定定位、显示并聚焦目标，降低手动找节点和误改场景实例的成本。
+4. **为什么重建菜单要警告？** 生成工具会删除再创建 QuestFeature 和 QuestListItem，属于可能覆盖人工排版的操作，必须让编辑者明确确认。
+5. **如何防止鞋子图标以后又变回叶子？** 当前 ScriptableObject 和生成配置都改成同一完整路径，并用资产测试校验最终 Sprite 路径。
+
+### 8. 本次涉及知识点
+
+- UGUI Image、Text、Button 与 RectTransform
+- Prefab Mode、PrefabStage、Selection 和 SceneView 聚焦
+- 编辑态状态与运行时初始化状态的区别
+- 表现层复用与业务层职责隔离
+- Editor MenuItem、Undo 和场景脏标记
+- 生成工具版本迁移与人工布局保护
+- ScriptableObject 资源引用与 GUID
+- EditMode Prefab 资产测试
+
+## 功能名称：统一游戏音乐与核心音效系统
+
+### 1. 实现目标
+
+把原先散落在场景、玩家和怪物 Prefab 中的 AudioClip 引用收口到统一配置。游戏第一次进入 LoadingScene 就播放登录主题，登录、选角、野外和 Boss 房间按场景平滑切歌；角色、技能、敌人、金库、拾取、任务、商店、传送门和 UI 使用统一语义 Cue。原有 Master、Music、Sounds 三档设置与 PlayerPrefs 数据保持兼容。
+
+### 2. 涉及脚本
+
+- `GameAudioTypes.cs`：定义业务层使用的 `GameSfxId`，玩法代码不直接依赖音频文件。
+- `GameAudioCatalog.cs`：ScriptableObject 数据层，保存场景音乐、候选音效、基础音量、随机音高和 2D/3D 参数。
+- `GameAudioService.cs`：跨场景播放服务，负责双 BGM 交叉淡化、2D 音源和 16 个 3D 音源池，并监听死亡、购买和任务事件。
+- `UiAudioFeedback.cs`：只负责监听 Button 点击并播放通用点击 Cue。
+- `PlayerAudioComponent.cs`：把职业、连击段数和技能 ID 转换为对应 Cue。
+- `SlimeCo`、`SpiderKingBossController`、`BoxCo`、`WorldItemPickup`、`WorldGoldPickup`、`BossScenePortal`：在行为真正成功的位置触发空间音效。
+- `GameAudioSetupTool.cs`：统一配置 AudioImporter、Catalog、正式场景环境音和 UI Prefab，清理旧 BGM。
+- `GameAudioTests.cs`：保护资源数量、Cue 完整性、导入策略、Mixer 路由、重复 BGM 和 UI 点击组件。
+
+### 3. 调用流程
+
+场景加载 -> `GameAudioService.HandleSceneLoaded` -> `GameAudioCatalog.TryGetSceneMusic` -> 双 Music AudioSource 交叉淡化 -> Main.mixer/Music
+
+玩家攻击或交互成功 -> 业务组件 -> `GameAudioService.Play2D / PlayAt / PlayOn` -> Catalog 查找 Cue -> 随机候选 AudioClip -> Main.mixer/Sounds
+
+设置面板拖动滑杆 -> `GameSettingsService` -> Main.mixer 暴露参数 -> Music 或 Sounds 分组整体改变响度
+
+### 4. 核心原理
+
+可以把系统理解为“菜单、调度员和播放器”。`GameAudioCatalog` 是菜单，记录每个声音标识可以选哪些素材、响度和空间参数；`GameAudioService` 是调度员，决定用音乐音源、2D 音源还是 3D 音源池；AudioSource 和 AudioMixer 才是真正的播放器与总控台。
+
+业务脚本只说“播放 Boss 受击”或“播放金币拾取”，不保存具体 AudioClip。以后换素材只改 Catalog，伤害、任务、背包逻辑都不用改。BGM 使用两个 AudioSource：新曲淡入的同时旧曲淡出，且用 `Time.unscaledDeltaTime`，暂停游戏时也能完成切歌。3D 短音效使用 16 个预热音源轮换，避免 `PlayClipAtPoint` 每次创建临时 GameObject 带来的实例化和 GC 波动。
+
+LoadingScene 是短过渡场景：第一次启动且没有音乐时播放 Happy；普通场景切换经过 Loading 时保持旧曲，到目标场景激活后才交叉切换。相同 AudioClip 会直接忽略重复请求，因此不会叠播。Music 和 Sounds 分别进入现有 Mixer 分组，玩家之前保存的三档音量数据无需迁移。
+
+### 5. Unity 测试方式
+
+1. 从 Build Settings 的 `LoadingScene` 启动，确认立刻听到 Happy；进入 Login 不应重新起一遍同一首歌。
+2. 依次进入 `CharacterSelectScene`、`MainScene`、`BossRoomScene`，确认 Mystery、Forest、Darkness 进行约 1 秒交叉切换且无叠播。
+3. 在 MainScene 测试四职业移动、跳跃、翻滚和普攻，确认武器声音按职业变化；释放 1001 火球、1002 毒区、2001 旋转斩。
+4. 测试史莱姆近战/远程/受击/死亡、Spider King 三类攻击/受击/死亡、金库受击/击破、金币/物品拾取和传送门。
+5. 打开任务、商店及正式 UI，确认点击、购买、接受任务和领奖反馈。
+6. 在设置中分别把 Master、Music、Sounds 拉到 0，再取消、应用并重启，确认预览、恢复和持久化都正确。
+7. 执行 EditMode 测试 `GameAudioTests`，确认 6 项全部通过。
+
+### 6. 面试表达
+
+这个音频系统我分成了配置层、播放服务和业务触发三部分。配置层用 ScriptableObject 维护场景 BGM 和语义化 Cue，每个 Cue 可以配置多个随机片段、基础音量、音高和 2D/3D 参数；业务代码只传枚举，不直接引用 AudioClip。播放服务跨场景常驻，用双 AudioSource 做不受 timeScale 影响的 BGM 交叉淡化，并预热 16 个 3D AudioSource 做复用，减少临时对象和 GC。所有音乐和音效分别路由到现有 AudioMixer 的 Music、Sounds 分组，所以保留了主音量、音乐和音效设置以及原有存档格式。最后我用 EditMode 测试保护 Cue 完整性、导入策略、Mixer 路由和场景重复 BGM。
+
+### 7. 面试追问
+
+1. **为什么用 ScriptableObject？** 音频属于可配置数据，换素材和调基础响度时不需要修改玩法代码或多个 Prefab，且 Inspector 中能直观看到引用。
+2. **为什么 BGM 要两个 AudioSource？** 单音源只能先停旧曲再播新曲；双音源可以同时控制旧曲淡出和新曲淡入，实现无缝交叉切换。
+3. **为什么使用 unscaledDeltaTime？** 设置面板或暂停界面可能把 `timeScale` 设为 0，真实时间仍能保证音乐淡化完成。
+4. **音源池解决什么问题？** 避免每个空间音效都临时创建和销毁 GameObject，减少 Instantiate/Destroy 开销、GC 和帧时间波动；代价是高并发超过容量时需要制定复用策略。
+5. **为什么 UI 点击用组件而不是每个按钮手写监听？** `UiAudioFeedback` 只负责通用表现，可由工具批量挂载，动态条目从 Prefab 继承，业务按钮逻辑保持独立。
+6. **LoadingScene 为什么不固定切音乐？** 它停留时间短，反复切歌会造成听感破碎；只有首次启动兜底，后续等目标场景真正激活再切换。
+7. **如何继续扩展？** 可以增加并发上限、Cue 冷却、优先级、音频总线快照、Addressables 异步加载以及按地表材质选择脚步声。
+
+### 8. 本次涉及知识点
+
+- ScriptableObject 数据驱动配置
+- AudioSource、AudioClip 与 AudioMixerGroup 路由
+- 分贝与线性音量、PlayerPrefs 持久化
+- 跨场景单例和 `RuntimeInitializeOnLoadMethod`
+- 不受 `timeScale` 影响的协程与交叉淡化
+- 2D/3D 空间音效、衰减距离与单声道
+- AudioSource 对象池、随机候选与音高扰动
+- Unity 场景加载事件和 QFramework 事件订阅/注销
+- AudioImporter 的 Streaming、Decompress On Load、Compressed In Memory
+- Editor 工具批量配置与 EditMode 回归测试
+
+## 功能名称：NPC 交互提示、ESC 鼠标与商店金币可见性修复
+
+### 1. 实现目标
+
+统一 Fungi 首次对话与 Mushroom 任务窗口的视觉语言；修复商店和任务面板按 ESC 后鼠标没有重新锁定的问题；让玩家远离 NPC 后可靠隐藏“按 E”提示；把商店金币文本放回屏幕右上角安全区域。
+
+### 2. 涉及脚本
+
+- `GameSessionUi`：先立即锁定，再等待 ESC 松开后于帧末二次锁定，避免 Unity Editor 的 ESC 行为覆盖鼠标状态。
+- `MerchantShopPanel / QuestPanel`：关闭最后一个模态界面时请求恢复玩法鼠标。
+- `MerchantNpcController / QuestNpcController`：保存真实玩家 Collider，并主动清理失效或已经离开交互范围的引用。
+- `ShopFeatureSetupTool`：统一对话色值，修复 ShopGoldText 锚点、位置、颜色和描边，并升级视觉迁移版本。
+- `GameplayUiRoot.prefab`：保存最终 Fungi 对话和商店金币布局。
+- `ShopFeatureAssetTests`：保护对话背景、标题正文色值和金币安全区域。
+
+### 3. 调用流程
+
+ESC 关闭：`Input.GetKeyDown(Escape) -> GameSessionUi -> MerchantShopPanel.TryCloseTopModal / QuestPanel.TryClose -> 恢复 timeScale -> RequestGameplayCursorRestore -> 当帧锁定 -> 等待 ESC 松开 -> 帧末确认无其它模态 -> 再次锁定`。
+
+提示隐藏：`OnTriggerEnter/Stay -> 记录玩家 Collider -> 每帧检查 Collider 有效性与 ClosestPoint 距离 -> 清除失效引用 -> 集合为空 -> ProximityChanged(false) -> Panel.RefreshPromptVisibility -> 隐藏按 E`。
+
+金币显示：`打开 ShopPanel -> GetGoldQuery -> MerchantShopPanel.RefreshGold -> ShopGoldText`；购买后由 `GoldChangedEvent` 再次刷新余额。
+
+### 4. 核心原理
+
+Unity Editor 会把 ESC 当作“释放 Game View 鼠标”的快捷操作。如果脚本只在 ESC 当帧或按键仍按住时锁定，编辑器仍可能再次解锁。因此最终采用立即锁定，再等待 ESC 松开并到达帧末后二次确认；确认前会检查是否又打开了暂停、背包或其它模态界面，避免抢走 UI 鼠标。
+
+触发器事件不是绝对可靠的状态存储。Collider 被禁用、销毁或角色瞬移时，`OnTriggerExit` 可能没有机会执行。现在 HashSet 保存真实 Collider，每帧只遍历当前重叠项，清理空引用、禁用对象、非玩家对象和已经超过三米范围的对象。清理使用复用 List，避免每帧产生委托或临时集合 GC。
+
+金币业务数据原本是正确的，问题来自 RectTransform：右上角锚点配正 X 偏移会把文字推向屏幕外。修复后使用右上角锚点、负向安全边距、金币色和描边，数据查询与表现布局仍保持分离。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，分别靠近 Fungi 和 Mushroom，确认进入约三米范围才显示按 E。
+2. 快速进出触发区多次，并尝试翻滚离开，确认远离后提示立即消失。
+3. 打开 Fungi 首次对话，确认背景、尺寸、金色标题、暖色正文和绿色按钮与任务窗口一致。
+4. 打开商店，确认右上角显示当前金币；购买后余额和扣款反馈立即更新。
+5. 分别打开商店和任务面板后按下并松开 ESC，确认松开后鼠标隐藏并锁定，可以继续控制镜头。
+6. 使用关闭按钮重复测试，确认鼠标状态同样恢复。
+7. 在 Test Runner 运行 `UiCursorStateTests`、`ShopFeatureAssetTests` 和 `QuestFeatureAssetTests`。
+
+### 6. 面试表达
+
+这次主要修复了三个 UI 状态边界。模态面板关闭时我没有只依赖 ESC 当帧的 Cursor 设置，而是由 GameSessionUi 统一立即锁定，等待 ESC 松开后再在帧末确认一次，因为 Unity Editor 会用 ESC 释放 Game View 鼠标。NPC 提示也不再把 OnTriggerExit 当作唯一真相，而是保存真实 Collider，并主动清理失效或已经超过交互距离的引用。商店金币的数据查询原本正常，实际是右上角 RectTransform 正偏移导致文字在屏幕外，我修正了安全边距并用资产测试保护。整个修改只调整交互和表现层，没有改经济、任务或存档规则。
+
+### 7. 面试追问
+
+1. **为什么要等 ESC 松开后再锁一次？** Unity Editor 自己也会处理 ESC 并释放 Game View 鼠标；按键仍按住时重新锁定可能继续被覆盖，松开后的帧末确认更稳定。
+2. **为什么不能只依赖 OnTriggerExit？** 对象禁用、销毁、传送和物理状态变化可能让退出事件丢失，提示状态就会永久残留。
+3. **怎样兼容玩家有多个 Collider？** HashSet 分别记录真实 Collider，只有所有有效 Collider 都离开后才发送附近状态为 false。
+4. **每帧校验会不会影响性能？** 只有两个 NPC，而且只遍历当前记录的少量 Collider；清理列表会复用，不产生持续 GC。
+5. **金币不显示为什么不改 EconomySystem？** 查询和事件刷新都正常，根因是 UI 坐标在屏幕外；修改业务层反而会扩大影响范围。
+
+### 8. 本次涉及知识点
+
+- Unity CursorLockMode 与 Editor Game View 行为
+- Coroutine、按键松开后的帧末确认与模态界面互斥
+- Trigger Enter/Stay/Exit 的可靠性边界
+- HashSet、Collider.ClosestPoint 与无 GC 清理
+- 事件驱动交互提示刷新
+- RectTransform 锚点、Pivot 和安全边距
+- 表现层与经济/任务业务层解耦
+- Prefab 定点迁移版本与资产回归测试
+
+## 功能名称：商店底部提示统一与 ESC 光标二次修复
+
+### 1. 实现目标
+
+根据实际运行截图，把 Fungi 商店底部的黑色交互条改成与 Mushroom 任务提示完全相同的金色装饰样式；同时修复在 Unity Editor 中按 ESC 关闭商店或任务窗口后光标仍被释放的问题。
+
+### 2. 涉及脚本
+
+- `ShopFeatureSetupTool`：给商店提示应用任务提示的背景精灵、尺寸、位置、字号、颜色和内边距，并升级视觉迁移版本。
+- `GameSessionUi`：等待 ESC 松开并完成帧末处理后，再次恢复玩法光标。
+- `ShopFeatureAssetTests`：逐项比较商店提示与任务提示的 Sprite、Image、RectTransform 和 Text 参数。
+- `GameplayUiRoot.prefab`：保存统一后的底部提示。
+
+### 3. 调用流程
+
+提示迁移：`ShopFeatureSetupTool -> InteractionPrompt -> 复用 QuestPrompt 背景 -> 同步 RectTransform/Text 参数 -> 保存 GameplayUiRoot.prefab`。
+
+光标恢复：`ESC 关闭模态 -> 立即尝试锁定 -> Coroutine 等待 Input.GetKey(Escape) 为 false -> WaitForEndOfFrame -> 确认玩法未被其它 UI 阻挡 -> Locked + Hidden`。
+
+### 4. 核心原理
+
+视觉一致不等于让两个业务面板互相引用。本次只共享同一个 UI 精灵和布局规范，商店提示仍由 `MerchantShopPanel` 控制，任务提示仍由 `QuestPanel` 控制。这样修改商店业务不会影响任务状态机，但玩家看到的是统一的交互语言。
+
+Unity Editor 会把 ESC 用作释放 Game View 光标。等待固定一帧并不保证玩家已经松开按键，所以改为等待真实按键状态结束，再在帧末恢复。相比每帧强制锁定，这个方案不会破坏大地图等需要解锁鼠标但不暂停时间的界面。
+
+### 5. Unity 测试方式
+
+1. 在 `MainScene` 分别靠近 Fungi 和 Mushroom，比较两套底部提示的边框、左右装饰、尺寸和高度。
+2. 分别进入商店和任务窗口，按住 ESC 片刻再松开，确认窗口关闭且镜头恢复。
+3. 使用窗口关闭按钮重复测试，确认不按 ESC 也能在帧末恢复鼠标。
+4. 展开大地图，确认鼠标不会被本次逻辑持续抢回。
+5. 在 Test Runner 运行 `ShopFeatureAssetTests` 和 `UiCursorStateTests`。
+
+### 6. 面试表达
+
+这次我根据运行截图发现，之前统一错了 UI 层级：实际需要统一的是 NPC 底部交互提示，不是弹窗。我让商店和任务提示共享同一张切片背景和同一套布局参数，但保留各自的面板控制逻辑。鼠标问题则来自 Unity Editor 会用 ESC 释放 Game View 光标，固定延迟一帧仍可能发生在按键松开之前，所以我改成等待 ESC 松开后在帧末恢复，并在恢复前检查其它模态界面，避免抢走其它 UI 的鼠标。
+
+### 7. 面试追问
+
+1. **为什么不直接让商店使用 QuestPrompt 对象？** 两个提示生命周期和业务事件不同，直接共用对象会产生跨系统引用；共享视觉资源和规范更低耦合。
+2. **为什么固定等待一帧不够？** 玩家按键可能持续多帧，Editor 仍会保持释放光标的处理结果。
+3. **为什么不用 Update 每帧强制 Locked？** 大地图等非暂停 UI 也需要自由鼠标，持续强制会破坏它们。
+4. **为什么使用 WaitForEndOfFrame？** 确保当前帧的输入和 Editor 光标处理已经完成，再写入最终玩法状态。
+5. **如何防止以后两套提示又不一致？** 资产测试直接比较 Sprite、Image、RectTransform 和 Text 参数，出现漂移会立即失败。
+
+### 8. 本次涉及知识点
+
+- UGUI 九宫格切片与 `Image.Type.Sliced`
+- RectTransform 锚点、Pivot、Offset 和底部定位
+- 输入按下、持续、松开的生命周期
+- `WaitForEndOfFrame` 与 Unity 帧顺序
+- Unity Editor 和 Standalone 的光标行为差异
+- UI 视觉复用与业务解耦
+- Prefab 定点迁移和资产一致性测试
+
+## 功能名称：Mushroom 任务面板安全区域排版修复
+
+### 1. 实现目标
+
+修复任务面板标题、底部提示以及任务卡中的图标、文字、奖励和按钮互相遮挡的问题。调整只发生在任务 UI 表现层，不改变接取、击杀计数、领奖和持久化规则。
+
+### 2. 涉及脚本
+
+- `QuestFeatureSetupTool.cs`：按淘宝背景素材的装饰区域重新生成任务卡，并使用正确的 Anchor/Pivot 生成面板控件。
+- `QuestListItem.prefab`：保存标题、描述、进度、奖励和按钮的新安全区域布局。
+- `GameplayUiRoot.prefab`：保存面板标题、关闭按钮、任务列表和底部反馈文字的新锚点。
+- `QuestFeatureAssetTests.cs`：检查控件边界、区域重叠和两张任务卡所需的列表高度。
+
+### 3. 调用流程
+
+编辑器执行 UI 布局迁移 -> `BuildQuestItemPrefab` 划分任务卡安全区域 -> `UpgradeGameplayUiPrefab` 修正弹窗锚点 -> 保存两个 Prefab -> `QuestPanel` 运行时生成任务卡 -> `QuestListItemView.Bind` 只刷新内容和状态。
+
+### 4. 核心原理
+
+淘宝任务条图片并不是纯背景，它已经画好了左侧徽章和右侧奖杯。如果再把敌人图标或按钮放在这些坐标上，即使 RectTransform 没有互相相交，视觉上仍会发生遮挡。因此排版时先划分“素材装饰区”和“动态内容安全区”，所有会变化的文字、进度、奖励和按钮都放在中间安全区。
+
+Anchor 决定坐标参考点，Pivot 决定控件用自身哪个点对齐参考点。旧标题以面板中心为 Anchor，却使用了从左下角计算的 X 坐标，等于重复增加了半个面板宽度。修复后标题使用顶部中心锚点，关闭按钮使用右上角锚点，反馈文字使用底部中心锚点，因此不同分辨率缩放时仍保持正确位置。
+
+文字使用 Best Fit 和 Truncate 作为最后保护：正常配置保持最大字号，极端长文本会先缩小，仍放不下时只在自己的矩形内截断，不会进入奖励或按钮区域。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，靠近 Mushroom 后按 E。
+2. 检查两张任务卡之间有间距，标题、描述、进度、金币和按钮互不遮挡。
+3. 检查左侧徽章和右侧奖杯装饰没有被任务内容覆盖。
+4. 分别查看接取、进行中、可领取和已领取状态，确认按钮文字仍完整。
+5. 切换到 1920×1080、1600×900 和 1280×720，确认标题、关闭按钮和底部提示都在面板内。
+6. 运行 `QuestFeatureAssetTests`，检查 Prefab 引用、边界和重叠断言。
+
+### 6. 面试表达
+
+这次任务 UI 的问题不只是普通 RectTransform 重叠，还包括动态控件覆盖了背景素材自带的徽章和奖杯。我先根据原图划分左右装饰区和中间安全区，再把标题、描述、进度、奖励和状态按钮分成互不相交的矩形。弹窗标题、关闭按钮和反馈文字则改成符合语义的顶部中心、右上角和底部中心锚点。最后增加资产测试，用几何边界检查保护控件不会跑出父节点，也检查两张任务卡的总高度和关键区域不重叠。
+
+### 7. 面试追问
+
+1. **Anchor 和 Pivot 有什么区别？** Anchor 是控件相对父节点的参考位置，Pivot 是控件自身围绕哪个点定位、缩放和旋转。
+2. **为什么坐标没有相交，画面仍可能遮挡？** 背景 Sprite 本身也可能包含图标和装饰，动态控件需要避开素材的视觉安全区域。
+3. **为什么不用 Update 每帧修布局？** 布局是静态规则，应该保存在 Prefab；运行时只在数据变化时刷新文字和进度，避免无意义计算。
+4. **长任务名称怎么处理？** 先限制在独立 RectTransform 中并允许 Best Fit，仍放不下时截断，不能让文字溢出到奖励区域。
+5. **怎样避免以后重新生成又恢复错误布局？** 同时修改幂等生成工具和生成后的 Prefab，并用 EditMode 资产测试保护关键边界。
+
+### 8. 本次涉及知识点
+
+- RectTransform 的 Anchor、Pivot、anchoredPosition 和 sizeDelta
+- UGUI VerticalLayoutGroup 与 LayoutElement
+- UI 素材装饰区和动态内容安全区
+- Text Best Fit、Wrap 与 Truncate
+- Prefab 编辑器生成工具的幂等性和最小影响范围
+- EditMode 资产测试与 RectTransform 几何边界检查
+
+## 功能名称：商店被任务模态层遮挡修复
+
+### 1. 实现目标
+
+修复加入 Mushroom 任务 UI 后，Fungi 商店虽然收到打开事件、却被任务功能根节点中的全屏 UI 遮挡，表现为按 E 后商店打不开的问题。修复同时保证商店、对话和任务窗口在运行时默认关闭，并让最后打开的功能窗口显示在 Canvas 最上层。
+
+### 2. 涉及脚本
+
+- `MerchantShopPanel.cs`：运行时关闭商店相关根节点；打开 Fungi 对话或商店前提升整个 `MerchantShopFeature`。
+- `QuestPanel.cs`：运行时关闭任务相关根节点；打开任务窗口前提升整个 `QuestFeature`。
+- `QuestFeatureSetupTool.cs`：生成 `GameplayUiRoot.prefab` 时把 `QuestModal` 保存为未激活状态。
+- `GameplayUiRoot.prefab`：保存商店、对话、任务等模态根节点的正确默认状态。
+- `ShopFeatureAssetTests.cs`、`QuestFeatureAssetTests.cs`：验证模态根节点默认隐藏，并验证商店与任务功能根节点处于同一个 Canvas 层级。
+- `QuestFeatureTestRunner.cs`：增加不会切换或保存当前场景的共享模态资源冒烟检查。
+
+### 3. 调用流程
+
+打开商店：`Fungi 触发范围 -> MerchantNpcController 检测 E -> ShopOpenRequestedEvent -> MerchantShopPanel -> 检查其它模态窗口 -> MerchantShopFeature.SetAsLastSibling -> 显示 ShopPanel`。
+
+打开任务：`Mushroom 触发范围 -> QuestNpcController 检测 E -> QuestPanelOpenRequestedEvent -> QuestPanel -> 检查其它模态窗口 -> QuestFeature.SetAsLastSibling -> 显示 QuestModal`。
+
+### 4. 核心原理
+
+UGUI 在同一个 Canvas 中通常按照 Hierarchy 的兄弟顺序绘制，越靠后的对象越晚绘制，也就越容易显示在上面。商店和任务不是两个普通 Panel 兄弟，而是分别放在 `MerchantShopFeature` 与 `QuestFeature` 两个功能根节点下面。因此只对内部 `ShopPanel` 调用 `SetAsLastSibling`，只能改变它在商店功能内部的顺序，无法越过排在后面的整个 `QuestFeature`。
+
+本次把层级提升放到功能根节点：哪个模态窗口最后成功打开，就把对应 Feature 移到 Canvas 末尾。与此同时，`Awake` 会在运行时尽早关闭可能用于 Prefab 排版预览的全屏根节点，避免透明但可射线检测的 Graphic 抢走点击或遮住其它 UI。打开前仍通过 `GameSessionUi` 检查暂停、背包和另一套 NPC 模态，保证互斥规则不被绘制顺序替代。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene` 并运行游戏，先不要靠近 NPC，确认任务和商店窗口都不会自动出现。
+2. 靠近右侧 Fungi，按 E 进入对话，再点击进入商店，确认商品列表正常显示并可关闭。
+3. 靠近左侧 Mushroom，按 E 打开任务面板，关闭后再次回到 Fungi 打开商店。
+4. 反向测试：先打开商店并关闭，再打开任务面板，确认最后打开的窗口位于最上层。
+5. 验证商店、任务、背包和暂停窗口不能同时打开，ESC 关闭后角色输入和鼠标状态恢复。
+6. 在 EditMode Test Runner 中运行 `ShopFeatureAssetTests` 和 `QuestFeatureAssetTests`。
+
+### 6. 面试表达
+
+加入任务 UI 后，商店打不开并不是 NPC 触发器或 E 键失效，而是 UGUI 的层级问题。商店和任务分别在两个 Feature 根节点下，之前只把内部 ShopPanel 移到最后，它仍然无法越过整个 QuestFeature。我把显示顺序的控制提升到 Feature 根节点，最后打开哪个窗口就把哪个 Feature 放到 Canvas 最后，同时在 Awake 关闭编辑预览可能留下的全屏模态对象，并保留 GameSessionUi 的互斥检查。这样既修复遮挡，也避免两个面板同时抢输入。
+
+### 7. 面试追问
+
+1. **为什么 ShopPanel.SetAsLastSibling 不够？** 它只能改变同一个父节点内部的顺序；真正参与跨功能排序的是两个 Feature 根节点。
+2. **为什么全屏对象透明也会有问题？** `Image` 等 Graphic 即使看起来透明，只要开启 Raycast Target，仍可能拦截指针事件；激活的全屏层也会影响绘制结果。
+3. **为什么在 Awake 隐藏，而不是等 Start？** Awake 更早执行，可在首帧 UI 输入和其它组件初始化前消除错误的默认可见状态。
+4. **只调整层级会不会让两个窗口同时打开？** 所以仍保留 `GameSessionUi` 的互斥状态检查；层级只负责显示，状态管理负责是否允许打开。
+5. **如何防止生成工具以后把问题带回来？** 生成工具将 QuestModal 固定保存为未激活，并用资产测试断言默认状态和父级关系。
+
+### 8. 本次涉及知识点
+
+- UGUI Canvas 绘制顺序与 Hierarchy 兄弟索引
+- `Transform.SetAsLastSibling` 的作用范围
+- Feature 根节点与内部 Panel 的层级区别
+- `Awake`、`OnEnable`、`Start` 的初始化时序
+- Graphic Raycast Target 与透明 UI 的输入拦截
+- 模态窗口互斥、暂停和输入状态管理
+- Prefab 默认激活状态与 EditMode 资产测试
+
+## 功能名称：宝箱金币安全掉落点修复
+
+### 1. 实现目标
+
+修复宝箱被击破后，金币生成在宝箱实体碰撞体内部，玩家被碰撞体挡住而无法进入拾取 Trigger 的问题。金币现在会生成在宝箱朝向玩家的一侧，并完整避开宝箱碰撞体。
+
+### 2. 涉及脚本
+
+- `VaultGoldRewardController.cs`：击破结算时读取当前玩家方向、宝箱碰撞体和金币 Trigger 半径，计算安全生成位置。
+- `WorldPickupSpawnUtility.cs`：负责寻找碰撞体外表面和保留掉落物安全净空，不处理实例化或奖励业务。
+- `WorldPickupSpawnUtilityTests.cs`：验证多个玩家方向、无碰撞体备用路径，以及实际 Box/金币 Prefab 配置。
+
+### 3. 调用流程
+
+`玩家攻击宝箱 -> BoxCo.HandleDestroyed -> OnVaultDestroyed -> VaultGoldRewardController -> 获取玩家方向与金币半径 -> WorldPickupSpawnUtility.CalculateOutsidePosition -> WorldGoldPool.Get -> WorldGoldPickup.OnTriggerEnter -> AddGoldCommand`。
+
+### 4. 核心原理
+
+旧逻辑使用“宝箱坐标向上 0.8 米”作为金币位置，但 `MainScene` 中宝箱碰撞体从底部一直覆盖到三米多高，因此这个位置仍在实体内部。金币虽然使用 Trigger，但玩家自己的碰撞体不能穿过宝箱实体，自然无法触发拾取。
+
+新逻辑先根据玩家相对宝箱的水平方向，在宝箱外创建一个探测点，再使用 `Collider.ClosestPoint` 找到这一侧的真实表面。随后沿表面外法线移动“金币触发球半径 + 额外间距”，确保不是只有金币中心在外面，而是整个拾取范围都离开宝箱。玩家攻击宝箱时所在的一侧通常已经可通行，所以比固定向前或向右掉落更可靠。
+
+位置计算被拆成无状态工具类，奖励控制器只负责决定何时掉落、掉多少金币和使用哪个方向；对象池仍只负责创建、复用与回收。这样几何计算、奖励规则和生命周期互不混杂。
+
+### 5. Unity 测试方式
+
+1. 打开 `MainScene`，从宝箱左、右、前、后等不同方向将其击破。
+2. 确认金币出现在玩家这一侧，而不是宝箱模型或碰撞体内部。
+3. 靠近金币，确认立刻拾取、播放金币音效并刷新金币 HUD。
+4. 连续击破多次，确认对象池复用的金币每次都会移动到新的正确位置。
+5. 在 EditMode Test Runner 中运行 `WorldPickupSpawnUtilityTests`。
+6. 也可以执行菜单 `Tools/Treasure Hunter/Validate Vault Gold Spawn` 运行不切换场景的专项测试。
+
+### 6. 面试表达
+
+宝箱金币无法拾取的原因是生成点只做了向上偏移，但这个偏移仍位于宝箱的实体碰撞体内。我的修复不是简单写死另一个坐标，而是根据玩家攻击宝箱时所在的方向，用 Collider.ClosestPoint 找到朝向玩家的一侧表面，再把金币沿外法线推出“拾取球半径加安全间距”。这样整个 Trigger 都在碰撞体外，而且奖励会落在玩家已经能够到达的一侧。位置计算单独放在无状态工具类，奖励发放和对象池逻辑都不需要改。
+
+### 7. 面试追问
+
+1. **为什么只把金币中心移到碰撞体外还不够？** 金币的 SphereCollider 有半径，中心在外但球体仍可能与宝箱重叠，所以要把半径计入安全距离。
+2. **为什么使用 Collider.ClosestPoint？** 它可以根据实际碰撞体形状返回最近表面点，不需要把 BoxCollider 尺寸写死进玩法代码。
+3. **为什么朝玩家方向掉落？** 玩家能够攻击宝箱说明这一侧通常可通行，可以减少金币生成到墙后或其它障碍物一侧的概率。
+4. **为什么不在击破时关闭宝箱碰撞体？** 宝箱会原地重生，保留碰撞体可以避免玩家和怪物在重生期间进入模型内部；调整奖励位置影响更小。
+5. **对象池复用会不会保留旧位置？** `WorldGoldPool.Get` 每次取出对象都会重新设置位置和旋转，随后 `Configure` 重置金额、生命周期和悬浮状态。
+
+### 8. 本次涉及知识点
+
+- Collider、Trigger 与 Rigidbody 的物理交互区别
+- `Collider.ClosestPoint` 和碰撞体表面点计算
+- 向量投影、归一化和表面外法线
+- SphereCollider 半径与安全净空
+- 玩家方向驱动的可达掉落位置
+- 对象池对象的位置和运行时状态重置
+- 无状态工具类与奖励业务职责拆分
+- EditMode 几何回归测试
+
+## 功能名称：项目文档与求职包装统一
+
+### 1. 实现目标
+
+把 README、客户端架构、策划案和简历描述统一到当前真实实现，并将游戏对外名称统一为《宝藏猎手》。旧策划案继续保留方案演进价值，但必须明确标记为历史版本，避免把 MMO-Lite、多人系统或未验证指标误写成已经完成。
+
+### 2. 涉及脚本
+
+- `README.md`：当前玩法、系统、运行方式、边界和测试说明。
+- `Docs/ClientArchitecture.md`：当前 QFramework、玩家组件、背包装备、商店任务和存档结构。
+- `Docs/README.md`：区分当前文档、历史策划案、学习记录和自动生成清单。
+- `Docs/ResumeProjectDescription.md`：一页简历文案、面试表达和禁止夸大的边界。
+- `Assets/Docs/宝藏猎手策划案.docx`：当前实现版策划案。
+- `ProjectSettings/ProjectSettings.asset`：Unity 对外产品名。
+
+### 3. 调用流程
+
+`当前代码/Prefab/场景/配置 -> 功能事实盘点 -> README与架构文档 -> 当前策划案 -> 简历要点 -> 面试表达`。
+
+### 4. 核心原理
+
+项目文档不能只复制旧策划目标，而应区分“已经实现”“当前边界”和“后续规划”。简历中的每条描述都应该能在代码、场景、配置、测试或真实测量结果中找到证据。技术类名和仓库路径属于内部标识，对外游戏名称属于产品标识；只修改产品名而不盲目重命名全部代码，可以避免无收益的资源引用和协议风险。
+
+### 5. Unity 测试方式
+
+1. 打开 Unity，确认应用产品名显示为“宝藏猎手”。
+2. 从 `LoginScene` 走游客模式，核对 README 中的按键、场景和核心循环。
+3. 检查背包、装备、商店、任务、设置、音频和 Boss 流程与文档描述一致。
+4. 运行完整 EditMode 测试并单独保存结果；在没有结果前，不在简历中填写通过率。
+5. 打开当前与历史 Word 策划案，确认当前入口和历史状态清楚可辨。
+
+### 6. 面试表达
+
+我没有直接把旧策划案里的所有目标都写进简历，而是先以当前代码、Prefab、场景和配置为事实来源，把项目分成已实现、当前边界和后续计划。对外名称统一为《宝藏猎手》，但保留已经参与代码引用的 TreasureHunter 技术标识，避免为了改名字引入大范围资源和协议风险。简历重点放在组件化玩家、QFramework 业务分层、对象池、背包装备与双数据源存档，并主动说明多人同步和性能指标还没有完成或测量。
+
+### 7. 面试追问
+
+1. **为什么历史策划案不直接删除？** 它能记录需求和方案演进，但必须标注状态，不能继续作为当前完成功能的证据。
+2. **为什么不把所有类名一起改成中文游戏名？** 类名、命名空间、资源引用和协议属于技术标识，大范围改名需要单独迁移和回归，本轮只统一产品展示名。
+3. **简历为什么不写性能提升百分比？** 没有相同环境下的前后测量就无法证明，面试追问时也无法给出可信测试条件。
+4. **怎样保证 README 不会再次过期？** 新功能完成后同时追加学习记录，并检查 README、架构、存档边界和当前策划案是否受影响。
+5. **项目系统很多，简历应该选哪些？** 优先选择能讲完整调用链和异常边界的模块，例如玩家架构、对象池、装备事务和双数据源存档。
+
+### 8. 本次涉及知识点
+
+- 技术文档的事实来源与版本管理
+- 产品名称与技术标识的边界
+- 简历真实性与可验证证据
+- 当前功能、已知边界和后续规划的区分
+- 架构图、调用链和面试表达
+- 测试结果与性能指标的测量前提

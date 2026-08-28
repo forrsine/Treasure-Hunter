@@ -155,11 +155,6 @@ MonoBehaviour:
   bossSpawnPosition: {x: 0, y: 0, z: 6}
   arenaSize: {x: 26, y: 8, z: 36}
   arenaWallThickness: 0.5
-  bossBattleMusic: {fileID: 8300000, guid: eb7f10105313640a18ce7926041a4d76, type: 3}
-  bossBattleBgmSource: {fileID: 0}
-  bossBattleMusicVolume: 0.8
-  loopBossBattleMusic: 1
-  playBossBattleMusicOnStart: 1
   bossHpGrowthPerRound: 0.3
   bossDamageGrowthPerRound: 0.12
   bossMoveSpeedGrowthPerRound: 0.05
@@ -826,10 +821,6 @@ MonoBehaviour:
   minimumLevelUpHeal: 20
   fullHealPlayerOnVaultDestroy: 0
   vaultDestroyHealPercent: 0.2
-  backgroundMusic: {fileID: 0}
-  backgroundMusicVolume: 0.6
-  loopBackgroundMusic: 1
-  backgroundMusicSource: {fileID: 0}
   monsterHpGrowthPerVaultDestroy: 0.08
   monsterHpGrowthPerBossDefeat: 0.2
   monsterAtkGrowthPerVaultDestroy: 0.035

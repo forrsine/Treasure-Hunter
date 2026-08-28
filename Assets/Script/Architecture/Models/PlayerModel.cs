@@ -50,11 +50,13 @@ public sealed class PlayerModel : AbstractModel
 
         mutableStats.BaseMaxHp = Mathf.Max(1, snapshot.BaseMaxHp);
         mutableStats.BonusMaxHp = Mathf.Max(0, snapshot.BonusMaxHp);
+        mutableStats.EquipmentMaxHpBonus = Mathf.Max(0, snapshot.EquipmentMaxHpBonus);
         mutableStats.MaxHp = Mathf.Max(1, snapshot.MaxHp);
         mutableStats.CurrentHp = Mathf.Clamp(snapshot.CurrentHp, 0, mutableStats.MaxHp);
 
         mutableStats.BaseMaxMp = Mathf.Max(1, snapshot.BaseMaxMp);
         mutableStats.BonusMaxMp = Mathf.Max(0, snapshot.BonusMaxMp);
+        mutableStats.EquipmentMaxMpBonus = Mathf.Max(0, snapshot.EquipmentMaxMpBonus);
         mutableStats.MaxMp = Mathf.Max(1, snapshot.MaxMp);
         mutableStats.CurrentMp = Mathf.Clamp(snapshot.CurrentMp, 0, mutableStats.MaxMp);
 
@@ -114,10 +116,12 @@ public sealed class PlayerModel : AbstractModel
             ? Mathf.Max(1, Mathf.RoundToInt(define.hp))
             : config != null ? config.GetPlayerBaseMaxHp() : 300;
         mutableStats.BonusMaxHp = 0;
+        mutableStats.EquipmentMaxHpBonus = 0;
         mutableStats.BaseMaxMp = define != null && define.mp > 0f
             ? Mathf.Max(1, Mathf.RoundToInt(define.mp))
             : config != null ? config.GetPlayerBaseMaxMp() : 180;
         mutableStats.BonusMaxMp = 0;
+        mutableStats.EquipmentMaxMpBonus = 0;
         mutableStats.BaseAttackPower = define != null && define.attack > 0f
             ? Mathf.Max(1, Mathf.RoundToInt(define.attack))
             : config != null ? config.GetPlayerBaseAttack() : 38;
@@ -167,7 +171,7 @@ public sealed class PlayerModel : AbstractModel
     {
         int previousMaxHp = Mathf.Max(1, mutableStats.MaxHp);
         float hpPercent = previousMaxHp > 0 ? (float)mutableStats.CurrentHp / previousMaxHp : 1f;
-        mutableStats.MaxHp = Mathf.Max(1, GetLevelBaseMaxHp(mutableStats.Level) + mutableStats.BonusMaxHp);
+        mutableStats.MaxHp = Mathf.Max(1, GetLevelBaseMaxHp(mutableStats.Level) + mutableStats.BonusMaxHp + mutableStats.EquipmentMaxHpBonus);
         mutableStats.CurrentHp = fillCurrentHp
             ? mutableStats.MaxHp
             : Mathf.Clamp(Mathf.CeilToInt(mutableStats.MaxHp * hpPercent), 0, mutableStats.MaxHp);
@@ -181,7 +185,7 @@ public sealed class PlayerModel : AbstractModel
     {
         int previousMaxMp = Mathf.Max(1, mutableStats.MaxMp);
         float mpPercent = previousMaxMp > 0 ? (float)mutableStats.CurrentMp / previousMaxMp : 1f;
-        mutableStats.MaxMp = Mathf.Max(1, mutableStats.BaseMaxMp + mutableStats.BonusMaxMp);
+        mutableStats.MaxMp = Mathf.Max(1, mutableStats.BaseMaxMp + mutableStats.BonusMaxMp + mutableStats.EquipmentMaxMpBonus);
         mutableStats.CurrentMp = fillCurrentMp
             ? mutableStats.MaxMp
             : Mathf.Clamp(Mathf.CeilToInt(mutableStats.MaxMp * mpPercent), 0, mutableStats.MaxMp);

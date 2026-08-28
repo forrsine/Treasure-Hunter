@@ -15,6 +15,8 @@ using UnityEngine.UI;
 /// </summary>
 public sealed class GameSettingsTests
 {
+    private const string PurchasedUiRoot = "Assets/AllResources/淘宝ui素材/RuntimeSprites/";
+
     private string temporaryPlayerPrefsKey;
 
     [SetUp]
@@ -159,6 +161,90 @@ public sealed class GameSettingsTests
     }
 
     [Test]
+    public void PanelPrefab_UsesPurchasedSettingsSkinAndKeepsControlStructures()
+    {
+        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+            GameSettingsAssetSetupTool.PanelPrefabPath);
+        Assert.That(prefab, Is.Not.Null);
+
+        AssertSpriteAsset(
+            prefab.GetComponent<Image>(),
+            PurchasedUiRoot + "Home/UI_Home_Setting_Background.png");
+
+        string[] sliderNames =
+        {
+            "MasterVolumeSlider",
+            "MusicVolumeSlider",
+            "SoundEffectsVolumeSlider",
+            "MouseSensitivitySlider"
+        };
+        foreach (string sliderName in sliderNames)
+        {
+            Transform sliderTransform = prefab.transform.Find("SettingsWindow/" + sliderName);
+            Slider slider = sliderTransform != null ? sliderTransform.GetComponent<Slider>() : null;
+            Assert.That(slider, Is.Not.Null, sliderName + " 缺少 Slider 组件。 ");
+            AssertSpriteAsset(
+                sliderTransform.Find("Background").GetComponent<Image>(),
+                PurchasedUiRoot +
+                "Home/UI_Home_Setting_ControlBar_Control_Prg_Bg_Background.png");
+            AssertSpriteAsset(
+                slider.fillRect.GetComponent<Image>(),
+                PurchasedUiRoot +
+                "Home/UI_Home_Setting_ControlBar_Control_Prg_Bar_Fill.png");
+            AssertSpriteAsset(
+                slider.handleRect.GetComponent<Image>(),
+                PurchasedUiRoot +
+                "Home/UI_Home_Setting_Control_ControlBar_Control_Pointer_Handle.png");
+        }
+
+        Transform toggleTransform = prefab.transform.Find("SettingsWindow/VerticalSyncToggle");
+        Toggle toggle = toggleTransform != null ? toggleTransform.GetComponent<Toggle>() : null;
+        Assert.That(toggle, Is.Not.Null);
+        AssertSpriteAsset(
+            toggle.targetGraphic as Image,
+            PurchasedUiRoot + "Home/UI_Home_Setting_Control_SwitchOff_Handle.png");
+        AssertSpriteAsset(
+            toggle.graphic as Image,
+            PurchasedUiRoot + "Home/UI_Home_Setting_Control_SwitchOn_Handle.png");
+
+        string[] dropdownNames =
+        {
+            "ResolutionDropdown",
+            "DisplayModeDropdown",
+            "QualityDropdown",
+            "FrameRateLimitDropdown"
+        };
+        foreach (string dropdownName in dropdownNames)
+        {
+            Transform dropdownTransform = prefab.transform.Find("SettingsWindow/" + dropdownName);
+            Dropdown dropdown = dropdownTransform != null
+                ? dropdownTransform.GetComponent<Dropdown>()
+                : null;
+            Assert.That(dropdown, Is.Not.Null, dropdownName + " 缺少 Dropdown 组件。 ");
+            Assert.That(
+                dropdownTransform.Find("Template/Viewport/Content/Item"),
+                Is.Not.Null,
+                dropdownName + " 必须保留标准 Template/Viewport/Content/Item 层级。 ");
+            AssertSpriteAsset(
+                dropdownTransform.Find("Arrow").GetComponent<Image>(),
+                PurchasedUiRoot + "FunctionIcons/UI_FunctionIcon_ArrowDown.png");
+        }
+
+        Transform backButton = prefab.transform.Find("SettingsWindow/CancelButton");
+        Assert.That(backButton, Is.Not.Null, "取消功能应由顶部返回按钮承担。 ");
+        AssertSpriteAsset(
+            backButton.GetComponent<Image>(),
+            PurchasedUiRoot + "Home/UI_Home_Setting_Top_Back.png");
+
+        Transform confirmationWindow = prefab.transform.Find(
+            "DisplayConfirmationPanel/ConfirmationWindow");
+        Assert.That(confirmationWindow, Is.Not.Null);
+        AssertSpriteAsset(
+            confirmationWindow.GetComponent<Image>(),
+            PurchasedUiRoot + "Popups/UI_Popups_PopupChecking_Popup.png");
+    }
+
+    [Test]
     public void LoginScene_HasOneSettingsPanelAndBoundSettingButton()
     {
         Scene scene = default;
@@ -177,6 +263,9 @@ public sealed class GameSettingsTests
             Transform buttonTransform = canvas.transform.Find("SettingButton");
             Button button = buttonTransform != null ? buttonTransform.GetComponent<Button>() : null;
             Assert.That(button, Is.Not.Null);
+            AssertSpriteAsset(
+                button.GetComponent<Image>(),
+                PurchasedUiRoot + "Home/UI_Home_Top_ButtonSetting_Icon.png");
 
             bool hasOpenBinding = false;
             for (int i = 0; i < button.onClick.GetPersistentEventCount(); i++)
@@ -199,6 +288,13 @@ public sealed class GameSettingsTests
                 EditorSceneManager.CloseScene(scene, true);
             }
         }
+    }
+
+    private static void AssertSpriteAsset(Image image, string expectedAssetPath)
+    {
+        Assert.That(image, Is.Not.Null, expectedAssetPath + " 对应的 Image 缺失。 ");
+        Assert.That(image.sprite, Is.Not.Null, expectedAssetPath + " 未绑定 Sprite。 ");
+        Assert.That(AssetDatabase.GetAssetPath(image.sprite), Is.EqualTo(expectedAssetPath));
     }
 }
 #endif

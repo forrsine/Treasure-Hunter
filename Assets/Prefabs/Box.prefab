@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 772276579447595880}
   - component: {fileID: 9095483702356301523}
   - component: {fileID: -2845784421162468873}
+  - component: {fileID: 8840996528579932906}
   m_Layer: 10
   m_Name: Box
   m_TagString: Untagged
@@ -141,6 +142,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   iconColor: {r: 1, g: 0.91491306, b: 0, a: 1}
   iconSize: {x: 14, y: 14}
+--- !u!114 &8840996528579932906
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 772276579447595881}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b162102ba1bfa94283cb89329f9dc79, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  economyConfig: {fileID: 11400000, guid: f4cd41b062cdff54dad038031d9926c7, type: 2}
+  rewardSpawnPoint: {fileID: 0}
 --- !u!1 &1408035780603406653
 GameObject:
   m_ObjectHideFlags: 0

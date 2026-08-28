@@ -18,11 +18,21 @@ public sealed class TreasureHunterArchitecture : Architecture<TreasureHunterArch
     {
         RegisterModel(new PlayerModel());
         RegisterModel(new PlayerSkillModel());
+        RegisterModel(new DeveloperModeModel());
         RegisterModel(new InventoryModel());
+        RegisterModel(new EquipmentModel());
+        RegisterModel(new EconomyModel());
+        RegisterModel(new ShopModel());
+        RegisterModel(new QuestModel());
+        RegisterSystem(new DeveloperModeSystem());
         RegisterSystem(new PlayerResourceSystem());
         RegisterSystem(new PlayerCombatSystem());
         RegisterSystem(new PlayerSkillSystem());
         RegisterSystem(new PlayerProgressionSystem());
         RegisterSystem(new InventorySystem());
+        RegisterSystem(new EquipmentSystem());
+        RegisterSystem(new EconomySystem());
+        RegisterSystem(new ShopSystem());
+        RegisterSystem(new QuestSystem());
     }
 }

@@ -17,6 +17,8 @@ public interface IPlayerStatsReadOnly
     int BonusMaxHp { get; }
     int BaseMaxMp { get; }
     int BonusMaxMp { get; }
+    int EquipmentMaxHpBonus { get; }
+    int EquipmentMaxMpBonus { get; }
     int BaseAttackPower { get; }
     float BaseMoveSpeed { get; }
     float CurrentMoveSpeed { get; }
@@ -53,6 +55,8 @@ public readonly struct PlayerStatsSnapshot : IPlayerStatsReadOnly
         BonusMaxHp = source.BonusMaxHp;
         BaseMaxMp = source.BaseMaxMp;
         BonusMaxMp = source.BonusMaxMp;
+        EquipmentMaxHpBonus = source.EquipmentMaxHpBonus;
+        EquipmentMaxMpBonus = source.EquipmentMaxMpBonus;
         BaseAttackPower = source.BaseAttackPower;
         BaseMoveSpeed = source.BaseMoveSpeed;
         CurrentMoveSpeed = source.CurrentMoveSpeed;
@@ -90,6 +94,8 @@ public readonly struct PlayerStatsSnapshot : IPlayerStatsReadOnly
     public int BonusMaxHp { get; }
     public int BaseMaxMp { get; }
     public int BonusMaxMp { get; }
+    public int EquipmentMaxHpBonus { get; }
+    public int EquipmentMaxMpBonus { get; }
     public int BaseAttackPower { get; }
     public float BaseMoveSpeed { get; }
     public float CurrentMoveSpeed { get; }

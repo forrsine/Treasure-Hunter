@@ -431,9 +431,11 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
             // 配置了承诺动作时，伤害会延迟到动画打击点；旧配置仍保留即时释放兜底。
             if (TryBeginCommittedScytheSpin(skill, levelData))
             {
+                PlaySkillAudio(skillId);
                 return;
             }
 
+            PlaySkillAudio(skillId);
             PlayScytheSpinAnimation(scytheSpinAnimationDuration);
             ResolveScytheSpin(levelData.radius, CalculateSkillDamage(levelData));
             return;
@@ -442,14 +444,17 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
         switch (skill.GetSkillType())
         {
             case SkillType.ProjectileAoe:
+                PlaySkillAudio(skillId);
                 CastFireball(levelData);
                 break;
 
             case SkillType.AreaDot:
+                PlaySkillAudio(skillId);
                 CastPoisonArea(levelData);
                 break;
 
             case SkillType.SelfAoe:
+                PlaySkillAudio(skillId);
                 ResolveScytheSpin(levelData.radius, CalculateSkillDamage(levelData));
                 break;
         }
@@ -734,17 +739,23 @@ public sealed class PlayerSkillCastComponent : MonoBehaviour, IController
         // 大旋转的伤害来自技能范围检测，动画只负责表现。
         // 先取消普通攻击，避免复用 Atk3 动画时触发原本的普攻碰撞盒。
         combat?.CancelAttackForSkill();
+        presentation?.PlaySkill(animationDuration);
+    }
+
+    /// <summary>
+    /// 只有技能校验和配置读取都成功后才播放，避免蓝量不足或冷却中仍然出现声音。
+    /// </summary>
+    private void PlaySkillAudio(int skillId)
+    {
         if (audioComponent != null && audioComponent.AutoPlayActions)
         {
-            audioComponent.PlaySkill();
+            audioComponent.PlaySkill(skillId);
         }
-
-        presentation?.PlaySkill(animationDuration);
     }
 
     private int CalculateSkillDamage(SkillLevelDefine levelData)
     {
-        int attackPower = this.GetModel<PlayerModel>().Stats.AttackPower;
+        int attackPower = this.SendQuery(new GetEffectivePlayerAttackPowerQuery());
         return Mathf.Max(1, Mathf.RoundToInt(attackPower * levelData.damageRate));
     }
 

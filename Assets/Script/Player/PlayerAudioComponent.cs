@@ -1,8 +1,9 @@
+using System;
 using UnityEngine;
 
 /// <summary>
-/// 玩家音效表现组件：只负责播放脚步、跳跃、翻滚、攻击和受击音效。
-/// 音效资源与战斗规则分离后，更换职业或音频方案不会影响伤害计算。
+/// 玩家音效表现组件：把移动、攻击和技能动作转换成统一的音效 Cue。
+/// 组件不再保存具体 AudioClip，换音频时只修改 GameAudioCatalog，避免 Prefab 与资源强耦合。
 /// </summary>
 [DisallowMultipleComponent]
 public sealed class PlayerAudioComponent : MonoBehaviour
@@ -10,23 +11,10 @@ public sealed class PlayerAudioComponent : MonoBehaviour
     [SerializeField] private AudioSource source;
     [SerializeField] private bool autoPlayFootstepSfx = true;
     [SerializeField] private bool autoPlayActionSfx = true;
-    [SerializeField] private AudioClip[] walkFootstepClips;
-    [SerializeField] private AudioClip[] runFootstepClips;
-    [SerializeField] private AudioClip jumpClip;
-    [SerializeField] private AudioClip rollClip;
-    [SerializeField] private AudioClip attack1Clip;
-    [SerializeField] private AudioClip attack2Clip;
-    [SerializeField] private AudioClip attack3Clip;
-    [SerializeField] private AudioClip skillClip;
-    [SerializeField] private AudioClip hitClip;
     [SerializeField] private float walkFootstepInterval = 0.7f;
     [SerializeField] private float runFootstepInterval = 0.3f;
-    [SerializeField, Range(0f, 1f)] private float footstepVolume = 1f;
-    [SerializeField, Range(0f, 1f)] private float jumpVolume = 1f;
-    [SerializeField, Range(0f, 1f)] private float rollVolume = 1f;
-    [SerializeField, Range(0f, 1f)] private float attackVolume = 1f;
-    [SerializeField, Range(0f, 1f)] private float skillVolume = 1f;
-    [SerializeField, Range(0f, 1f)] private float hitVolume = 1f;
+
+    private string classKey = "Warrior";
 
     public bool AutoPlayFootsteps => autoPlayFootstepSfx;
     public bool AutoPlayActions => autoPlayActionSfx;
@@ -34,9 +22,6 @@ public sealed class PlayerAudioComponent : MonoBehaviour
     public float RunFootstepInterval => runFootstepInterval;
 
     /// <summary>
-    /// 缓存或补齐 AudioSource。
-    /// 组件允许 Prefab 手动配置，也允许在漏挂时自动补一个最基础的播放源。
-    /// </summary>
     private void Awake()
     {
         if (source == null)
@@ -50,93 +35,81 @@ public sealed class PlayerAudioComponent : MonoBehaviour
         }
 
         source.playOnAwake = false;
+        source.spatialBlend = 1f;
         GameSettingsService.RouteSoundsSource(source);
     }
 
     /// <summary>
-    /// 播放走路脚步声。
+    /// 角色生成器在职业确定后写入职业键，普通攻击便可选择匹配的武器声音。
     /// </summary>
-    public void PlayWalkFootstep() => PlayRandom(walkFootstepClips, footstepVolume);
-
-    /// <summary>
-    /// 播放跑步脚步声。
-    /// 如果没有单独的跑步音效，就回退到走路脚步声，避免完全静音。
-    /// </summary>
-    public void PlayRunFootstep()
+    public void ConfigureProfile(string newClassKey)
     {
-        if (!PlayRandom(runFootstepClips, footstepVolume))
+        if (!string.IsNullOrWhiteSpace(newClassKey))
         {
-            PlayRandom(walkFootstepClips, footstepVolume);
+            classKey = newClassKey.Trim();
         }
     }
 
-    public void PlayJump() => Play(jumpClip, jumpVolume);
-    public void PlayRoll() => Play(rollClip, rollVolume);
-    public void PlaySkill() => Play(skillClip, skillVolume);
-    public void PlayHit() => Play(hitClip, hitVolume);
+    public void PlayWalkFootstep() => Play(GameSfxId.PlayerFootstepWalk);
+    public void PlayRunFootstep() => Play(GameSfxId.PlayerFootstepRun);
+    public void PlayJump() => Play(GameSfxId.PlayerJump);
+    public void PlayRoll() => Play(GameSfxId.PlayerRoll);
+    public void PlayHit() => Play(GameSfxId.PlayerHit);
 
     /// <summary>
-    /// 根据当前连击段数选择攻击音效。
+    /// 保留无参入口供旧动画事件使用；正式技能释放会传入技能 ID。
+    /// </summary>
+    public void PlaySkill() => PlaySkill(2001);
+
+    public void PlaySkill(int skillId)
+    {
+        GameSfxId cueId = skillId switch
+        {
+            1001 => GameSfxId.SkillFireball,
+            1002 => GameSfxId.SkillPoison,
+            2001 => GameSfxId.SkillSpin,
+            _ => GameSfxId.None
+        };
+
+        Play(cueId);
+    }
+
+    /// <summary>
+    /// 同一个连击序号会根据职业映射到不同 Cue，战斗计算无需知道具体音频资源。
     /// </summary>
     public void PlayAttack(int comboIndex)
     {
-        AudioClip clip = comboIndex <= 1 ? attack1Clip : comboIndex == 2 ? attack2Clip : attack3Clip;
-        Play(clip, attackVolume);
+        Play(ResolveAttackCue(comboIndex));
     }
 
-    /// <summary>
-    /// 从一组可选音效里随机播放一个有效片段。
-    /// 这样同一种脚步声不会每次都完全重复，听感更自然。
-    /// </summary>
-    private bool PlayRandom(AudioClip[] clips, float volume)
+    private GameSfxId ResolveAttackCue(int comboIndex)
     {
-        if (clips == null || clips.Length == 0)
+        int combo = Mathf.Clamp(comboIndex, 1, 3);
+        if (string.Equals(classKey, "Assassin", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return combo == 1 ? GameSfxId.PlayerAttackAssassin1
+                : combo == 2 ? GameSfxId.PlayerAttackAssassin2
+                : GameSfxId.PlayerAttackAssassin3;
         }
 
-        int validCount = 0;
-        for (int i = 0; i < clips.Length; i++)
+        if (string.Equals(classKey, "Archer", StringComparison.OrdinalIgnoreCase))
         {
-            if (clips[i] != null)
-            {
-                validCount++;
-            }
+            return GameSfxId.PlayerAttackArcher;
         }
 
-        if (validCount == 0)
+        if (string.Equals(classKey, "Wizard", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(classKey, "Mage", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return GameSfxId.PlayerAttackWizard;
         }
 
-        int selected = Random.Range(0, validCount);
-        for (int i = 0; i < clips.Length; i++)
-        {
-            if (clips[i] == null)
-            {
-                continue;
-            }
-
-            if (selected-- == 0)
-            {
-                return Play(clips[i], volume);
-            }
-        }
-
-        return false;
+        return combo == 1 ? GameSfxId.PlayerAttackWarrior1
+            : combo == 2 ? GameSfxId.PlayerAttackWarrior2
+            : GameSfxId.PlayerAttackWarrior3;
     }
 
-    /// <summary>
-    /// 最底层播放入口。
-    /// </summary>
-    private bool Play(AudioClip clip, float volume)
+    private bool Play(GameSfxId cueId)
     {
-        if (clip == null || source == null)
-        {
-            return false;
-        }
-
-        source.PlayOneShot(clip, volume);
-        return true;
+        return cueId != GameSfxId.None && GameAudioService.PlayOn(cueId, source);
     }
 }

@@ -17,8 +17,13 @@ public class NCharacter
     public int pendingAttributeUpgradeCount;
     public int vaultDestroyedCount;
     public int completedBossCount;
+    public long gold;
+    public bool merchantIntroCompleted;
     public List<NAttributeUpgradeSave> attributeUpgrades = new List<NAttributeUpgradeSave>();
     public List<NInventoryItemSave> inventoryItems = new List<NInventoryItemSave>();
+    public List<NEquippedItemSave> equippedItems = new List<NEquippedItemSave>();
+    public List<string> purchasedLimitedShopItemIds = new List<string>();
+    public List<NQuestProgressSave> questProgress = new List<NQuestProgressSave>();
 
     /// <summary>
     /// 查询某一种属性的强化次数。返回值来自副本，外部不能直接改写存档集合。
@@ -56,7 +61,9 @@ public class NCharacter
             exp = exp,
             pendingAttributeUpgradeCount = pendingAttributeUpgradeCount,
             vaultDestroyedCount = vaultDestroyedCount,
-            completedBossCount = completedBossCount
+            completedBossCount = completedBossCount,
+            gold = gold,
+            merchantIntroCompleted = merchantIntroCompleted
         };
 
         if (attributeUpgrades != null)
@@ -91,7 +98,49 @@ public class NCharacter
             }
         }
 
+        if (equippedItems != null)
+        {
+            for (int i = 0; i < equippedItems.Count; i++)
+            {
+                NEquippedItemSave item = equippedItems[i];
+                if (item != null)
+                {
+                    copy.equippedItems.Add(item.Clone());
+                }
+            }
+        }
+
+        if (purchasedLimitedShopItemIds != null)
+        {
+            copy.purchasedLimitedShopItemIds.AddRange(purchasedLimitedShopItemIds);
+        }
+
+        if (questProgress != null)
+        {
+            for (int i = 0; i < questProgress.Count; i++)
+            {
+                NQuestProgressSave progress = questProgress[i];
+                if (progress != null)
+                {
+                    copy.questProgress.Add(progress.Clone());
+                }
+            }
+        }
+
         return copy;
+    }
+}
+
+/// <summary>单个已穿戴槽的持久化数据，只保存稳定槽编号和物品 ID。</summary>
+[Serializable]
+public sealed class NEquippedItemSave
+{
+    public int equipmentSlot;
+    public string itemId;
+
+    public NEquippedItemSave Clone()
+    {
+        return new NEquippedItemSave { equipmentSlot = equipmentSlot, itemId = itemId };
     }
 }
 
@@ -125,4 +174,25 @@ public sealed class NAttributeUpgradeSave
 {
     public int attributeType;
     public int upgradeCount;
+}
+
+/// <summary>
+/// 单条角色任务存档。只保存稳定任务 ID 和运行状态，标题、目标数量、奖励仍从 QuestCatalog 读取。
+/// </summary>
+[Serializable]
+public sealed class NQuestProgressSave
+{
+    public string questId;
+    public int state;
+    public int currentCount;
+
+    public NQuestProgressSave Clone()
+    {
+        return new NQuestProgressSave
+        {
+            questId = questId,
+            state = state,
+            currentCount = currentCount
+        };
+    }
 }

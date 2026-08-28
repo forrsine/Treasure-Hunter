@@ -1,0 +1,95 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f440e8291d7f7c47971e5b7bbafb6bf, type: 3}
+  m_Name: ShopCatalog
+  m_EditorClassIdentifier: 
+  entries:
+  - entryId: healing_potion
+    item: {fileID: 11400000, guid: ffbfbcad1362953488bf52b1a3320e9d, type: 2}
+    price: 25
+    category: 1
+    limitedOncePerCharacter: 0
+  - entryId: mana_potion
+    item: {fileID: 11400000, guid: f89e6755762349243b20ce7754649336, type: 2}
+    price: 25
+    category: 1
+    limitedOncePerCharacter: 0
+  - entryId: experience_crystal
+    item: {fileID: 11400000, guid: 716480cde7f786345b1a709652470c44, type: 2}
+    price: 50
+    category: 3
+    limitedOncePerCharacter: 0
+  - entryId: ancient_scroll
+    item: {fileID: 11400000, guid: 39f1d39fd608eec41a3fd6690838c177, type: 2}
+    price: 100
+    category: 3
+    limitedOncePerCharacter: 0
+  - entryId: merchant_training_hammer
+    item: {fileID: 11400000, guid: d465983e9ff2f4241ac8499e5fbdcc90, type: 2}
+    price: 120
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: merchant_traveler_armor
+    item: {fileID: 11400000, guid: 159c28723922e76469d236700b1753a7, type: 2}
+    price: 150
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: merchant_oak_shield
+    item: {fileID: 11400000, guid: b9a3eae983f37e74da2b6e60c44c4541, type: 2}
+    price: 150
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: merchant_hunter_gloves
+    item: {fileID: 11400000, guid: c0b6956bb6186a8469db6ae5ef8be2bf, type: 2}
+    price: 120
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: merchant_lightstep_boots
+    item: {fileID: 11400000, guid: f4738bb4bce9f0840956cbccd278cd34, type: 2}
+    price: 130
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: merchant_copper_ring
+    item: {fileID: 11400000, guid: 679ad538737d2cd4f9429f67019d2d8d, type: 2}
+    price: 220
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: boss_iron_war_axe
+    item: {fileID: 11400000, guid: cb911c279d0965c4c83e6ec94a873821, type: 2}
+    price: 360
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: boss_stoneplate_armor
+    item: {fileID: 11400000, guid: 6e6b8e82f32c51b439aa71fd3789991e, type: 2}
+    price: 420
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: boss_woodguard_shield
+    item: {fileID: 11400000, guid: 8430552f4a6489d41bc0965dee76a089, type: 2}
+    price: 400
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: boss_fang_gloves
+    item: {fileID: 11400000, guid: 34808eef5d455b8498636001badd5004, type: 2}
+    price: 340
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: boss_windleaf_boots
+    item: {fileID: 11400000, guid: d4b6cf4a176c9c84399d4b1160b083e7, type: 2}
+    price: 350
+    category: 2
+    limitedOncePerCharacter: 1
+  - entryId: boss_ruby_ring
+    item: {fileID: 11400000, guid: ca1c1fdd164a17a499c73978b49add3a, type: 2}
+    price: 480
+    category: 2
+    limitedOncePerCharacter: 1

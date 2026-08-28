@@ -517,7 +517,9 @@ public class GameApiClient : MonoBehaviour
             PendingAttributeUpgradeCount = progress.PendingAttributeUpgradeCount,
             VaultDestroyedCount = vaultDestroyedCount,
             CompletedBossCount = completedBossCount,
-            ResetAfterDeath = resetAfterDeath
+            ResetAfterDeath = resetAfterDeath,
+            Gold = progress.Gold,
+            MerchantIntroCompleted = progress.MerchantIntroCompleted
         };
 
         for (int i = 0; i < progress.AttributeUpgrades.Count; i++)
@@ -549,6 +551,42 @@ public class GameApiClient : MonoBehaviour
                 ItemId = item.itemId ?? "",
                 Count = item.count
             });
+        }
+
+        for (int i = 0; i < progress.EquippedItems.Count; i++)
+        {
+            NEquippedItemSave item = progress.EquippedItems[i];
+            if (item != null)
+            {
+                request.EquippedItems.Add(new NEquippedItemInfo
+                {
+                    EquipmentSlot = item.equipmentSlot,
+                    ItemId = item.itemId ?? ""
+                });
+            }
+        }
+
+        for (int i = 0; i < progress.PurchasedLimitedShopItemIds.Count; i++)
+        {
+            string itemId = progress.PurchasedLimitedShopItemIds[i];
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                request.PurchasedLimitedShopItemIds.Add(itemId);
+            }
+        }
+
+        for (int i = 0; i < progress.QuestProgress.Count; i++)
+        {
+            NQuestProgressSave quest = progress.QuestProgress[i];
+            if (quest != null && !string.IsNullOrWhiteSpace(quest.questId))
+            {
+                request.QuestProgress.Add(new NQuestProgressInfo
+                {
+                    QuestId = quest.questId,
+                    State = quest.state,
+                    CurrentCount = quest.currentCount
+                });
+            }
         }
 
         Send(new NetMessage
@@ -756,7 +794,9 @@ public class GameApiClient : MonoBehaviour
             exp = info.Exp,
             pendingAttributeUpgradeCount = info.PendingAttributeUpgradeCount,
             vaultDestroyedCount = info.VaultDestroyedCount,
-            completedBossCount = info.CompletedBossCount
+            completedBossCount = info.CompletedBossCount,
+            gold = info.Gold,
+            merchantIntroCompleted = info.MerchantIntroCompleted
         };
 
         foreach (NAttributeUpgradeInfo upgrade in info.AttributeUpgrades)
@@ -781,6 +821,39 @@ public class GameApiClient : MonoBehaviour
                 itemId = item.ItemId,
                 count = item.Count
             });
+        }
+
+        foreach (NEquippedItemInfo item in info.EquippedItems)
+        {
+            if (item != null)
+            {
+                character.equippedItems.Add(new NEquippedItemSave
+                {
+                    equipmentSlot = item.EquipmentSlot,
+                    itemId = item.ItemId
+                });
+            }
+        }
+
+        foreach (string itemId in info.PurchasedLimitedShopItemIds)
+        {
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                character.purchasedLimitedShopItemIds.Add(itemId);
+            }
+        }
+
+        foreach (NQuestProgressInfo quest in info.QuestProgress)
+        {
+            if (quest != null && !string.IsNullOrWhiteSpace(quest.QuestId))
+            {
+                character.questProgress.Add(new NQuestProgressSave
+                {
+                    questId = quest.QuestId,
+                    state = quest.State,
+                    currentCount = quest.CurrentCount
+                });
+            }
         }
 
         return character;

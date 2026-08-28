@@ -193,4 +193,16 @@ public sealed class PlayerSkillModel : AbstractModel
             runtimeData.TickCooldown(deltaTime);
         }
     }
+
+    /// <summary>
+    /// 清空所有已学习技能的当前冷却，只供开发者模式通过 System 调用。
+    /// 不清除技能等级和待选择次数，避免调试功能破坏正常技能数据。
+    /// </summary>
+    internal void ClearAllCooldowns()
+    {
+        foreach (PlayerSkillRuntimeData runtimeData in learnedSkillMap.Values)
+        {
+            runtimeData.cooldownRemaining = 0f;
+        }
+    }
 }

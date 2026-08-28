@@ -104,14 +104,6 @@ public class GameConfig : MonoBehaviour
     public bool fullHealPlayerOnVaultDestroy = false;
     [Range(0f, 1f)] public float vaultDestroyHealPercent = 0.2f;
 
-    [Header("Background Music")]
-    [Tooltip("Background music clip played during gameplay. Leave empty to disable BGM.")]
-    public AudioClip backgroundMusic;
-    [Range(0f, 1f)] public float backgroundMusicVolume = 0.6f;
-    public bool loopBackgroundMusic = true;
-    [Tooltip("Optional AudioSource override. If left empty, one is created automatically at runtime.")]
-    [SerializeField] private AudioSource backgroundMusicSource;
-
     [Header("Monster Growth")]
     // 普通怪使用线性双维度成长：V 是已击破金库数，B 是已击败 Boss 数。
     public float monsterHpGrowthPerVaultDestroy = 0.08f;
@@ -122,31 +114,22 @@ public class GameConfig : MonoBehaviour
     public float monsterExpGrowthPerBossDefeat = 0.15f;
 
     /// <summary>
-    /// 注册全局配置实例，并在场景启动时修正配置、播放背景音乐。
+    /// 注册全局配置实例，并在场景启动时修正配置。
     /// </summary>
     private void Awake()
     {
         // 单例赋值：其他脚本通过 GameConfig.instance 找到本配置。
         instance = this;
         EnsureConfig();
-        EnsureBackgroundMusicPlayback();
     }
 
     /// <summary>
-    /// Inspector 数值变化时自动修正非法配置，编辑器里也同步音乐源设置。
+    /// Inspector 数值变化时自动修正非法配置。
     /// </summary>
     private void OnValidate()
     {
         // OnValidate 在 Inspector 里改值时触发，能让错误数值立刻被修正。
         EnsureConfig();
-
-        if (Application.isPlaying)
-        {
-            EnsureBackgroundMusicPlayback();
-            return;
-        }
-
-        ApplyBackgroundMusicSourceSettings();
     }
 
     /// <summary>
@@ -497,83 +480,5 @@ public class GameConfig : MonoBehaviour
         monsterAtkGrowthPerBossDefeat = Mathf.Max(0f, monsterAtkGrowthPerBossDefeat);
         monsterExpGrowthPerVaultDestroy = Mathf.Max(0f, monsterExpGrowthPerVaultDestroy);
         monsterExpGrowthPerBossDefeat = Mathf.Max(0f, monsterExpGrowthPerBossDefeat);
-        backgroundMusicVolume = Mathf.Clamp01(backgroundMusicVolume);
-    }
-
-    /// <summary>
-    /// 确保背景音乐 AudioSource 存在，并按当前配置播放或停止音乐。
-    /// </summary>
-    private void EnsureBackgroundMusicPlayback()
-    {
-        // 背景音乐也从配置中心管理，场景启动时自动确保 AudioSource 存在并开始播放。
-        EnsureBackgroundMusicSource();
-        ApplyBackgroundMusicSourceSettings();
-
-        if (backgroundMusicSource == null)
-        {
-            return;
-        }
-
-        if (backgroundMusic == null)
-        {
-            // 没有配置音乐时，停止旧音乐并清空 clip。
-            if (backgroundMusicSource.isPlaying)
-            {
-                backgroundMusicSource.Stop();
-            }
-
-            backgroundMusicSource.clip = null;
-            return;
-        }
-
-        if (backgroundMusicSource.clip != backgroundMusic)
-        {
-            // 如果 Inspector 换了音乐，先停掉旧的，再切换新 clip。
-            backgroundMusicSource.Stop();
-            backgroundMusicSource.clip = backgroundMusic;
-        }
-
-        if (!backgroundMusicSource.isPlaying)
-        {
-            backgroundMusicSource.Play();
-        }
-    }
-
-    /// <summary>
-    /// 查找或创建用于播放背景音乐的 AudioSource。
-    /// </summary>
-    private void EnsureBackgroundMusicSource()
-    {
-        // 先找当前物体上已有的 AudioSource，找不到就自动添加一个。
-        if (backgroundMusicSource == null)
-        {
-            backgroundMusicSource = GetComponent<AudioSource>();
-        }
-
-        if (backgroundMusicSource == null)
-        {
-            backgroundMusicSource = gameObject.AddComponent<AudioSource>();
-        }
-    }
-
-    /// <summary>
-    /// 把循环、音量、2D 声音等设置写入背景音乐 AudioSource。
-    /// </summary>
-    private void ApplyBackgroundMusicSourceSettings()
-    {
-        if (backgroundMusicSource == null)
-        {
-            return;
-        }
-
-        backgroundMusicSource.playOnAwake = false;
-        backgroundMusicSource.loop = loopBackgroundMusic;
-        backgroundMusicSource.volume = backgroundMusicVolume;
-
-        // spatialBlend = 0 表示 2D 声音，不会因为玩家离物体远近而改变音量。
-        backgroundMusicSource.spatialBlend = 0f;
-
-        // 只给没有自定义 Mixer 分组的运行时音源补齐 Music 路由，保留 Inspector 手动配置。
-        GameSettingsService.RouteMusicSource(backgroundMusicSource);
     }
 }

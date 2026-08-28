@@ -19,13 +19,31 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 39f1d39fd608eec41a3fd6690838c177, type: 2}
   - {fileID: 11400000, guid: f89e6755762349243b20ce7754649336, type: 2}
   - {fileID: 11400000, guid: 9b68d0c7f68b47e49b2c5f37ff8f3a91, type: 2}
+  - {fileID: 11400000, guid: cb911c279d0965c4c83e6ec94a873821, type: 2}
+  - {fileID: 11400000, guid: 9b51ba36fef6a1e46b135d599537378d, type: 2}
+  - {fileID: 11400000, guid: 6e6b8e82f32c51b439aa71fd3789991e, type: 2}
+  - {fileID: 11400000, guid: c31e05c4dff8f234aa6c862eb6977ed6, type: 2}
+  - {fileID: 11400000, guid: 8430552f4a6489d41bc0965dee76a089, type: 2}
+  - {fileID: 11400000, guid: be5a06ee9b1856f42bc6c2e4eda0ce90, type: 2}
+  - {fileID: 11400000, guid: 34808eef5d455b8498636001badd5004, type: 2}
+  - {fileID: 11400000, guid: 18976e3fa7b2b63498b8e7138d08618b, type: 2}
+  - {fileID: 11400000, guid: d4b6cf4a176c9c84399d4b1160b083e7, type: 2}
+  - {fileID: 11400000, guid: 9c3cd6fb6b594b049b163bbd73a0fd4c, type: 2}
+  - {fileID: 11400000, guid: ca1c1fdd164a17a499c73978b49add3a, type: 2}
+  - {fileID: 11400000, guid: 846b2406aed5dd047a6b135ee85aad47, type: 2}
+  - {fileID: 11400000, guid: d465983e9ff2f4241ac8499e5fbdcc90, type: 2}
+  - {fileID: 11400000, guid: 159c28723922e76469d236700b1753a7, type: 2}
+  - {fileID: 11400000, guid: b9a3eae983f37e74da2b6e60c44c4541, type: 2}
+  - {fileID: 11400000, guid: c0b6956bb6186a8469db6ae5ef8be2bf, type: 2}
+  - {fileID: 11400000, guid: f4738bb4bce9f0840956cbccd278cd34, type: 2}
+  - {fileID: 11400000, guid: 679ad538737d2cd4f9429f67019d2d8d, type: 2}
   vaultLootEntries: []
-  monsterDropChance: 0.1
+  monsterDropChance: 0.12
   monsterLootEntries:
   - item: {fileID: 11400000, guid: ffbfbcad1362953488bf52b1a3320e9d, type: 2}
-    weight: 1
+    weight: 55
   - item: {fileID: 11400000, guid: f89e6755762349243b20ce7754649336, type: 2}
-    weight: 1
+    weight: 45
   worldPickupPrefab: {fileID: 4425850163247104261, guid: b79b922b60767b84d90f75be8dc6f13f, type: 3}
   bossDropOrbCount: 3
   bossLootEntries:
@@ -39,6 +57,55 @@ MonoBehaviour:
     maxAmount: 1
   - item: {fileID: 11400000, guid: 9b68d0c7f68b47e49b2c5f37ff8f3a91, type: 2}
     weight: 15
+    minAmount: 1
+    maxAmount: 1
+  bossEquipmentLootEntries:
+  - item: {fileID: 11400000, guid: cb911c279d0965c4c83e6ec94a873821, type: 2}
+    weight: 3
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 9b51ba36fef6a1e46b135d599537378d, type: 2}
+    weight: 1
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 6e6b8e82f32c51b439aa71fd3789991e, type: 2}
+    weight: 3
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: c31e05c4dff8f234aa6c862eb6977ed6, type: 2}
+    weight: 1
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 8430552f4a6489d41bc0965dee76a089, type: 2}
+    weight: 3
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: be5a06ee9b1856f42bc6c2e4eda0ce90, type: 2}
+    weight: 1
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 34808eef5d455b8498636001badd5004, type: 2}
+    weight: 3
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 18976e3fa7b2b63498b8e7138d08618b, type: 2}
+    weight: 1
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: d4b6cf4a176c9c84399d4b1160b083e7, type: 2}
+    weight: 3
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 9c3cd6fb6b594b049b163bbd73a0fd4c, type: 2}
+    weight: 1
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: ca1c1fdd164a17a499c73978b49add3a, type: 2}
+    weight: 3
+    minAmount: 1
+    maxAmount: 1
+  - item: {fileID: 11400000, guid: 846b2406aed5dd047a6b135ee85aad47, type: 2}
+    weight: 1
     minAmount: 1
     maxAmount: 1
   bossLootOrbPrefab: {fileID: 100000, guid: dc3b93e4a91f40d68f50f68e622f2169, type: 3}

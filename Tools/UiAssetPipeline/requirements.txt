@@ -1,0 +1,2 @@
+psd-tools[composite]==1.18.0
+

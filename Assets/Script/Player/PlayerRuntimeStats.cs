@@ -26,6 +26,9 @@ public sealed class PlayerRuntimeStats : IPlayerStatsReadOnly
     public int BonusMaxHp { get; internal set; }
     public int BaseMaxMp { get; internal set; }
     public int BonusMaxMp { get; internal set; }
+    // 装备血蓝单独记账，成长 Bonus 不需要猜测并反向扣除装备值。
+    public int EquipmentMaxHpBonus { get; internal set; }
+    public int EquipmentMaxMpBonus { get; internal set; }
     public int BaseAttackPower { get; internal set; }
     public float BaseMoveSpeed { get; internal set; }
     public float CurrentMoveSpeed { get; internal set; }

@@ -204,6 +204,7 @@ public sealed class WorldItemPickup : MonoBehaviour, IController
         amount = result.RemainingAmount;
         if (amount <= 0)
         {
+            GameAudioService.Play2D(GameSfxId.ItemPickup);
             ReleaseToPool();
         }
         else

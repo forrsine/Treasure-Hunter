@@ -208,6 +208,21 @@ namespace SkillBridge.Message
 
         [ProtoMember(8, Name = "inventory_items")]
         public List<NInventoryItemInfo> InventoryItems { get; } = new List<NInventoryItemInfo>();
+
+        [ProtoMember(9, Name = "equipped_items")]
+        public List<NEquippedItemInfo> EquippedItems { get; } = new List<NEquippedItemInfo>();
+
+        [ProtoMember(10, Name = "gold")]
+        public long Gold { get; set; }
+
+        [ProtoMember(11, Name = "merchant_intro_completed")]
+        public bool MerchantIntroCompleted { get; set; }
+
+        [ProtoMember(12, Name = "purchased_limited_shop_item_ids")]
+        public List<string> PurchasedLimitedShopItemIds { get; } = new List<string>();
+
+        [ProtoMember(13, Name = "quest_progress")]
+        public List<NQuestProgressInfo> QuestProgress { get; } = new List<NQuestProgressInfo>();
     }
 
     /// <summary>角色成长保存结果，以及数据库确认后的最新角色数据。</summary>
@@ -297,6 +312,43 @@ namespace SkillBridge.Message
 
         [ProtoMember(16, Name = "inventory_items")]
         public List<NInventoryItemInfo> InventoryItems { get; } = new List<NInventoryItemInfo>();
+
+        [ProtoMember(17, Name = "equipped_items")]
+        public List<NEquippedItemInfo> EquippedItems { get; } = new List<NEquippedItemInfo>();
+
+        [ProtoMember(18, Name = "merchant_intro_completed")]
+        public bool MerchantIntroCompleted { get; set; }
+
+        [ProtoMember(19, Name = "purchased_limited_shop_item_ids")]
+        public List<string> PurchasedLimitedShopItemIds { get; } = new List<string>();
+
+        [ProtoMember(20, Name = "quest_progress")]
+        public List<NQuestProgressInfo> QuestProgress { get; } = new List<NQuestProgressInfo>();
+    }
+
+    /// <summary>角色的一条任务进度网络数据。</summary>
+    [ProtoContract]
+    public sealed class NQuestProgressInfo
+    {
+        [ProtoMember(1, Name = "quest_id")]
+        public string QuestId { get; set; } = "";
+
+        [ProtoMember(2, Name = "state")]
+        public int State { get; set; }
+
+        [ProtoMember(3, Name = "current_count")]
+        public int CurrentCount { get; set; }
+    }
+
+    /// <summary>已穿戴装备的网络数据，槽位使用稳定枚举整数。</summary>
+    [ProtoContract]
+    public class NEquippedItemInfo
+    {
+        [ProtoMember(1, Name = "equipment_slot")]
+        public int EquipmentSlot { get; set; }
+
+        [ProtoMember(2, Name = "item_id")]
+        public string ItemId { get; set; } = "";
     }
 
     /// <summary>单个背包格的网络数据；物品身份使用稳定 itemId，不传递 Unity 资源引用。</summary>

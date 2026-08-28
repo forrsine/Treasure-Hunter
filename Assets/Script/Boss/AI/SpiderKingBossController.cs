@@ -261,6 +261,7 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
         int appliedDamage = Mathf.Min(currentHp, attackPower);
         currentHp = Mathf.Max(0, currentHp - attackPower);
         StartHitFlash();
+        GameAudioService.PlayAt(GameSfxId.BossHit, transform.position);
         BossStatsChanged?.Invoke(this);
 
         if (currentHp <= 0)
@@ -510,6 +511,7 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
             : UnityEngine.Random.value < 0.5f ? clawLeftAttackStateName : clawRightAttackStateName;
         int damage = CalculatePhaseDamage(useBite ? biteDamage : clawDamage);
 
+        GameAudioService.PlayAt(useBite ? GameSfxId.BossBite : GameSfxId.BossClaw, transform.position);
         BeginAction(animationName, meleeActionLockDuration);
         meleeCooldownTimer = meleeCooldown * CurrentCooldownMultiplier;
         ScheduleDamageAfterDelay(meleeHitDelay, damage, meleeRange + 0.35f, false, target.position);
@@ -524,6 +526,7 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
         Vector3 impactPosition = target.position;
         impactPosition.y = transform.position.y;
 
+        GameAudioService.PlayAt(GameSfxId.BossSpell, transform.position);
         BeginAction(animationName, spellActionLockDuration);
         spellCooldownTimer = spellCooldown * CurrentCooldownMultiplier;
         ScheduleDamageAfterDelay(spellHitDelay, CalculatePhaseDamage(spellDamage), spellImpactRadius, true, impactPosition);
@@ -959,6 +962,7 @@ public sealed class SpiderKingBossController : MonoBehaviour, FighterInterface
         isDead = true;
         currentHp = 0;
         actionLockTimer = 0f;
+        GameAudioService.PlayAt(GameSfxId.BossDeath, transform.position);
         RestoreDefaultMaterials();
 
         if (delayedDamageCoroutine != null)

@@ -512,6 +512,7 @@ GameObject:
   - component: {fileID: 132760182}
   - component: {fileID: 132760181}
   - component: {fileID: 132760180}
+  - component: {fileID: 770000000000000008}
   m_Layer: 5
   m_Name: WarriorButton
   m_TagString: Untagged
@@ -779,6 +780,7 @@ GameObject:
   - component: {fileID: 184905071}
   - component: {fileID: 184905070}
   - component: {fileID: 184905069}
+  - component: {fileID: 770000000000000009}
   m_Layer: 5
   m_Name: Slot_4
   m_TagString: Untagged
@@ -1186,6 +1188,7 @@ GameObject:
   - component: {fileID: 282683115}
   - component: {fileID: 282683114}
   - component: {fileID: 282683116}
+  - component: {fileID: 770000000000000010}
   m_Layer: 5
   m_Name: BackButton
   m_TagString: Untagged
@@ -1383,6 +1386,7 @@ GameObject:
   - component: {fileID: 337367865}
   - component: {fileID: 337367864}
   - component: {fileID: 337367863}
+  - component: {fileID: 770000000000000011}
   m_Layer: 5
   m_Name: ArcherButton
   m_TagString: Untagged
@@ -1582,6 +1586,7 @@ GameObject:
   - component: {fileID: 396320972}
   - component: {fileID: 396320971}
   - component: {fileID: 396320973}
+  - component: {fileID: 770000000000000012}
   m_Layer: 5
   m_Name: CreateCharacterButton
   m_TagString: Untagged
@@ -1704,6 +1709,7 @@ GameObject:
   - component: {fileID: 446350952}
   - component: {fileID: 446350951}
   - component: {fileID: 446350953}
+  - component: {fileID: 770000000000000013}
   m_Layer: 5
   m_Name: CreateButton
   m_TagString: Untagged
@@ -2453,6 +2459,7 @@ GameObject:
   - component: {fileID: 802807454}
   - component: {fileID: 802807453}
   - component: {fileID: 802807452}
+  - component: {fileID: 770000000000000014}
   m_Layer: 5
   m_Name: Slot_3
   m_TagString: Untagged
@@ -3056,6 +3063,7 @@ GameObject:
   - component: {fileID: 956139841}
   - component: {fileID: 956139840}
   - component: {fileID: 956139839}
+  - component: {fileID: 770000000000000015}
   m_Layer: 5
   m_Name: WizardButton
   m_TagString: Untagged
@@ -3335,6 +3343,7 @@ GameObject:
   - component: {fileID: 1076632388}
   - component: {fileID: 1076632387}
   - component: {fileID: 1076632386}
+  - component: {fileID: 770000000000000016}
   m_Layer: 5
   m_Name: BackButton
   m_TagString: Untagged
@@ -4272,6 +4281,7 @@ GameObject:
   - component: {fileID: 1530723850}
   - component: {fileID: 1530723849}
   - component: {fileID: 1530723851}
+  - component: {fileID: 770000000000000017}
   m_Layer: 5
   m_Name: StartGameButton
   m_TagString: Untagged
@@ -4716,6 +4726,7 @@ GameObject:
   - component: {fileID: 1741407547}
   - component: {fileID: 1741407546}
   - component: {fileID: 1741407545}
+  - component: {fileID: 770000000000000018}
   m_Layer: 5
   m_Name: AssassinButton
   m_TagString: Untagged
@@ -5504,6 +5515,7 @@ GameObject:
   - component: {fileID: 2069992958}
   - component: {fileID: 2069992957}
   - component: {fileID: 2069992956}
+  - component: {fileID: 770000000000000019}
   m_Layer: 5
   m_Name: Slot_2
   m_TagString: Untagged
@@ -6340,6 +6352,7 @@ GameObject:
   - component: {fileID: 5392922862452709114}
   - component: {fileID: 1089027500892423431}
   - component: {fileID: 5983295788774050155}
+  - component: {fileID: 770000000000000020}
   m_Layer: 5
   m_Name: Slot_1
   m_TagString: Untagged
@@ -6347,3 +6360,159 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
+--- !u!114 &770000000000000008
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 132760178}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000009
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 184905067}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000010
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 282683112}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 337367861}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 396320969}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000013
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 446350949}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000014
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 802807450}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000015
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 956139837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000016
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1076632385}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000017
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1530723847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000018
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1741407543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000019
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2069992954}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &770000000000000020
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9201331604916632328}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

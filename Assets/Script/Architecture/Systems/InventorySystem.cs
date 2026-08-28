@@ -213,4 +213,52 @@ public sealed class InventorySystem : AbstractSystem
         model.Clear();
         this.SendEvent(new InventoryChangedEvent());
     }
+
+    /// <summary>
+    /// 装备系统的原子交换入口：旧装备直接写回来源格，因此即使其余 23 格都满也能换装。
+    /// 这里只修改数据，不发事件；EquipmentSystem 在两个模型都成功更新后统一广播。
+    /// </summary>
+    internal bool TryExchangeSingleItemAt(
+        int slotIndex,
+        InventoryItemDefinition expectedItem,
+        InventoryItemDefinition replacementItem)
+    {
+        if (slotIndex < 0 || slotIndex >= model.Slots.Count)
+        {
+            return false;
+        }
+
+        InventorySlotData slot = model.Slots[slotIndex];
+        if (slot.IsEmpty || slot.Count != 1 || !slot.Item.IsSameItem(expectedItem))
+        {
+            return false;
+        }
+
+        slot.Set(replacementItem, replacementItem != null ? 1 : 0);
+        return true;
+    }
+
+    internal bool TryPlaceSingleItemInFirstEmptySlot(InventoryItemDefinition item)
+    {
+        if (item == null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < model.Slots.Count; i++)
+        {
+            if (model.Slots[i].IsEmpty)
+            {
+                model.Slots[i].Set(item, 1);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal void NotifyEquipmentTransactionCompleted()
+    {
+        this.SendEvent(new InventoryChangedEvent());
+    }
 }

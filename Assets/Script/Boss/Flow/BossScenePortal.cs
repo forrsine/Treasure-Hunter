@@ -122,6 +122,7 @@ public sealed class BossScenePortal : MonoBehaviour
         }
 
         isTriggered = true;
+        GameAudioService.PlayAt(GameSfxId.PortalEnter, transform.position);
         LoadTargetScene();
     }
 

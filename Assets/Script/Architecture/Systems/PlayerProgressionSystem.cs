@@ -143,13 +143,13 @@ public sealed class PlayerProgressionSystem : AbstractSystem
                 float moveCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.2f;
                 return GetMoveSpeedBonusPercent() + MinUpgradeableThreshold < moveCap;
             case PlayerAttributeType.CritChance:
-                return Stats.CritChance + MinUpgradeableThreshold < (config != null ? config.playerCritChanceCap : 0.35f);
+                return Stats.CritChance - EquipmentBonuses.CritChance + MinUpgradeableThreshold < (config != null ? config.playerCritChanceCap : 0.35f);
             case PlayerAttributeType.DodgeChance:
-                return Stats.DodgeChance + MinUpgradeableThreshold < (config != null ? config.playerDodgeChanceCap : 0.2f);
+                return Stats.DodgeChance - EquipmentBonuses.DodgeChance + MinUpgradeableThreshold < (config != null ? config.playerDodgeChanceCap : 0.2f);
             case PlayerAttributeType.DamageReduction:
-                return Stats.DamageReduction + MinUpgradeableThreshold < (config != null ? config.playerDamageReductionCap : 0.4f);
+                return Stats.DamageReduction - EquipmentBonuses.DamageReduction + MinUpgradeableThreshold < (config != null ? config.playerDamageReductionCap : 0.4f);
             case PlayerAttributeType.LifeSteal:
-                return Stats.LifeSteal + MinUpgradeableThreshold < (config != null ? config.playerLifeStealCap : 0.1f);
+                return Stats.LifeSteal - EquipmentBonuses.LifeSteal + MinUpgradeableThreshold < (config != null ? config.playerLifeStealCap : 0.1f);
             default:
                 return false;
         }
@@ -179,7 +179,9 @@ public sealed class PlayerProgressionSystem : AbstractSystem
         {
             case PlayerAttributeType.AttackPower:
                 float attackPercent = config != null ? config.playerAttackUpgradePercent : 0.12f;
-                Stats.AttackPower = Mathf.Max(1, Mathf.CeilToInt(Stats.AttackPower * (1f + attackPercent)));
+                int equipmentAttack = Mathf.RoundToInt(EquipmentBonuses.Attack);
+                int attackWithoutEquipment = Mathf.Max(1, Stats.AttackPower - equipmentAttack);
+                Stats.AttackPower = Mathf.Max(1, Mathf.CeilToInt(attackWithoutEquipment * (1f + attackPercent)) + equipmentAttack);
                 break;
             case PlayerAttributeType.MaxHp:
                 int hpBonus = config != null ? config.playerMaxHpUpgradeFlat : 30;
@@ -193,19 +195,20 @@ public sealed class PlayerProgressionSystem : AbstractSystem
             case PlayerAttributeType.MoveSpeed:
                 float speedPercent = config != null ? config.playerMoveSpeedUpgradePercent : 0.05f;
                 float speedCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.2f;
+                float equipmentMoveSpeed = EquipmentBonuses.MoveSpeed;
                 Stats.CurrentMoveSpeed = Mathf.Min(
                     Stats.BaseMoveSpeed * (1f + speedCap),
-                    Stats.CurrentMoveSpeed * (1f + speedPercent));
+                    (Stats.CurrentMoveSpeed - equipmentMoveSpeed) * (1f + speedPercent)) + equipmentMoveSpeed;
                 break;
             case PlayerAttributeType.CritChance:
                 Stats.CritChance = Mathf.Min(
                     config != null ? config.playerCritChanceCap : 0.35f,
-                    Stats.CritChance + (config != null ? config.playerCritChanceUpgrade : 0.05f));
+                    Stats.CritChance - EquipmentBonuses.CritChance + (config != null ? config.playerCritChanceUpgrade : 0.05f)) + EquipmentBonuses.CritChance;
                 break;
             case PlayerAttributeType.DodgeChance:
                 Stats.DodgeChance = Mathf.Min(
                     config != null ? config.playerDodgeChanceCap : 0.2f,
-                    Stats.DodgeChance + (config != null ? config.playerDodgeChanceUpgrade : 0.04f));
+                    Stats.DodgeChance - EquipmentBonuses.DodgeChance + (config != null ? config.playerDodgeChanceUpgrade : 0.04f)) + EquipmentBonuses.DodgeChance;
                 break;
             case PlayerAttributeType.HealthRegen:
                 Stats.HealthRegenPerSecond = Mathf.Min(
@@ -215,12 +218,12 @@ public sealed class PlayerProgressionSystem : AbstractSystem
             case PlayerAttributeType.DamageReduction:
                 Stats.DamageReduction = Mathf.Min(
                     config != null ? config.playerDamageReductionCap : 0.4f,
-                    Stats.DamageReduction + (config != null ? config.playerDamageReductionUpgrade : 0.04f));
+                    Stats.DamageReduction - EquipmentBonuses.DamageReduction + (config != null ? config.playerDamageReductionUpgrade : 0.04f)) + EquipmentBonuses.DamageReduction;
                 break;
             case PlayerAttributeType.LifeSteal:
                 Stats.LifeSteal = Mathf.Min(
                     config != null ? config.playerLifeStealCap : 0.1f,
-                    Stats.LifeSteal + (config != null ? config.playerLifeStealUpgrade : 0.025f));
+                    Stats.LifeSteal - EquipmentBonuses.LifeSteal + (config != null ? config.playerLifeStealUpgrade : 0.025f)) + EquipmentBonuses.LifeSteal;
                 break;
             default:
                 return false;
@@ -445,32 +448,35 @@ public sealed class PlayerProgressionSystem : AbstractSystem
         {
             case PlayerAttributeType.AttackPower:
                 float attackPercent = config != null ? config.playerAttackUpgradePercent : 0.12f;
-                return $"当前 {Stats.AttackPower} -> {Mathf.Max(1, Mathf.CeilToInt(Stats.AttackPower * (1f + attackPercent)))}";
+                int equipmentAttack = Mathf.RoundToInt(EquipmentBonuses.Attack);
+                int nextAttack = Mathf.CeilToInt(Mathf.Max(1, Stats.AttackPower - equipmentAttack) * (1f + attackPercent)) + equipmentAttack;
+                return $"当前 {Stats.AttackPower} -> {nextAttack}";
             case PlayerAttributeType.MaxHp:
                 return $"当前 {Stats.MaxHp} -> {Stats.MaxHp + (config != null ? config.playerMaxHpUpgradeFlat : 30)}";
             case PlayerAttributeType.MoveSpeed:
                 float speedPercent = config != null ? config.playerMoveSpeedUpgradePercent : 0.05f;
                 float speedCap = config != null ? config.playerMoveSpeedUpgradeCapPercent : 0.2f;
-                float next = Mathf.Min(Stats.BaseMoveSpeed * (1f + speedCap), Stats.CurrentMoveSpeed * (1f + speedPercent));
+                float next = Mathf.Min(Stats.BaseMoveSpeed * (1f + speedCap), (Stats.CurrentMoveSpeed - EquipmentBonuses.MoveSpeed) * (1f + speedPercent)) + EquipmentBonuses.MoveSpeed;
                 return $"当前 {Stats.CurrentMoveSpeed:0.00} -> {next:0.00}";
             case PlayerAttributeType.CritChance:
-                return PreviewPercent(Stats.CritChance, config != null ? config.playerCritChanceUpgrade : 0.05f, config != null ? config.playerCritChanceCap : 0.35f);
+                return PreviewPercent(Stats.CritChance, EquipmentBonuses.CritChance, config != null ? config.playerCritChanceUpgrade : 0.05f, config != null ? config.playerCritChanceCap : 0.35f);
             case PlayerAttributeType.DodgeChance:
-                return PreviewPercent(Stats.DodgeChance, config != null ? config.playerDodgeChanceUpgrade : 0.04f, config != null ? config.playerDodgeChanceCap : 0.2f);
+                return PreviewPercent(Stats.DodgeChance, EquipmentBonuses.DodgeChance, config != null ? config.playerDodgeChanceUpgrade : 0.04f, config != null ? config.playerDodgeChanceCap : 0.2f);
             case PlayerAttributeType.HealthRegen:
                 return $"当前 {Stats.HealthRegenPerSecond:0.##}/s -> {Mathf.Min(GetHealthRegenCap(), Stats.HealthRegenPerSecond + GetNextHealthRegenUpgradeAmount()):0.##}/s";
             case PlayerAttributeType.DamageReduction:
-                return PreviewPercent(Stats.DamageReduction, config != null ? config.playerDamageReductionUpgrade : 0.04f, config != null ? config.playerDamageReductionCap : 0.4f);
+                return PreviewPercent(Stats.DamageReduction, EquipmentBonuses.DamageReduction, config != null ? config.playerDamageReductionUpgrade : 0.04f, config != null ? config.playerDamageReductionCap : 0.4f);
             case PlayerAttributeType.LifeSteal:
-                return PreviewPercent(Stats.LifeSteal, config != null ? config.playerLifeStealUpgrade : 0.025f, config != null ? config.playerLifeStealCap : 0.1f);
+                return PreviewPercent(Stats.LifeSteal, EquipmentBonuses.LifeSteal, config != null ? config.playerLifeStealUpgrade : 0.025f, config != null ? config.playerLifeStealCap : 0.1f);
             default:
                 return string.Empty;
         }
     }
 
-    private string PreviewPercent(float current, float addition, float cap)
+    private string PreviewPercent(float current, float equipmentBonus, float addition, float cap)
     {
-        return $"当前 {Mathf.RoundToInt(current * 100f)}% -> {Mathf.RoundToInt(Mathf.Min(cap, current + addition) * 100f)}%";
+        float next = Mathf.Min(cap, current - equipmentBonus + addition) + equipmentBonus;
+        return $"当前 {Mathf.RoundToInt(current * 100f)}% -> {Mathf.RoundToInt(next * 100f)}%";
     }
 
     private float GetUpgradeWeight(PlayerAttributeType type)
@@ -517,7 +523,9 @@ public sealed class PlayerProgressionSystem : AbstractSystem
     private float GetMoveSpeedBonusPercent()
     {
         return Stats.BaseMoveSpeed > 0f
-            ? Mathf.Max(0f, Stats.CurrentMoveSpeed / Stats.BaseMoveSpeed - 1f)
+            ? Mathf.Max(0f, (Stats.CurrentMoveSpeed - EquipmentBonuses.MoveSpeed) / Stats.BaseMoveSpeed - 1f)
             : 0f;
     }
+
+    private EquipmentBonusTotals EquipmentBonuses => this.GetSystem<EquipmentSystem>().CurrentBonuses;
 }

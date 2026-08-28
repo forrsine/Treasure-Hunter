@@ -8,8 +8,13 @@ public sealed class PlayerProgressSaveData
     public int Level { get; set; }
     public int Exp { get; set; }
     public int PendingAttributeUpgradeCount { get; set; }
+    public long Gold { get; set; }
+    public bool MerchantIntroCompleted { get; set; }
     public List<NAttributeUpgradeSave> AttributeUpgrades { get; } = new List<NAttributeUpgradeSave>();
     public List<NInventoryItemSave> InventoryItems { get; } = new List<NInventoryItemSave>();
+    public List<NEquippedItemSave> EquippedItems { get; } = new List<NEquippedItemSave>();
+    public List<string> PurchasedLimitedShopItemIds { get; } = new List<string>();
+    public List<NQuestProgressSave> QuestProgress { get; } = new List<NQuestProgressSave>();
 
     /// <summary>
     /// 主动重开只清理本局强化，不触碰等级、经验和关卡累计数据。

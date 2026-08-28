@@ -15,11 +15,15 @@ public interface IGameplayInput
     bool LeftMouseUp { get; }
     bool RollDown { get; }
     bool DeveloperModeToggleDown { get; }
-    bool DebugAddLevelsDown { get; }
-    bool DebugAddExpDown { get; }
+    bool DebugHighAttackToggleDown { get; }
+    bool DebugInvincibilityToggleDown { get; }
+    bool DebugAddGoldDown { get; }
+    bool DebugCompleteVaultCycleDown { get; }
+    bool DebugAddLevelDown { get; }
     bool DebugRestoreManaDown { get; }
-    bool DebugBreakVaultDown { get; }
+    bool DebugZeroCooldownToggleDown { get; }
     bool InventoryToggleDown { get; }
+    bool InteractDown { get; }
 
     bool Skill1Down { get; }
     bool Skill1Held { get; }

@@ -151,6 +151,26 @@ public sealed class CharacterProgressPersistenceTests
     }
 
     [Test]
+    public void ResetAfterDeath_PreservesGoldMerchantIntroAndLimitedPurchases()
+    {
+        var progress = new PlayerProgressSaveData
+        {
+            Level = 8,
+            Exp = 20,
+            PendingAttributeUpgradeCount = 1,
+            Gold = 777,
+            MerchantIntroCompleted = true
+        };
+        progress.PurchasedLimitedShopItemIds.Add("merchant_training_hammer");
+
+        progress.ResetAfterDeath(Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath));
+
+        Assert.That(progress.Gold, Is.EqualTo(777));
+        Assert.That(progress.MerchantIntroCompleted, Is.True);
+        Assert.That(progress.PurchasedLimitedShopItemIds, Is.EquivalentTo(new[] { "merchant_training_hammer" }));
+    }
+
+    [Test]
     public void ResetAfterDeath_RemovesConsumablesButKeepsMaterialAndQuestItems()
     {
         InventoryDatabase database = Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath);
@@ -326,7 +346,9 @@ public sealed class CharacterProgressPersistenceTests
                     PendingAttributeUpgradeCount = 1,
                     VaultDestroyedCount = 12,
                     CompletedBossCount = 2,
-                    ResetAfterDeath = true
+                    ResetAfterDeath = true,
+                    Gold = 456,
+                    MerchantIntroCompleted = true
                 }
             }
         };
@@ -340,6 +362,18 @@ public sealed class CharacterProgressPersistenceTests
             SlotIndex = 3,
             ItemId = "spider_king_core",
             Count = 2
+        });
+        source.Request.saveCharacterProgress.EquippedItems.Add(new NEquippedItemInfo
+        {
+            EquipmentSlot = (int)EquipmentSlotType.Weapon,
+            ItemId = "boss_iron_war_axe"
+        });
+        source.Request.saveCharacterProgress.PurchasedLimitedShopItemIds.Add("boss_iron_war_axe");
+        source.Request.saveCharacterProgress.QuestProgress.Add(new NQuestProgressInfo
+        {
+            QuestId = "hunt_green_slime",
+            State = (int)QuestState.ReadyToClaim,
+            CurrentCount = 8
         });
 
         using var stream = new MemoryStream();
@@ -360,6 +394,16 @@ public sealed class CharacterProgressPersistenceTests
         Assert.That(request.InventoryItems[0].SlotIndex, Is.EqualTo(3));
         Assert.That(request.InventoryItems[0].ItemId, Is.EqualTo("spider_king_core"));
         Assert.That(request.InventoryItems[0].Count, Is.EqualTo(2));
+        Assert.That(request.EquippedItems, Has.Count.EqualTo(1));
+        Assert.That(request.EquippedItems[0].EquipmentSlot, Is.EqualTo((int)EquipmentSlotType.Weapon));
+        Assert.That(request.EquippedItems[0].ItemId, Is.EqualTo("boss_iron_war_axe"));
+        Assert.That(request.Gold, Is.EqualTo(456));
+        Assert.That(request.MerchantIntroCompleted, Is.True);
+        Assert.That(request.PurchasedLimitedShopItemIds, Is.EquivalentTo(new[] { "boss_iron_war_axe" }));
+        Assert.That(request.QuestProgress, Has.Count.EqualTo(1));
+        Assert.That(request.QuestProgress[0].QuestId, Is.EqualTo("hunt_green_slime"));
+        Assert.That(request.QuestProgress[0].State, Is.EqualTo((int)QuestState.ReadyToClaim));
+        Assert.That(request.QuestProgress[0].CurrentCount, Is.EqualTo(8));
     }
 
     [Test]

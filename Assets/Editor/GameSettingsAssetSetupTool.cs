@@ -19,7 +19,7 @@ public static class GameSettingsAssetSetupTool
     public const string LoginScenePath = "Assets/Scenes/LoginScene.unity";
 
     private const string MainMixerPath = "Assets/AllResources/Audio/Main.mixer";
-    private const string RpgUiSpritePath = "Assets/AllResources/2D Casual UI/Sprite/GUI.png";
+    private const string PurchasedUiSpriteRoot = "Assets/AllResources/淘宝ui素材/RuntimeSprites/";
 
     /// <summary>
     /// 首次加入设置系统时自动生成缺失资源。
@@ -146,8 +146,7 @@ public static class GameSettingsAssetSetupTool
     {
         Font font = Resources.GetBuiltinResource<Font>("Arial.ttf");
         DefaultControls.Resources uiResources = CreateDefaultControlResources();
-        Sprite panelSprite = FindSprite("GUI_46");
-        Sprite buttonSprite = FindSprite("GUI_19");
+        SettingsUiSkin skin = LoadSettingsUiSkin();
 
         GameObject root = new GameObject(
             "GameSettingsPanel",
@@ -160,74 +159,98 @@ public static class GameSettingsAssetSetupTool
         {
             RectTransform rootRect = root.GetComponent<RectTransform>();
             StretchToParent(rootRect);
-            Image overlay = root.GetComponent<Image>();
-            overlay.color = new Color32(5, 8, 16, 205);
-            overlay.raycastTarget = true;
+            Image background = root.GetComponent<Image>();
+            ConfigureSpriteImage(background, skin.background, Image.Type.Simple, true);
+            background.preserveAspect = false;
 
             Image window = CreateImage(
                 "SettingsWindow",
                 root.transform,
-                new Color32(39, 31, 43, 250),
-                true);
-            ConfigureCenteredRect(window.rectTransform, Vector2.zero, new Vector2(980f, 940f));
-            if (panelSprite != null)
-            {
-                window.sprite = panelSprite;
-                window.type = Image.Type.Sliced;
-            }
+                Color.clear,
+                false);
+            StretchToParent(window.rectTransform);
 
             Text title = CreateText(
                 "Title",
                 window.transform,
                 font,
                 "游戏设置",
-                38,
-                new Color32(255, 216, 105, 255),
-                new Vector2(0f, 405f),
-                new Vector2(600f, 60f),
-                TextAnchor.MiddleCenter);
+                46,
+                Color.white,
+                new Vector2(-600f, 465f),
+                new Vector2(420f, 70f),
+                TextAnchor.MiddleLeft);
             title.fontStyle = FontStyle.Bold;
 
+            Button cancelButton = CreateIconButton(
+                window.transform,
+                skin.back,
+                "CancelButton",
+                new Vector2(-870f, 465f),
+                new Vector2(84f, 84f));
+
+            CreateDecorativeImage(
+                "HeaderDivider",
+                window.transform,
+                skin.divider,
+                new Vector2(0f, 390f),
+                new Vector2(1802f, 10f));
+            CreateDecorativeImage(
+                "FooterDivider",
+                window.transform,
+                skin.divider,
+                new Vector2(0f, -340f),
+                new Vector2(1802f, 10f));
+
             Slider masterSlider = CreateSliderRow(
-                window.transform, uiResources, font, "MasterVolume", "主音量", 315f, 0f, 1f,
+                window.transform, uiResources, font, skin, skin.volumeUpIcon,
+                "MasterVolume", "主音量", 250f, 0f, 1f,
                 out Text masterValue);
             Slider musicSlider = CreateSliderRow(
-                window.transform, uiResources, font, "MusicVolume", "音乐音量", 245f, 0f, 1f,
+                window.transform, uiResources, font, skin, skin.musicIcon,
+                "MusicVolume", "音乐音量", 90f, 0f, 1f,
                 out Text musicValue);
             Slider soundsSlider = CreateSliderRow(
-                window.transform, uiResources, font, "SoundEffectsVolume", "音效音量", 175f, 0f, 1f,
+                window.transform, uiResources, font, skin, skin.soundIcon,
+                "SoundEffectsVolume", "音效音量", -70f, 0f, 1f,
                 out Text soundsValue);
             Slider sensitivitySlider = CreateSliderRow(
-                window.transform, uiResources, font, "MouseSensitivity", "鼠标灵敏度", 105f, 0.5f, 2f,
+                window.transform, uiResources, font, skin, skin.setting2Icon,
+                "MouseSensitivity", "鼠标灵敏度", -230f, 0.5f, 2f,
                 out Text sensitivityValue);
 
             Dropdown resolutionDropdown = CreateDropdownRow(
-                window.transform, uiResources, font, "Resolution", "分辨率", 35f);
+                window.transform, uiResources, font, skin, skin.displayIcon,
+                "Resolution", "分辨率", 270f);
             Dropdown displayModeDropdown = CreateDropdownRow(
-                window.transform, uiResources, font, "DisplayMode", "显示模式", -35f);
+                window.transform, uiResources, font, skin, skin.setting1Icon,
+                "DisplayMode", "显示模式", 145f);
             Dropdown qualityDropdown = CreateDropdownRow(
-                window.transform, uiResources, font, "Quality", "画质", -105f);
+                window.transform, uiResources, font, skin, skin.gameIcon,
+                "Quality", "画质", 20f);
             Toggle vSyncToggle = CreateToggleRow(
-                window.transform, uiResources, font, "VerticalSync", "垂直同步", -175f);
+                window.transform, uiResources, font, skin, skin.refreshIcon,
+                "VerticalSync", "垂直同步", -105f);
             Dropdown frameRateDropdown = CreateDropdownRow(
-                window.transform, uiResources, font, "FrameRateLimit", "帧率上限", -245f);
+                window.transform, uiResources, font, skin, skin.timerIcon,
+                "FrameRateLimit", "帧率上限", -230f);
 
             Button defaultsButton = CreateButton(
-                window.transform, uiResources, font, buttonSprite, "RestoreDefaultsButton", "恢复默认",
-                new Vector2(-280f, -385f), new Vector2(220f, 58f), new Color32(84, 72, 62, 255));
-            Button cancelButton = CreateButton(
-                window.transform, uiResources, font, buttonSprite, "CancelButton", "取消",
-                new Vector2(0f, -385f), new Vector2(220f, 58f), new Color32(101, 66, 68, 255));
+                window.transform, uiResources, font, skin.grayButton,
+                "RestoreDefaultsButton", "恢复默认",
+                new Vector2(-190f, -445f), new Vector2(320f, 82f),
+                new Color32(62, 46, 83, 255));
             Button applyButton = CreateButton(
-                window.transform, uiResources, font, buttonSprite, "ApplyButton", "应用",
-                new Vector2(280f, -385f), new Vector2(220f, 58f), new Color32(158, 111, 42, 255));
+                window.transform, uiResources, font, skin.greenButton,
+                "ApplyButton", "应用",
+                new Vector2(190f, -445f), new Vector2(320f, 82f),
+                Color.white);
 
             GameObject confirmationPanel = CreateConfirmationPanel(
                 root.transform,
                 uiResources,
                 font,
-                panelSprite,
-                buttonSprite,
+                skin,
                 out Text confirmationText,
                 out Button keepButton,
                 out Button revertButton);
@@ -306,6 +329,20 @@ public static class GameSettingsAssetSetupTool
             throw new MissingReferenceException("LoginScene 的 SettingButton 或设置面板控制器缺失。 ");
         }
 
+        // 入口只替换表现资源，保留原按钮尺寸、位置和业务点击事件。
+        Image settingButtonImage = settingButton.GetComponent<Image>();
+        if (settingButtonImage == null)
+        {
+            throw new MissingReferenceException("LoginScene 的 SettingButton 缺少 Image 组件。 ");
+        }
+
+        ConfigureSpriteImage(
+            settingButtonImage,
+            LoadPurchasedSprite("Home/UI_Home_Top_ButtonSetting_Icon"),
+            Image.Type.Simple,
+            true);
+        settingButtonImage.preserveAspect = true;
+
         RemoveOldSettingsPanelListeners(settingButton);
         UnityEventTools.AddPersistentListener(settingButton.onClick, panelController.Open);
         EditorUtility.SetDirty(settingButton);
@@ -342,6 +379,8 @@ public static class GameSettingsAssetSetupTool
         Transform parent,
         DefaultControls.Resources resources,
         Font font,
+        SettingsUiSkin skin,
+        Sprite iconSprite,
         string objectName,
         string label,
         float y,
@@ -349,17 +388,23 @@ public static class GameSettingsAssetSetupTool
         float maximum,
         out Text valueText)
     {
+        CreateDecorativeImage(
+            objectName + "Icon",
+            parent,
+            iconSprite,
+            new Vector2(-865f, y),
+            new Vector2(64f, 64f));
         CreateText(
             objectName + "Label", parent, font, label, 25, Color.white,
-            new Vector2(-350f, y), new Vector2(220f, 50f), TextAnchor.MiddleLeft);
+            new Vector2(-690f, y), new Vector2(230f, 54f), TextAnchor.MiddleLeft);
 
         GameObject sliderObject = DefaultControls.CreateSlider(resources);
         sliderObject.name = objectName + "Slider";
         sliderObject.transform.SetParent(parent, false);
         ConfigureCenteredRect(
             sliderObject.GetComponent<RectTransform>(),
-            new Vector2(60f, y),
-            new Vector2(500f, 34f));
+            new Vector2(-300f, y),
+            new Vector2(470f, 54f));
 
         Slider slider = sliderObject.GetComponent<Slider>();
         slider.minValue = minimum;
@@ -367,22 +412,64 @@ public static class GameSettingsAssetSetupTool
         slider.value = maximum;
         slider.wholeNumbers = false;
 
+        Transform backgroundTransform = sliderObject.transform.Find("Background");
+        Image sliderBackground = backgroundTransform != null
+            ? backgroundTransform.GetComponent<Image>()
+            : null;
+        if (sliderBackground != null)
+        {
+            ConfigureCenteredRect(
+                sliderBackground.rectTransform,
+                new Vector2(-13f, 0f),
+                new Vector2(390f, 34f));
+            ConfigureSpriteImage(
+                sliderBackground,
+                skin.sliderBackground,
+                Image.Type.Simple,
+                true);
+        }
+
+        Transform fillAreaTransform = sliderObject.transform.Find("Fill Area");
+        RectTransform fillArea = fillAreaTransform as RectTransform;
+        if (fillArea != null)
+        {
+            fillArea.anchorMin = new Vector2(0f, 0.5f);
+            fillArea.anchorMax = new Vector2(1f, 0.5f);
+            fillArea.pivot = new Vector2(0.5f, 0.5f);
+            fillArea.anchoredPosition = new Vector2(-13f, 0f);
+            fillArea.sizeDelta = new Vector2(-80f, 23f);
+        }
+
         Image fill = slider.fillRect != null ? slider.fillRect.GetComponent<Image>() : null;
         if (fill != null)
         {
-            fill.color = new Color32(224, 166, 60, 255);
+            ConfigureSpriteImage(fill, skin.sliderFill, Image.Type.Simple, true);
+            fill.preserveAspect = false;
+        }
+
+        Transform handleAreaTransform = sliderObject.transform.Find("Handle Slide Area");
+        RectTransform handleArea = handleAreaTransform as RectTransform;
+        if (handleArea != null)
+        {
+            handleArea.anchorMin = new Vector2(0f, 0f);
+            handleArea.anchorMax = new Vector2(1f, 1f);
+            handleArea.offsetMin = new Vector2(27f, 0f);
+            handleArea.offsetMax = new Vector2(-53f, 0f);
         }
 
         Image handle = slider.handleRect != null ? slider.handleRect.GetComponent<Image>() : null;
         if (handle != null)
         {
-            handle.color = new Color32(255, 222, 126, 255);
+            ConfigureSpriteImage(handle, skin.sliderHandle, Image.Type.Simple, true);
+            handle.preserveAspect = true;
+            slider.handleRect.sizeDelta = new Vector2(54f, 54f);
         }
 
         valueText = CreateText(
             objectName + "Value", parent, font, "100%", 24,
-            new Color32(255, 221, 130, 255),
-            new Vector2(385f, y), new Vector2(110f, 50f), TextAnchor.MiddleCenter);
+            Color.white,
+            new Vector2(0f, y), new Vector2(100f, 54f), TextAnchor.MiddleCenter);
+        valueText.fontStyle = FontStyle.Bold;
         return slider;
     }
 
@@ -390,29 +477,58 @@ public static class GameSettingsAssetSetupTool
         Transform parent,
         DefaultControls.Resources resources,
         Font font,
+        SettingsUiSkin skin,
+        Sprite iconSprite,
         string objectName,
         string label,
         float y)
     {
+        CreateDecorativeImage(
+            objectName + "Icon",
+            parent,
+            iconSprite,
+            new Vector2(105f, y),
+            new Vector2(64f, 64f));
         CreateText(
             objectName + "Label", parent, font, label, 25, Color.white,
-            new Vector2(-350f, y), new Vector2(220f, 50f), TextAnchor.MiddleLeft);
+            new Vector2(280f, y), new Vector2(230f, 54f), TextAnchor.MiddleLeft);
 
         GameObject dropdownObject = DefaultControls.CreateDropdown(resources);
         dropdownObject.name = objectName + "Dropdown";
         dropdownObject.transform.SetParent(parent, false);
         ConfigureCenteredRect(
             dropdownObject.GetComponent<RectTransform>(),
-            new Vector2(135f, y),
-            new Vector2(500f, 48f));
+            new Vector2(680f, y),
+            new Vector2(400f, 76f));
 
         Dropdown dropdown = dropdownObject.GetComponent<Dropdown>();
         dropdown.captionText.font = font;
-        dropdown.captionText.fontSize = 23;
-        dropdown.captionText.color = Color.white;
+        dropdown.captionText.fontSize = 24;
+        dropdown.captionText.fontStyle = FontStyle.Bold;
+        dropdown.captionText.color = new Color32(62, 46, 83, 255);
         dropdown.itemText.font = font;
         dropdown.itemText.fontSize = 22;
-        dropdown.targetGraphic.color = new Color32(66, 56, 69, 255);
+        dropdown.itemText.color = new Color32(62, 46, 83, 255);
+
+        Image dropdownImage = dropdown.targetGraphic as Image;
+        if (dropdownImage != null)
+        {
+            ConfigureSpriteImage(dropdownImage, skin.grayButton, Image.Type.Sliced, true);
+        }
+
+        Transform arrowTransform = dropdownObject.transform.Find("Arrow");
+        Image arrow = arrowTransform != null ? arrowTransform.GetComponent<Image>() : null;
+        if (arrow != null)
+        {
+            ConfigureSpriteImage(arrow, skin.arrowDown, Image.Type.Simple, false);
+            arrow.preserveAspect = true;
+            ConfigureCenteredRect(
+                arrow.rectTransform,
+                new Vector2(160f, 0f),
+                new Vector2(36f, 36f));
+        }
+
+        ConfigureDropdownTemplate(dropdown, skin);
         return dropdown;
     }
 
@@ -420,31 +536,58 @@ public static class GameSettingsAssetSetupTool
         Transform parent,
         DefaultControls.Resources resources,
         Font font,
+        SettingsUiSkin skin,
+        Sprite iconSprite,
         string objectName,
         string label,
         float y)
     {
+        CreateDecorativeImage(
+            objectName + "Icon",
+            parent,
+            iconSprite,
+            new Vector2(105f, y),
+            new Vector2(64f, 64f));
         CreateText(
             objectName + "Label", parent, font, label, 25, Color.white,
-            new Vector2(-350f, y), new Vector2(220f, 50f), TextAnchor.MiddleLeft);
+            new Vector2(280f, y), new Vector2(230f, 54f), TextAnchor.MiddleLeft);
 
         GameObject toggleObject = DefaultControls.CreateToggle(resources);
         toggleObject.name = objectName + "Toggle";
         toggleObject.transform.SetParent(parent, false);
         ConfigureCenteredRect(
             toggleObject.GetComponent<RectTransform>(),
-            new Vector2(-5f, y),
-            new Vector2(220f, 48f));
+            new Vector2(680f, y),
+            new Vector2(179f, 83f));
 
         Toggle toggle = toggleObject.GetComponent<Toggle>();
         toggle.isOn = true;
+
+        Transform offTransform = toggleObject.transform.Find("Background");
+        Image offImage = offTransform != null ? offTransform.GetComponent<Image>() : null;
+        if (offImage != null)
+        {
+            StretchToParent(offImage.rectTransform);
+            ConfigureSpriteImage(offImage, skin.switchOff, Image.Type.Simple, true);
+            offImage.preserveAspect = true;
+            toggle.targetGraphic = offImage;
+        }
+
+        Transform onTransform = toggleObject.transform.Find("Background/Checkmark");
+        Image onImage = onTransform != null ? onTransform.GetComponent<Image>() : null;
+        if (onImage != null)
+        {
+            StretchToParent(onImage.rectTransform);
+            ConfigureSpriteImage(onImage, skin.switchOn, Image.Type.Simple, false);
+            onImage.preserveAspect = true;
+            toggle.graphic = onImage;
+        }
+
         Text toggleText = toggleObject.GetComponentInChildren<Text>(true);
         if (toggleText != null)
         {
-            toggleText.font = font;
-            toggleText.fontSize = 23;
-            toggleText.color = Color.white;
-            toggleText.text = "开启";
+            toggleText.text = string.Empty;
+            toggleText.gameObject.SetActive(false);
         }
 
         return toggle;
@@ -459,7 +602,7 @@ public static class GameSettingsAssetSetupTool
         string label,
         Vector2 position,
         Vector2 size,
-        Color color)
+        Color textColor)
     {
         GameObject buttonObject = DefaultControls.CreateButton(resources);
         buttonObject.name = objectName;
@@ -468,18 +611,13 @@ public static class GameSettingsAssetSetupTool
 
         Button button = buttonObject.GetComponent<Button>();
         Image image = buttonObject.GetComponent<Image>();
-        image.color = color;
-        if (buttonSprite != null)
-        {
-            image.sprite = buttonSprite;
-            image.type = Image.Type.Sliced;
-        }
+        ConfigureSpriteImage(image, buttonSprite, Image.Type.Sliced, true);
 
         Text text = buttonObject.GetComponentInChildren<Text>(true);
         text.font = font;
-        text.fontSize = 25;
+        text.fontSize = 27;
         text.fontStyle = FontStyle.Bold;
-        text.color = Color.white;
+        text.color = textColor;
         text.text = label;
         return button;
     }
@@ -488,8 +626,7 @@ public static class GameSettingsAssetSetupTool
         Transform parent,
         DefaultControls.Resources resources,
         Font font,
-        Sprite panelSprite,
-        Sprite buttonSprite,
+        SettingsUiSkin skin,
         out Text confirmationText,
         out Button keepButton,
         out Button revertButton)
@@ -504,32 +641,108 @@ public static class GameSettingsAssetSetupTool
         Image dialog = CreateImage(
             "ConfirmationWindow",
             overlay.transform,
-            new Color32(45, 36, 48, 255),
+            Color.white,
             true);
-        ConfigureCenteredRect(dialog.rectTransform, Vector2.zero, new Vector2(680f, 330f));
-        if (panelSprite != null)
-        {
-            dialog.sprite = panelSprite;
-            dialog.type = Image.Type.Sliced;
-        }
+        ConfigureCenteredRect(dialog.rectTransform, Vector2.zero, new Vector2(880f, 510f));
+        ConfigureSpriteImage(dialog, skin.popup, Image.Type.Sliced, true);
 
         Text title = CreateText(
-            "ConfirmationTitle", dialog.transform, font, "确认显示设置", 31,
-            new Color32(255, 216, 105, 255),
-            new Vector2(0f, 105f), new Vector2(560f, 55f), TextAnchor.MiddleCenter);
+            "ConfirmationTitle", dialog.transform, font, "确认显示设置", 36,
+            new Color32(62, 46, 83, 255),
+            new Vector2(0f, 145f), new Vector2(660f, 60f), TextAnchor.MiddleCenter);
         title.fontStyle = FontStyle.Bold;
 
         confirmationText = CreateText(
-            "ConfirmationText", dialog.transform, font, "是否保留新的显示设置？", 25,
-            Color.white, new Vector2(0f, 25f), new Vector2(580f, 90f), TextAnchor.MiddleCenter);
+            "ConfirmationText", dialog.transform, font, "是否保留新的显示设置？", 27,
+            new Color32(62, 46, 83, 255),
+            new Vector2(0f, 45f), new Vector2(700f, 100f), TextAnchor.MiddleCenter);
 
         keepButton = CreateButton(
-            dialog.transform, resources, font, buttonSprite, "KeepButton", "保留设置",
-            new Vector2(-150f, -105f), new Vector2(220f, 58f), new Color32(158, 111, 42, 255));
+            dialog.transform, resources, font, skin.greenButton, "KeepButton", "保留设置",
+            new Vector2(-175f, -145f), new Vector2(300f, 82f), Color.white);
         revertButton = CreateButton(
-            dialog.transform, resources, font, buttonSprite, "RevertButton", "恢复设置",
-            new Vector2(150f, -105f), new Vector2(220f, 58f), new Color32(101, 66, 68, 255));
+            dialog.transform, resources, font, skin.grayButton, "RevertButton", "恢复设置",
+            new Vector2(175f, -145f), new Vector2(300f, 82f),
+            new Color32(62, 46, 83, 255));
         return overlay.gameObject;
+    }
+
+    /// <summary>
+    /// 保留 Unity Dropdown 标准层级，只替换可见图片，避免换肤影响展开、滚动和选项选择逻辑。
+    /// </summary>
+    private static void ConfigureDropdownTemplate(Dropdown dropdown, SettingsUiSkin skin)
+    {
+        RectTransform template = dropdown.template;
+        if (template == null)
+        {
+            return;
+        }
+
+        template.sizeDelta = new Vector2(0f, 300f);
+        Image templateImage = template.GetComponent<Image>();
+        if (templateImage != null)
+        {
+            ConfigureSpriteImage(templateImage, skin.grayButton, Image.Type.Sliced, true);
+        }
+
+        Transform itemTransform = template.Find("Viewport/Content/Item");
+        if (itemTransform == null)
+        {
+            return;
+        }
+
+        Toggle itemToggle = itemTransform.GetComponent<Toggle>();
+        Transform itemBackgroundTransform = itemTransform.Find("Item Background");
+        Image itemBackground = itemBackgroundTransform != null
+            ? itemBackgroundTransform.GetComponent<Image>()
+            : null;
+        if (itemBackground != null)
+        {
+            ConfigureSpriteImage(itemBackground, skin.whiteButton, Image.Type.Sliced, true);
+            itemBackground.color = new Color32(255, 255, 255, 230);
+            if (itemToggle != null)
+            {
+                itemToggle.targetGraphic = itemBackground;
+            }
+        }
+    }
+
+    private static Button CreateIconButton(
+        Transform parent,
+        Sprite sprite,
+        string objectName,
+        Vector2 position,
+        Vector2 size)
+    {
+        GameObject buttonObject = new GameObject(
+            objectName,
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Image),
+            typeof(Button));
+        buttonObject.transform.SetParent(parent, false);
+        ConfigureCenteredRect(buttonObject.GetComponent<RectTransform>(), position, size);
+
+        Image image = buttonObject.GetComponent<Image>();
+        ConfigureSpriteImage(image, sprite, Image.Type.Simple, true);
+        image.preserveAspect = true;
+        Button button = buttonObject.GetComponent<Button>();
+        button.targetGraphic = image;
+        return button;
+    }
+
+    private static Image CreateDecorativeImage(
+        string name,
+        Transform parent,
+        Sprite sprite,
+        Vector2 position,
+        Vector2 size)
+    {
+        Image image = CreateImage(name, parent, Color.white, false);
+        ConfigureCenteredRect(image.rectTransform, position, size);
+        ConfigureSpriteImage(image, sprite, Image.Type.Simple, false);
+        image.preserveAspect = true;
+        return image;
     }
 
     private static Image CreateImage(string name, Transform parent, Color color, bool raycastTarget)
@@ -577,11 +790,89 @@ public static class GameSettingsAssetSetupTool
         return text;
     }
 
-    private static Sprite FindSprite(string spriteName)
+    private static void ConfigureSpriteImage(
+        Image image,
+        Sprite sprite,
+        Image.Type imageType,
+        bool raycastTarget)
     {
-        return AssetDatabase.LoadAllAssetsAtPath(RpgUiSpritePath)
-            .OfType<Sprite>()
-            .FirstOrDefault(sprite => sprite.name == spriteName);
+        image.sprite = sprite;
+        image.type = imageType;
+        image.color = Color.white;
+        image.raycastTarget = raycastTarget;
+    }
+
+    private static Sprite LoadPurchasedSprite(string relativePathWithoutExtension)
+    {
+        string assetPath = PurchasedUiSpriteRoot + relativePathWithoutExtension + ".png";
+        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+        if (sprite == null)
+        {
+            throw new MissingReferenceException($"找不到淘宝 UI Sprite：{assetPath}");
+        }
+
+        return sprite;
+    }
+
+    private static SettingsUiSkin LoadSettingsUiSkin()
+    {
+        return new SettingsUiSkin
+        {
+            background = LoadPurchasedSprite("Home/UI_Home_Setting_Background"),
+            grayButton = LoadPurchasedSprite("Home/UI_Home_Setting_Buttons_ButtonGray_Btn_Normal"),
+            whiteButton = LoadPurchasedSprite("Home/UI_Home_Setting_ButtonWhite_Btn_Normal"),
+            sliderBackground = LoadPurchasedSprite(
+                "Home/UI_Home_Setting_ControlBar_Control_Prg_Bg_Background"),
+            sliderFill = LoadPurchasedSprite(
+                "Home/UI_Home_Setting_ControlBar_Control_Prg_Bar_Fill"),
+            sliderHandle = LoadPurchasedSprite(
+                "Home/UI_Home_Setting_Control_ControlBar_Control_Pointer_Handle"),
+            switchOff = LoadPurchasedSprite("Home/UI_Home_Setting_Control_SwitchOff_Handle"),
+            switchOn = LoadPurchasedSprite("Home/UI_Home_Setting_Control_SwitchOn_Handle"),
+            divider = LoadPurchasedSprite("Home/UI_Home_Setting_Line"),
+            back = LoadPurchasedSprite("Home/UI_Home_Setting_Top_Back"),
+            popup = LoadPurchasedSprite("Popups/UI_Popups_PopupChecking_Popup"),
+            greenButton = LoadPurchasedSprite("Common/UI_Common_Button_Rect_Green_Normal"),
+            arrowDown = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_ArrowDown"),
+            volumeUpIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_VolumeUp"),
+            musicIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Music"),
+            soundIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Sound"),
+            setting2Icon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Setting2"),
+            displayIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Display"),
+            setting1Icon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Setting1"),
+            gameIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Game"),
+            refreshIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Refresh"),
+            timerIcon = LoadPurchasedSprite("FunctionIcons/UI_FunctionIcon_Timer")
+        };
+    }
+
+    /// <summary>
+    /// 设置页换肤资源集合：生成阶段集中加载，运行时控制器不感知具体美术资源。
+    /// </summary>
+    private sealed class SettingsUiSkin
+    {
+        public Sprite background;
+        public Sprite grayButton;
+        public Sprite whiteButton;
+        public Sprite sliderBackground;
+        public Sprite sliderFill;
+        public Sprite sliderHandle;
+        public Sprite switchOff;
+        public Sprite switchOn;
+        public Sprite divider;
+        public Sprite back;
+        public Sprite popup;
+        public Sprite greenButton;
+        public Sprite arrowDown;
+        public Sprite volumeUpIcon;
+        public Sprite musicIcon;
+        public Sprite soundIcon;
+        public Sprite setting2Icon;
+        public Sprite displayIcon;
+        public Sprite setting1Icon;
+        public Sprite gameIcon;
+        public Sprite refreshIcon;
+        public Sprite timerIcon;
     }
 
     private static void ConfigureCenteredRect(RectTransform rect, Vector2 position, Vector2 size)

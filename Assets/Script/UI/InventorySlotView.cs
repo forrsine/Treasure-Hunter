@@ -122,6 +122,7 @@ public static class InventoryUiUtility
         {
             case InventoryItemCategory.Consumable: return "消耗品";
             case InventoryItemCategory.Quest: return "任务物品";
+            case InventoryItemCategory.Equipment: return "装备";
             default: return "材料";
         }
     }

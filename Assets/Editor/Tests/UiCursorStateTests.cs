@@ -29,5 +29,32 @@ public sealed class UiCursorStateTests
             Cursor.visible = originalVisible;
         }
     }
+
+    [Test]
+    public void EnsureHiddenAndLocked_RestoresGameplayCursorMode()
+    {
+        CursorLockMode originalLockState = Cursor.lockState;
+        bool originalVisible = Cursor.visible;
+
+        try
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+
+            UiCursorStateUtility.EnsureHiddenAndLocked();
+
+            // BatchMode 没有 Game View 窗口，Unity 会忽略 Locked 请求；有窗口的编辑器和正式包才校验锁定值。
+            if (!Application.isBatchMode)
+            {
+                Assert.That(Cursor.lockState, Is.EqualTo(CursorLockMode.Locked));
+            }
+            Assert.That(Cursor.visible, Is.False);
+        }
+        finally
+        {
+            Cursor.lockState = originalLockState;
+            Cursor.visible = originalVisible;
+        }
+    }
 }
 #endif

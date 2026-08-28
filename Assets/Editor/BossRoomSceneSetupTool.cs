@@ -33,7 +33,6 @@ public static class BossRoomSceneSetupTool
         CreateGameplayUiRoot();
         CreateBossRoomLighting(roomRoot);
         CreateArenaRoom(roomRoot);
-        CreateBossBattleBgm(roomRoot);
 
         Transform playerSpawnPoint = CreateSpawnPoint(
             BossRoomSceneBootstrap.PlayerSpawnPointName,
@@ -288,22 +287,6 @@ public static class BossRoomSceneSetupTool
         CameraCo cameraController = cameraObject.AddComponent<CameraCo>();
         cameraObject.AddComponent<CameraOcclusionController>();
         return cameraController;
-    }
-
-    /// <summary>
-    /// 给 BossRoomScene 预留一个可手动拖 AudioClip 的 BGM 音源对象。
-    /// 这里只创建播放入口，不绑定具体音乐资源，避免代码层硬编码音频素材。
-    /// </summary>
-    private static void CreateBossBattleBgm(Transform roomRoot)
-    {
-        GameObject bgmObject = new GameObject(BossRoomSceneBootstrap.BossBattleBgmObjectName);
-        bgmObject.transform.SetParent(roomRoot, false);
-
-        AudioSource source = bgmObject.AddComponent<AudioSource>();
-        source.playOnAwake = false;
-        source.loop = true;
-        source.volume = 0.65f;
-        source.spatialBlend = 0f;
     }
 
     private static void CreateGameplayCharacterSpawner(Transform playerSpawnPoint, CameraCo cameraController)

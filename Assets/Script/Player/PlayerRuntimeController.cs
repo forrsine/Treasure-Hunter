@@ -162,6 +162,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
         entryDefine = define;
         presentation.BindVisual(visualObject, define);
         InitializeFeatureComponents();
+        audioComponent?.ConfigureProfile(define != null ? define.classKey : null);
     }
 
     /// <summary>
@@ -171,6 +172,7 @@ public sealed class PlayerRuntimeController : MonoBehaviour, IController
     {
         entrySave = save;
         entryDefine = define;
+        audioComponent?.ConfigureProfile(define != null ? define.classKey : null);
         this.SendCommand(new InitializePlayerCommand(save, define));
         movement.InitializeStamina();
         initialized = true;

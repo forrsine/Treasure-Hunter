@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5cbb5caa4e130714594d1374713aee21, type: 3}
+  m_Name: EconomyConfig
+  m_EditorClassIdentifier: 
+  slimeOneMinGold: 1
+  slimeOneMaxGold: 2
+  slimeTwoMinGold: 2
+  slimeTwoMaxGold: 3
+  vaultBaseGold: 30
+  vaultStepGold: 5
+  vaultStepCap: 4
+  bossBaseGold: 150
+  bossStepGold: 25
+  bossMaxGold: 300
+  worldGoldPickupPrefab: {fileID: 1190269987797449049, guid: ad6732a296947b847818ca7e9e1fdaf5, type: 3}
+  importantPickupLifetimeSeconds: 90

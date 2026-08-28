@@ -491,6 +491,8 @@ GameObject:
   - component: {fileID: 2324013692526108145}
   - component: {fileID: -6243467829187147548}
   - component: {fileID: 220884203422484708}
+  - component: {fileID: 7375950819141318107}
+  - component: {fileID: 6499787840600478161}
   m_Layer: 7
   m_Name: Slime1
   m_TagString: Untagged
@@ -556,6 +558,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enemyState: 1
   slimeType: 0
+  monsterKind: 0
   IdleTime: 2
   checkDistance: 6
   target: {fileID: 0}
@@ -595,12 +598,6 @@ MonoBehaviour:
   shootPos: {fileID: 0}
   bulletSpeed: 8
   bulletLifeTime: 2
-  sfxSource: {fileID: 0}
-  meleeAttackClip: {fileID: 8300000, guid: 32d4b1811dda14a6cb9e059ee8ad17d2, type: 3}
-  rangedShootClip: {fileID: 8300000, guid: 29bde6326b4c34ad8a12da475f79b50a, type: 3}
-  hitClip: {fileID: 8300000, guid: 7e9ee6dc04a5d40d1a5dfc4beb9865e7, type: 3}
-  attackVolume: 1
-  hitVolume: 1
   Exp: 18
   AtkPower: 18
   HpBar: {fileID: 3786086962984480512}
@@ -615,7 +612,7 @@ CharacterController:
   m_IsTrigger: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Height: 1.3
+  m_Height: 1.2
   m_Radius: 0.52
   m_SlopeLimit: 45
   m_StepOffset: 0.05
@@ -652,6 +649,31 @@ MonoBehaviour:
   horizontalScatterRadius: 0.35
   verticalOffset: 0.2
   pickupLifetimeSeconds: 45
+--- !u!114 &7375950819141318107
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2324013692526108151}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3d932f326d1211b4ebaebaa949f311ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  economyConfig: {fileID: 11400000, guid: f4cd41b062cdff54dad038031d9926c7, type: 2}
+--- !u!114 &6499787840600478161
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2324013692526108151}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 49d2490f7e764564bbf5e8372a4bc6b5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &2324421811997327179
 GameObject:
   m_ObjectHideFlags: 0

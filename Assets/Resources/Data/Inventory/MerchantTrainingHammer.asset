@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d78dfce684b1eb4e937e0f1b1ff7389, type: 3}
+  m_Name: MerchantTrainingHammer
+  m_EditorClassIdentifier: 
+  itemId: merchant_training_hammer
+  displayName: "\u7EC3\u4E60\u6218\u9524"
+  category: 3
+  rarity: 1
+  icon: {fileID: 21300000, guid: 0b4e3c1792a14b346a4644b82decf4be, type: 3}
+  description: "\u5546\u4EBA\u51C6\u5907\u7684\u5165\u95E8\u6218\u9524\u3002"
+  maxStack: 1
+  useEffect: 0
+  restorePercent: 0
+  displayTint: {r: 1, g: 1, b: 1, a: 1}
+  equipmentSlot: 1
+  equipmentStatModifiers:
+  - statType: 0
+    value: 6

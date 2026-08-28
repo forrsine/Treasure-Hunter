@@ -203,6 +203,21 @@ public sealed class UserSaveCharacterProgressRequest
 
     [ProtoMember(8, Name = "inventory_items")]
     public List<NInventoryItemInfo> InventoryItems { get; } = new();
+
+    [ProtoMember(9, Name = "equipped_items")]
+    public List<NEquippedItemInfo> EquippedItems { get; } = new();
+
+    [ProtoMember(10, Name = "gold")]
+    public long Gold { get; set; }
+
+    [ProtoMember(11, Name = "merchant_intro_completed")]
+    public bool MerchantIntroCompleted { get; set; }
+
+    [ProtoMember(12, Name = "purchased_limited_shop_item_ids")]
+    public List<string> PurchasedLimitedShopItemIds { get; } = new();
+
+    [ProtoMember(13, Name = "quest_progress")]
+    public List<NQuestProgressInfo> QuestProgress { get; } = new();
 }
 
 /// <summary>成长保存结果以及数据库确认后的角色数据。</summary>
@@ -292,6 +307,41 @@ public sealed class NCharacterInfo
 
     [ProtoMember(16, Name = "inventory_items")]
     public List<NInventoryItemInfo> InventoryItems { get; } = new();
+
+    [ProtoMember(17, Name = "equipped_items")]
+    public List<NEquippedItemInfo> EquippedItems { get; } = new();
+
+    [ProtoMember(18, Name = "merchant_intro_completed")]
+    public bool MerchantIntroCompleted { get; set; }
+
+    [ProtoMember(19, Name = "purchased_limited_shop_item_ids")]
+    public List<string> PurchasedLimitedShopItemIds { get; } = new();
+
+    [ProtoMember(20, Name = "quest_progress")]
+    public List<NQuestProgressInfo> QuestProgress { get; } = new();
+}
+
+[ProtoContract]
+public sealed class NQuestProgressInfo
+{
+    [ProtoMember(1, Name = "quest_id")]
+    public string QuestId { get; set; } = "";
+
+    [ProtoMember(2, Name = "state")]
+    public int State { get; set; }
+
+    [ProtoMember(3, Name = "current_count")]
+    public int CurrentCount { get; set; }
+}
+
+[ProtoContract]
+public sealed class NEquippedItemInfo
+{
+    [ProtoMember(1, Name = "equipment_slot")]
+    public int EquipmentSlot { get; set; }
+
+    [ProtoMember(2, Name = "item_id")]
+    public string ItemId { get; set; } = "";
 }
 
 /// <summary>角色背包中一个非空格子的网络数据。</summary>

@@ -18,7 +18,9 @@ public sealed class GetPlayerProgressSaveDataQuery : AbstractQuery<PlayerProgres
         {
             Level = stats.Level,
             Exp = stats.CurrentExp,
-            PendingAttributeUpgradeCount = stats.PendingUpgradeSelectionCount
+            PendingAttributeUpgradeCount = stats.PendingUpgradeSelectionCount,
+            Gold = this.GetSystem<EconomySystem>().CurrentGold,
+            MerchantIntroCompleted = this.GetModel<ShopModel>().MerchantIntroCompleted
         };
 
         for (int typeValue = (int)PlayerAttributeType.AttackPower;
@@ -41,6 +43,12 @@ public sealed class GetPlayerProgressSaveDataQuery : AbstractQuery<PlayerProgres
 
         saveData.InventoryItems.AddRange(
             this.GetSystem<InventorySystem>().CreateSaveSnapshot());
+        saveData.EquippedItems.AddRange(
+            this.GetSystem<EquipmentSystem>().CreateSaveSnapshot());
+        saveData.PurchasedLimitedShopItemIds.AddRange(
+            this.GetSystem<ShopSystem>().CreatePurchasedSnapshot());
+        saveData.QuestProgress.AddRange(
+            this.GetSystem<QuestSystem>().CreateSaveSnapshot());
 
         return saveData;
     }

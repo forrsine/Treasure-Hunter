@@ -276,6 +276,9 @@ public sealed class UserService : Singleton<UserService>
                 onlineCharacter.Data,
                 out Dictionary<int, int> upgrades,
                 out List<TInventoryItem> inventoryItems,
+                out List<TEquippedItem> equippedItems,
+                out List<string> purchasedLimitedShopItemIds,
+                out List<TQuestProgress> questProgress,
                 out string error))
         {
             sender.Session.Response.saveCharacterProgress.Result = Result.Failed;
@@ -294,8 +297,13 @@ public sealed class UserService : Singleton<UserService>
                 request.PendingAttributeUpgradeCount,
                 request.VaultDestroyedCount,
                 request.CompletedBossCount,
+                request.Gold,
+                request.MerchantIntroCompleted,
                 upgrades,
-                inventoryItems);
+                inventoryItems,
+                equippedItems,
+                purchasedLimitedShopItemIds,
+                questProgress);
 
             int characterIndex = user.Player.Characters.FindIndex(character => character.ID == saved.ID);
             if (characterIndex >= 0)
@@ -323,10 +331,16 @@ public sealed class UserService : Singleton<UserService>
         TCharacter current,
         out Dictionary<int, int> upgrades,
         out List<TInventoryItem> inventoryItems,
+        out List<TEquippedItem> equippedItems,
+        out List<string> purchasedLimitedShopItemIds,
+        out List<TQuestProgress> questProgress,
         out string error)
     {
         upgrades = new Dictionary<int, int>();
         inventoryItems = new List<TInventoryItem>();
+        equippedItems = new List<TEquippedItem>();
+        purchasedLimitedShopItemIds = new List<string>();
+        questProgress = new List<TQuestProgress>();
         error = "";
 
         if (!TryValidateInventory(
@@ -334,6 +348,21 @@ public sealed class UserService : Singleton<UserService>
                 request.ResetAfterDeath,
                 out inventoryItems,
                 out error))
+        {
+            return false;
+        }
+
+        if (!TryValidateEquipment(request.EquippedItems, out equippedItems, out error))
+        {
+            return false;
+        }
+
+        if (!TryValidateShopProgress(request, current, out purchasedLimitedShopItemIds, out error))
+        {
+            return false;
+        }
+
+        if (!QuestPersistenceRules.TryValidate(request.QuestProgress, current.QuestProgress, out questProgress, out error))
         {
             return false;
         }
@@ -348,7 +377,7 @@ public sealed class UserService : Singleton<UserService>
                 request.AttributeUpgrades.Count == 0;
             if (!isExactDeathReset)
             {
-                error = "死亡重置数据必须全部归零";
+                error = "死亡重置的成长和关卡数据必须全部归零";
                 return false;
             }
 
@@ -407,6 +436,52 @@ public sealed class UserService : Singleton<UserService>
         return true;
     }
 
+    /// <summary>校验金币边界、首次对话单向状态和限购物品白名单，拒绝删除既有购买记录。</summary>
+    private static bool TryValidateShopProgress(
+        UserSaveCharacterProgressRequest request,
+        TCharacter current,
+        out List<string> purchasedLimitedShopItemIds,
+        out string error)
+    {
+        purchasedLimitedShopItemIds = new List<string>();
+        if (request.Gold < 0L || request.Gold > 9_999_999L)
+        {
+            error = "金币超出允许范围";
+            return false;
+        }
+
+        if (current.MerchantIntroCompleted && !request.MerchantIntroCompleted)
+        {
+            error = "商人首次对话状态不能回滚";
+            return false;
+        }
+
+        var usedIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string itemId in request.PurchasedLimitedShopItemIds)
+        {
+            if (!usedIds.Add(itemId) || !InventoryPersistenceRules.IsLimitedShopItem(itemId))
+            {
+                error = "限购记录包含重复或未知商品";
+                return false;
+            }
+
+            purchasedLimitedShopItemIds.Add(itemId);
+        }
+
+        foreach (string existingId in current.PurchasedLimitedShopItemIds)
+        {
+            if (!usedIds.Contains(existingId))
+            {
+                error = "已购买的限购商品不能回滚";
+                return false;
+            }
+        }
+
+        purchasedLimitedShopItemIds.Sort(StringComparer.Ordinal);
+        error = "";
+        return true;
+    }
+
     /// <summary>
     /// 校验客户端提交的背包结构。死亡重置请求只允许携带材料和任务物品，不能保留药水。
     /// </summary>
@@ -446,6 +521,33 @@ public sealed class UserService : Singleton<UserService>
         }
 
         inventoryItems.Sort((left, right) => left.SlotIndex.CompareTo(right.SlotIndex));
+        error = "";
+        return true;
+    }
+
+    /// <summary>校验穿戴槽不重复、物品属于服务端白名单且配置槽位完全匹配。</summary>
+    private static bool TryValidateEquipment(
+        IEnumerable<NEquippedItemInfo> requestedItems,
+        out List<TEquippedItem> equippedItems,
+        out string error)
+    {
+        equippedItems = new List<TEquippedItem>();
+        var usedSlots = new HashSet<int>();
+        foreach (NEquippedItemInfo item in requestedItems)
+        {
+            if (item == null || item.EquipmentSlot < 1 || item.EquipmentSlot > 6 ||
+                !usedSlots.Add(item.EquipmentSlot) ||
+                !InventoryPersistenceRules.TryGetRule(item.ItemId, out InventoryItemRule rule) ||
+                rule.EquipmentSlot != item.EquipmentSlot)
+            {
+                error = "已穿戴装备包含重复槽位、未知物品或错误槽位";
+                return false;
+            }
+
+            equippedItems.Add(new TEquippedItem { EquipmentSlot = item.EquipmentSlot, ItemId = item.ItemId });
+        }
+
+        equippedItems.Sort((left, right) => left.EquipmentSlot.CompareTo(right.EquipmentSlot));
         error = "";
         return true;
     }
@@ -526,7 +628,8 @@ public sealed class UserService : Singleton<UserService>
             CompletedBossCount = character.CompletedBossCount,
             mapId = character.MapID,
             Gold = character.Gold,
-            SlotIndex = character.SlotIndex
+            SlotIndex = character.SlotIndex,
+            MerchantIntroCompleted = character.MerchantIntroCompleted
         };
 
         foreach ((int attributeType, int upgradeCount) in character.AttributeUpgradeCounts)
@@ -545,6 +648,26 @@ public sealed class UserService : Singleton<UserService>
                 SlotIndex = item.SlotIndex,
                 ItemId = item.ItemId,
                 Count = item.Count
+            });
+        }
+
+        foreach (TEquippedItem item in character.EquippedItems)
+        {
+            info.EquippedItems.Add(new NEquippedItemInfo
+            {
+                EquipmentSlot = item.EquipmentSlot,
+                ItemId = item.ItemId
+            });
+        }
+
+        info.PurchasedLimitedShopItemIds.AddRange(character.PurchasedLimitedShopItemIds);
+        foreach (TQuestProgress progress in character.QuestProgress)
+        {
+            info.QuestProgress.Add(new NQuestProgressInfo
+            {
+                QuestId = progress.QuestId,
+                State = progress.State,
+                CurrentCount = progress.CurrentCount
             });
         }
 

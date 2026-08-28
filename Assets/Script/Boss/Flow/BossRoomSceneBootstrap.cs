@@ -26,7 +26,6 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
     public const float DefaultArenaLength = 36f;
     public const float DefaultArenaHeight = 8f;
     public const float DefaultArenaWallThickness = 0.5f;
-    public const string BossBattleBgmObjectName = "BossBattleBgm";
     public const string GameplayUiRootPrefabPath = "Assets/Prefabs/UI/GameplayUiRoot.prefab";
     public const string SpiderKingPrefabPath =
         "Assets/AllResources/Monsters Ultimate Pack 01 Cute Series/Spider King Cute Series/Prefabs/Spider King.prefab";
@@ -42,22 +41,6 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
 
     [Tooltip("墙体、地板、天花板的厚度，过薄可能导致高速移动时穿出房间。")]
     [SerializeField] private float arenaWallThickness = DefaultArenaWallThickness;
-
-    [Header("Boss 战背景音乐")]
-    [Tooltip("把 Boss 战 BGM 音频文件拖到这里；为空时不会播放，方便你后续手动配置。")]
-    [SerializeField] private AudioClip bossBattleMusic;
-
-    [Tooltip("可选：如果你想手动调 AudioSource 参数，也可以把场景里的 BossBattleBgm 音源拖到这里。")]
-    [SerializeField] private AudioSource bossBattleBgmSource;
-
-    [Tooltip("Boss 战 BGM 音量。")]
-    [SerializeField, Range(0f, 1f)] private float bossBattleMusicVolume = 0.65f;
-
-    [Tooltip("是否循环播放 Boss 战 BGM。")]
-    [SerializeField] private bool loopBossBattleMusic = true;
-
-    [Tooltip("进入 Boss 房间后是否自动播放已配置的 Boss 战 BGM。")]
-    [SerializeField] private bool playBossBattleMusicOnStart = true;
 
     [Header("Boss 房间光照")]
     [SerializeField] private Color bossAmbientColor = new Color(0.31f, 0.29f, 0.36f, 1f);
@@ -122,7 +105,6 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         arenaSize.y = Mathf.Max(1f, arenaSize.y);
         arenaSize.z = Mathf.Max(1f, arenaSize.z);
         arenaWallThickness = Mathf.Max(0.1f, arenaWallThickness);
-        bossBattleMusicVolume = Mathf.Clamp01(bossBattleMusicVolume);
         bossMainLightIntensity = Mathf.Max(0f, bossMainLightIntensity);
         centerFillLightIntensity = Mathf.Max(0f, centerFillLightIntensity);
         backFillLightIntensity = Mathf.Max(0f, backFillLightIntensity);
@@ -160,7 +142,6 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         Transform playerSpawnPoint = EnsureSpawnPoint(PlayerSpawnPointName, playerSpawnPosition, roomRoot);
         Transform bossSpawnPoint = EnsureSpawnPoint(BossSpawnPointName, bossSpawnPosition, roomRoot);
         CameraCo cameraController = EnsureGameplayCamera();
-        EnsureBossBattleBgm(roomRoot);
         EnsureGameplayCharacterSpawner(playerSpawnPoint, cameraController);
         SpiderKingBossController boss = EnsureSpiderKing(bossSpawnPoint, roomRoot);
         ApplyBossRoundScaling(boss);
@@ -531,53 +512,6 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         return cameraController;
     }
 
-    /// <summary>
-    /// Boss 战背景音乐入口：Bootstrap 只负责补齐 AudioSource 和应用 Inspector 配置。
-    /// 真正播放什么音乐由场景里的 bossBattleMusic 字段决定，方便你后续手动拖 AudioClip。
-    /// </summary>
-    private void EnsureBossBattleBgm(Transform roomRoot)
-    {
-        if (bossBattleBgmSource == null)
-        {
-            GameObject bgmObject = GameObject.Find(BossBattleBgmObjectName);
-            if (bgmObject == null)
-            {
-                bgmObject = new GameObject(BossBattleBgmObjectName);
-            }
-
-            if (roomRoot != null)
-            {
-                bgmObject.transform.SetParent(roomRoot, false);
-            }
-
-            bossBattleBgmSource = bgmObject.GetComponent<AudioSource>();
-            if (bossBattleBgmSource == null)
-            {
-                bossBattleBgmSource = bgmObject.AddComponent<AudioSource>();
-            }
-        }
-
-        bossBattleBgmSource.playOnAwake = false;
-        bossBattleBgmSource.loop = loopBossBattleMusic;
-        bossBattleBgmSource.volume = bossBattleMusicVolume;
-        bossBattleBgmSource.spatialBlend = 0f;
-        GameSettingsService.RouteMusicSource(bossBattleBgmSource);
-
-        AudioClip musicToPlay = bossBattleMusic != null
-            ? bossBattleMusic
-            : bossBattleBgmSource.clip;
-        if (musicToPlay == null)
-        {
-            return;
-        }
-
-        bossBattleBgmSource.clip = musicToPlay;
-        if (playBossBattleMusicOnStart && !bossBattleBgmSource.isPlaying)
-        {
-            bossBattleBgmSource.Play();
-        }
-    }
-
     private void EnsureGameplayCharacterSpawner(Transform playerSpawnPoint, CameraCo cameraController)
     {
         GameplayCharacterSpawner spawner = FindObjectOfType<GameplayCharacterSpawner>();
@@ -721,5 +655,13 @@ public sealed class BossRoomSceneBootstrap : MonoBehaviour
         }
 
         dropController.BindBoss(boss);
+
+        BossGoldRewardController goldRewardController = dropController.GetComponent<BossGoldRewardController>();
+        if (goldRewardController == null)
+        {
+            goldRewardController = dropController.gameObject.AddComponent<BossGoldRewardController>();
+        }
+
+        goldRewardController.BindBoss(boss);
     }
 }

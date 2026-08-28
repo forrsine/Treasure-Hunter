@@ -49,13 +49,16 @@ public sealed class GuestModePersistenceTests
         Assert.That(File.Exists(saveFilePath), Is.False, "空游客档会延迟到首次实际写入时创建文件。");
     }
 
-    [Test]
-    public void VersionOneSaveWithoutInventory_MigratesToEmptyVersionTwoInventory()
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    [TestCase(4)]
+    public void LegacySaveWithoutQuestProgress_MigratesToVersionFiveDefaults(int legacyVersion)
     {
         Directory.CreateDirectory(temporaryDirectory);
         File.WriteAllText(
             saveFilePath,
-            "{\"version\":1,\"characters\":[{\"id\":1,\"slotIndex\":0," +
+            $"{{\"version\":{legacyVersion},\"characters\":[{{\"id\":1,\"slotIndex\":0," +
             "\"name\":\"旧游客\",\"classId\":1,\"level\":1,\"exp\":0," +
             "\"pendingAttributeUpgradeCount\":0,\"vaultDestroyedCount\":0," +
             "\"completedBossCount\":0,\"attributeUpgrades\":[]}]}" );
@@ -66,6 +69,11 @@ public sealed class GuestModePersistenceTests
         Assert.That(success, Is.True, message);
         Assert.That(characters, Has.Length.EqualTo(1));
         Assert.That(characters[0].inventoryItems, Is.Not.Null.And.Empty);
+        Assert.That(characters[0].equippedItems, Is.Not.Null.And.Empty);
+        Assert.That(characters[0].gold, Is.Zero);
+        Assert.That(characters[0].merchantIntroCompleted, Is.False);
+        Assert.That(characters[0].purchasedLimitedShopItemIds, Is.Not.Null.And.Empty);
+        Assert.That(characters[0].questProgress, Is.Not.Null.And.Empty);
     }
 
     [Test]
@@ -111,7 +119,9 @@ public sealed class GuestModePersistenceTests
         {
             Level = 5,
             Exp = 37,
-            PendingAttributeUpgradeCount = 1
+            PendingAttributeUpgradeCount = 1,
+            Gold = 345,
+            MerchantIntroCompleted = true
         };
         progress.AttributeUpgrades.Add(new NAttributeUpgradeSave
         {
@@ -128,6 +138,18 @@ public sealed class GuestModePersistenceTests
             slotIndex = 2,
             itemId = "healing_potion",
             count = 3
+        });
+        progress.PurchasedLimitedShopItemIds.Add("boss_iron_war_axe");
+        progress.QuestProgress.Add(new NQuestProgressSave
+        {
+            questId = "hunt_red_slime",
+            state = (int)QuestState.Active,
+            currentCount = 3
+        });
+        progress.EquippedItems.Add(new NEquippedItemSave
+        {
+            equipmentSlot = (int)EquipmentSlotType.Weapon,
+            itemId = "boss_iron_war_axe"
         });
         progress.InventoryItems.Add(new NInventoryItemSave
         {
@@ -152,6 +174,12 @@ public sealed class GuestModePersistenceTests
         Assert.That(savedCharacter.completedBossCount, Is.EqualTo(2));
         Assert.That(savedCharacter.attributeUpgrades, Has.Count.EqualTo(2));
         Assert.That(savedCharacter.inventoryItems, Has.Count.EqualTo(2));
+        Assert.That(savedCharacter.equippedItems, Has.Count.EqualTo(1));
+        Assert.That(savedCharacter.gold, Is.EqualTo(345));
+        Assert.That(savedCharacter.merchantIntroCompleted, Is.True);
+        Assert.That(savedCharacter.purchasedLimitedShopItemIds, Is.EquivalentTo(new[] { "boss_iron_war_axe" }));
+        Assert.That(savedCharacter.questProgress, Has.Count.EqualTo(1));
+        Assert.That(savedCharacter.questProgress[0].currentCount, Is.EqualTo(3));
 
         var reloadedService = new LocalGuestSaveService(saveFilePath);
         Assert.That(reloadedService.TryLoad(out NCharacter[] reloaded, out string reloadMessage), Is.True, reloadMessage);
@@ -166,6 +194,15 @@ public sealed class GuestModePersistenceTests
         Assert.That(restored.GetAttributeUpgradeCount(PlayerAttributeType.AttackPower), Is.EqualTo(2));
         Assert.That(restored.GetAttributeUpgradeCount(PlayerAttributeType.MaxHp), Is.EqualTo(1));
         Assert.That(restored.inventoryItems, Has.Count.EqualTo(2));
+        Assert.That(restored.equippedItems, Has.Count.EqualTo(1));
+        Assert.That(restored.equippedItems[0].itemId, Is.EqualTo("boss_iron_war_axe"));
+        Assert.That(restored.gold, Is.EqualTo(345));
+        Assert.That(restored.merchantIntroCompleted, Is.True);
+        Assert.That(restored.purchasedLimitedShopItemIds, Is.EquivalentTo(new[] { "boss_iron_war_axe" }));
+        Assert.That(restored.questProgress, Has.Count.EqualTo(1));
+        Assert.That(restored.questProgress[0].questId, Is.EqualTo("hunt_red_slime"));
+        Assert.That(restored.questProgress[0].state, Is.EqualTo((int)QuestState.Active));
+        Assert.That(restored.questProgress[0].currentCount, Is.EqualTo(3));
         Assert.That(
             restored.inventoryItems.Single(item => item.itemId == "healing_potion").count,
             Is.EqualTo(3));
@@ -226,12 +263,19 @@ public sealed class GuestModePersistenceTests
             itemId = "experience_crystal",
             count = 12
         });
+        progressed.QuestProgress.Add(new NQuestProgressSave
+        {
+            questId = "hunt_green_slime",
+            state = (int)QuestState.Active,
+            currentCount = 4
+        });
         Assert.That(
             service.TrySaveCharacterProgress(progressed, 8, 2, false, out _, out string progressMessage),
             Is.True,
             progressMessage);
 
         var invalidReset = new PlayerProgressSaveData { Level = 2, Exp = 0 };
+        invalidReset.QuestProgress.AddRange(progressed.QuestProgress.Select(item => item.Clone()));
         Assert.That(
             service.TrySaveCharacterProgress(invalidReset, 0, 0, true, out _, out string invalidMessage),
             Is.False);
@@ -244,6 +288,7 @@ public sealed class GuestModePersistenceTests
             upgradeCount = 1
         });
         exactReset.InventoryItems.AddRange(progressed.InventoryItems.Select(item => item.Clone()));
+        exactReset.QuestProgress.AddRange(progressed.QuestProgress.Select(item => item.Clone()));
         exactReset.ResetAfterDeath(Resources.Load<InventoryDatabase>(InventoryDatabase.ResourcesPath));
 
         Assert.That(
@@ -265,6 +310,8 @@ public sealed class GuestModePersistenceTests
         Assert.That(resetCharacter.inventoryItems, Has.Count.EqualTo(1));
         Assert.That(resetCharacter.inventoryItems[0].itemId, Is.EqualTo("experience_crystal"));
         Assert.That(resetCharacter.inventoryItems[0].count, Is.EqualTo(12));
+        Assert.That(resetCharacter.questProgress, Has.Count.EqualTo(1));
+        Assert.That(resetCharacter.questProgress[0].currentCount, Is.EqualTo(4));
         Assert.That(resetCharacter.name, Is.EqualTo("死亡重置测试"));
         Assert.That(resetCharacter.classId, Is.EqualTo(2));
     }

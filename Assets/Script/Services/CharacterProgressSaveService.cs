@@ -36,6 +36,7 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
     private int savedVersion;
     private string lastError = "";
     private bool isApplyingAuthoritativeInventory;
+    private bool isApplyingAuthoritativeEconomy;
 
     public IArchitecture GetArchitecture() => TreasureHunterArchitecture.Interface;
 
@@ -57,6 +58,13 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
         this.RegisterEvent<PlayerAttributeUpgradedEvent>(HandleAttributeUpgraded);
         this.RegisterEvent<PlayerDiedEvent>(HandlePlayerDied);
         this.RegisterEvent<InventoryChangedEvent>(HandleInventoryChanged);
+        this.RegisterEvent<EquipmentChangedEvent>(HandleEquipmentChanged);
+        this.RegisterEvent<GoldChangedEvent>(HandleGoldChanged);
+        this.RegisterEvent<MerchantIntroCompletedEvent>(HandleMerchantIntroCompleted);
+        this.RegisterEvent<ShopPurchaseCompletedEvent>(HandleShopPurchaseCompleted);
+        this.RegisterEvent<QuestAcceptedEvent>(HandleQuestAccepted);
+        this.RegisterEvent<QuestProgressChangedEvent>(HandleQuestProgressChanged);
+        this.RegisterEvent<QuestRewardClaimedEvent>(HandleQuestRewardClaimed);
         BossRunProgressState.PersistentProgressChanged += HandlePersistentProgressChanged;
     }
 
@@ -66,6 +74,13 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
         this.UnRegisterEvent<PlayerAttributeUpgradedEvent>(HandleAttributeUpgraded);
         this.UnRegisterEvent<PlayerDiedEvent>(HandlePlayerDied);
         this.UnRegisterEvent<InventoryChangedEvent>(HandleInventoryChanged);
+        this.UnRegisterEvent<EquipmentChangedEvent>(HandleEquipmentChanged);
+        this.UnRegisterEvent<GoldChangedEvent>(HandleGoldChanged);
+        this.UnRegisterEvent<MerchantIntroCompletedEvent>(HandleMerchantIntroCompleted);
+        this.UnRegisterEvent<ShopPurchaseCompletedEvent>(HandleShopPurchaseCompleted);
+        this.UnRegisterEvent<QuestAcceptedEvent>(HandleQuestAccepted);
+        this.UnRegisterEvent<QuestProgressChangedEvent>(HandleQuestProgressChanged);
+        this.UnRegisterEvent<QuestRewardClaimedEvent>(HandleQuestRewardClaimed);
         BossRunProgressState.PersistentProgressChanged -= HandlePersistentProgressChanged;
 
         if (Instance == this)
@@ -85,6 +100,7 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
         savedVersion = 0;
         lastError = "";
         isApplyingAuthoritativeInventory = false;
+        isApplyingAuthoritativeEconomy = false;
     }
 
     public void EndSession()
@@ -95,6 +111,7 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
         requestedSaveMode = CharacterProgressSaveMode.Normal;
         lastError = "";
         isApplyingAuthoritativeInventory = false;
+        isApplyingAuthoritativeEconomy = false;
 
         if (saveRoutine != null)
         {
@@ -193,6 +210,52 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
         {
             RequestAutoSave();
         }
+    }
+
+    private void HandleEquipmentChanged(EquipmentChangedEvent _)
+    {
+        if (!isApplyingAuthoritativeInventory)
+        {
+            RequestAutoSave();
+        }
+    }
+
+    private void HandleGoldChanged(GoldChangedEvent _)
+    {
+        // 普通怪可能在很短时间内连续死亡，金币变化沿用 1 秒防抖，合并为一次存档请求。
+        if (!isApplyingAuthoritativeEconomy)
+        {
+            RequestAutoSave();
+        }
+    }
+
+    private void HandleMerchantIntroCompleted(MerchantIntroCompletedEvent _)
+    {
+        RequestSave(true, CharacterProgressSaveMode.Normal);
+    }
+
+    private void HandleShopPurchaseCompleted(ShopPurchaseCompletedEvent _)
+    {
+        // 成功购买同时改变金币、背包和限购集合；最后用立即保存把三者作为同一快照落地。
+        RequestSave(true, CharacterProgressSaveMode.Normal);
+    }
+
+    private void HandleQuestAccepted(QuestAcceptedEvent _)
+    {
+        // 接取是关键状态切换，立即保存，避免刚接任务就退出时丢失状态。
+        RequestSave(true, CharacterProgressSaveMode.Normal);
+    }
+
+    private void HandleQuestProgressChanged(QuestProgressChangedEvent _)
+    {
+        // 连续击杀会很密集，沿用 1 秒防抖合并网络请求。
+        RequestAutoSave();
+    }
+
+    private void HandleQuestRewardClaimed(QuestRewardClaimedEvent _)
+    {
+        // 金币和已领取状态必须写进同一个快照，防止重进后重复领奖。
+        RequestSave(true, CharacterProgressSaveMode.Normal);
     }
 
     private void HandlePlayerDied(PlayerDiedEvent _)
@@ -329,10 +392,21 @@ public sealed class CharacterProgressSaveService : MonoBehaviour, IController
             isApplyingAuthoritativeInventory = true;
             TreasureHunterArchitecture.Interface.SendCommand(
                 new RestoreInventoryCommand(savedCharacter.inventoryItems));
+            TreasureHunterArchitecture.Interface.SendCommand(
+                new RestoreEquipmentCommand(savedCharacter.equippedItems));
+            isApplyingAuthoritativeEconomy = true;
+            TreasureHunterArchitecture.Interface.SendCommand(
+                new RestoreEconomyAndShopCommand(
+                    savedCharacter.gold,
+                    savedCharacter.merchantIntroCompleted,
+                    savedCharacter.purchasedLimitedShopItemIds));
+            TreasureHunterArchitecture.Interface.SendCommand(
+                new RestoreQuestProgressCommand(savedCharacter.questProgress));
         }
         finally
         {
             isApplyingAuthoritativeInventory = false;
+            isApplyingAuthoritativeEconomy = false;
         }
 
         GameplayRuntime.Instance.ClearVaultProgressCache();

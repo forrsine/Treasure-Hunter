@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d78dfce684b1eb4e937e0f1b1ff7389, type: 3}
+  m_Name: BossRoyalShield
+  m_EditorClassIdentifier: 
+  itemId: boss_royal_shield
+  displayName: "\u738B\u5EAD\u58C1\u5792"
+  category: 3
+  rarity: 3
+  icon: {fileID: 21300000, guid: de42eb8ac83da9e4aa32df7a91bca252, type: 3}
+  description: "\u738B\u5EAD\u5B88\u536B\u4F7F\u7528\u7684\u53F2\u8BD7\u76FE\u724C\u3002"
+  maxStack: 1
+  useEffect: 0
+  restorePercent: 0
+  displayTint: {r: 1, g: 1, b: 1, a: 1}
+  equipmentSlot: 3
+  equipmentStatModifiers:
+  - statType: 1
+    value: 90
+  - statType: 6
+    value: 0.04

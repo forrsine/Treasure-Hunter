@@ -21,11 +21,15 @@ public class InputCo : MonoBehaviour, IGameplayInput
     public bool leftMouseUp;
     public bool rollDown;
     public bool developerModeToggleDown;
-    public bool debugAddLevelsDown;
-    public bool debugAddExpDown;
+    public bool debugHighAttackToggleDown;
+    public bool debugInvincibilityToggleDown;
+    public bool debugAddGoldDown;
+    public bool debugCompleteVaultCycleDown;
+    public bool debugAddLevelDown;
     public bool debugRestoreManaDown;
-    public bool debugBreakVaultDown;
+    public bool debugZeroCooldownToggleDown;
     public bool inventoryToggleDown;
+    public bool interactDown;
     public bool skill1Down;
     public bool skill1Held;
     public bool skill1Up;
@@ -43,11 +47,15 @@ public class InputCo : MonoBehaviour, IGameplayInput
     public bool LeftMouseUp => leftMouseUp;
     public bool RollDown => rollDown;
     public bool DeveloperModeToggleDown => developerModeToggleDown;
-    public bool DebugAddLevelsDown => debugAddLevelsDown;
-    public bool DebugAddExpDown => debugAddExpDown;
+    public bool DebugHighAttackToggleDown => debugHighAttackToggleDown;
+    public bool DebugInvincibilityToggleDown => debugInvincibilityToggleDown;
+    public bool DebugAddGoldDown => debugAddGoldDown;
+    public bool DebugCompleteVaultCycleDown => debugCompleteVaultCycleDown;
+    public bool DebugAddLevelDown => debugAddLevelDown;
     public bool DebugRestoreManaDown => debugRestoreManaDown;
-    public bool DebugBreakVaultDown => debugBreakVaultDown;
+    public bool DebugZeroCooldownToggleDown => debugZeroCooldownToggleDown;
     public bool InventoryToggleDown => inventoryToggleDown;
+    public bool InteractDown => interactDown;
     Vector3 IGameplayInput.MouseInput => MouseInput;
 
     public bool Skill1Down => skill1Down;
@@ -79,7 +87,7 @@ public class InputCo : MonoBehaviour, IGameplayInput
     /// <summary>
     /// 每帧采样一次输入，把结果缓存到字段中。
     /// 翻滚默认右键触发，额外支持 LeftAlt。
-    /// F1、L、P、O、N 只负责采样开发者快捷键，是否允许执行由独立的开发者模式组件判断。
+    /// F1-F8 只负责采样开发者快捷键，是否允许执行由独立的开发者模式组件判断。
     /// B 是正式背包快捷键，不依赖开发者模式。
     /// </summary>
     private void Update()
@@ -93,11 +101,15 @@ public class InputCo : MonoBehaviour, IGameplayInput
         leftMouseUp = Input.GetMouseButtonUp(0);
         rollDown = Input.GetMouseButtonDown(1) || Input.GetKeyDown(KeyCode.LeftAlt);
         developerModeToggleDown = Input.GetKeyDown(KeyCode.F1);
-        debugAddLevelsDown = Input.GetKeyDown(KeyCode.L);
-        debugAddExpDown = Input.GetKeyDown(KeyCode.P);
-        debugRestoreManaDown = Input.GetKeyDown(KeyCode.O);
-        debugBreakVaultDown = Input.GetKeyDown(KeyCode.N);
+        debugHighAttackToggleDown = Input.GetKeyDown(KeyCode.F2);
+        debugInvincibilityToggleDown = Input.GetKeyDown(KeyCode.F3);
+        debugAddGoldDown = Input.GetKeyDown(KeyCode.F4);
+        debugCompleteVaultCycleDown = Input.GetKeyDown(KeyCode.F5);
+        debugAddLevelDown = Input.GetKeyDown(KeyCode.F6);
+        debugRestoreManaDown = Input.GetKeyDown(KeyCode.F7);
+        debugZeroCooldownToggleDown = Input.GetKeyDown(KeyCode.F8);
         inventoryToggleDown = Input.GetKeyDown(KeyCode.B);
+        interactDown = Input.GetKeyDown(KeyCode.E);
 
         skill1Down = Input.GetKeyDown(KeyCode.Alpha1);
         skill1Held = Input.GetKey(KeyCode.Alpha1);

@@ -1,0 +1,339 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1000000000000000000000000000001, type: 3}
+  m_Name: GameAudioCatalog
+  m_EditorClassIdentifier: 
+  startupMusic: {fileID: 8300000, guid: bea93a38b71b64b598109b3a3b1a0048, type: 3}
+  startupMusicVolume: 0.55
+  musicCrossFadeDuration: 1
+  sceneMusicEntries:
+  - sceneName: LoginScene
+    clip: {fileID: 8300000, guid: bea93a38b71b64b598109b3a3b1a0048, type: 3}
+    volume: 0.55
+  - sceneName: CharacterSelectScene
+    clip: {fileID: 8300000, guid: 458dd8822518c4f37bc3edba9b6c57d9, type: 3}
+    volume: 0.5
+  - sceneName: MainScene
+    clip: {fileID: 8300000, guid: 5b1ed8fbe89154eaf96723b6e5f0aad3, type: 3}
+    volume: 0.55
+  - sceneName: BossRoomScene
+    clip: {fileID: 8300000, guid: eb7f10105313640a18ce7926041a4d76, type: 3}
+    volume: 0.7
+  soundEffectCues:
+  - id: 1
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000000c, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000000d, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.96, y: 1.04}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 2
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000000e, type: 3}
+    volume: 0.8
+    pitchRange: {x: 1, y: 1}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 3
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000000a, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.98, y: 1.02}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 4
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000000b, type: 3}
+    volume: 0.9
+    pitchRange: {x: 0.98, y: 1.02}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 5
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000007, type: 3}
+    volume: 0.85
+    pitchRange: {x: 0.98, y: 1.04}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 6
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000007, type: 3}
+    volume: 0.85
+    pitchRange: {x: 0.98, y: 1.06}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 7
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000008, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000009, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.96, y: 1.05}
+    spatialBlend: 0
+    minDistance: 1
+    maxDistance: 1
+  - id: 8
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000001d, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000001e, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000001f, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000020, type: 3}
+    volume: 0.42
+    pitchRange: {x: 0.9, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 9
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000001d, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000001e, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000001f, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000020, type: 3}
+    volume: 0.5
+    pitchRange: {x: 1.05, y: 1.18}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 10
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000023, type: 3}
+    volume: 0.7
+    pitchRange: {x: 0.97, y: 1.04}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 11
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000024, type: 3}
+    volume: 0.75
+    pitchRange: {x: 0.97, y: 1.06}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 12
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000035, type: 3}
+    volume: 0.85
+    pitchRange: {x: 0.94, y: 1.04}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 13
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000036, type: 3}
+    volume: 0.88
+    pitchRange: {x: 0.94, y: 1.04}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 14
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000037, type: 3}
+    volume: 0.92
+    pitchRange: {x: 0.92, y: 1.02}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 15
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000012, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.98, y: 1.08}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 16
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000013, type: 3}
+    volume: 0.82
+    pitchRange: {x: 0.98, y: 1.08}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 17
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000014, type: 3}
+    volume: 0.84
+    pitchRange: {x: 0.98, y: 1.08}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 18
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000000f, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000010, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000011, type: 3}
+    volume: 0.86
+    pitchRange: {x: 0.96, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 19
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000038, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000039, type: 3}
+    volume: 0.82
+    pitchRange: {x: 0.95, y: 1.06}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 20
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000022, type: 3}
+    volume: 0.82
+    pitchRange: {x: 0.94, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 21
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000021, type: 3}
+    volume: 0.95
+    pitchRange: {x: 0.96, y: 1}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 22
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000026, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000027, type: 3}
+    volume: 0.9
+    pitchRange: {x: 0.95, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 23
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000028, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000029, type: 3}
+    volume: 0.82
+    pitchRange: {x: 0.94, y: 1.04}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 24
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000002a, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000002b, type: 3}
+    volume: 0.9
+    pitchRange: {x: 0.95, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 25
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000033, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000034, type: 3}
+    volume: 0.85
+    pitchRange: {x: 0.92, y: 1.04}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 26
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000032, type: 3}
+    volume: 1
+    pitchRange: {x: 0.96, y: 1.02}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 27
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000025, type: 3}
+    volume: 0.9
+    pitchRange: {x: 0.98, y: 1.02}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 28
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000002c, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000002d, type: 3}
+    volume: 0.76
+    pitchRange: {x: 0.93, y: 1.07}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 29
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000031, type: 3}
+    volume: 0.8
+    pitchRange: {x: 0.94, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 30
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000002f, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000030, type: 3}
+    volume: 0.78
+    pitchRange: {x: 0.94, y: 1.08}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 31
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000002e, type: 3}
+    volume: 0.9
+    pitchRange: {x: 0.94, y: 1.04}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 32
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000015, type: 3}
+    volume: 0.95
+    pitchRange: {x: 0.92, y: 1.02}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 33
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000016, type: 3}
+    - {fileID: 8300000, guid: a7000000000000000000000000000017, type: 3}
+    volume: 0.95
+    pitchRange: {x: 0.92, y: 1.03}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 34
+    clips:
+    - {fileID: 8300000, guid: a700000000000000000000000000001c, type: 3}
+    volume: 0.95
+    pitchRange: {x: 0.95, y: 1.03}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 35
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000019, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000001a, type: 3}
+    - {fileID: 8300000, guid: a700000000000000000000000000001b, type: 3}
+    volume: 0.92
+    pitchRange: {x: 0.93, y: 1.05}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28
+  - id: 36
+    clips:
+    - {fileID: 8300000, guid: a7000000000000000000000000000018, type: 3}
+    volume: 1
+    pitchRange: {x: 0.96, y: 1}
+    spatialBlend: 1
+    minDistance: 1.5
+    maxDistance: 28

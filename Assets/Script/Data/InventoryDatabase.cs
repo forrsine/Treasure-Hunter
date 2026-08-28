@@ -63,6 +63,7 @@ public sealed class InventoryDatabase : ScriptableObject
     [SerializeField] private GameObject worldPickupPrefab;
     [SerializeField, Min(1)] private int bossDropOrbCount = 3;
     [SerializeField] private BossLootEntry[] bossLootEntries = Array.Empty<BossLootEntry>();
+    [SerializeField] private BossLootEntry[] bossEquipmentLootEntries = Array.Empty<BossLootEntry>();
     [SerializeField] private GameObject bossLootOrbPrefab;
 
     public int Capacity => Mathf.Max(1, capacity);
@@ -73,6 +74,7 @@ public sealed class InventoryDatabase : ScriptableObject
     public GameObject WorldPickupPrefab => worldPickupPrefab;
     public int BossDropOrbCount => Mathf.Max(1, bossDropOrbCount);
     public BossLootEntry[] BossLootEntries => bossLootEntries;
+    public BossLootEntry[] BossEquipmentLootEntries => bossEquipmentLootEntries;
     public GameObject BossLootOrbPrefab => bossLootOrbPrefab;
 
     /// <summary>
@@ -265,6 +267,51 @@ public sealed class InventoryDatabase : ScriptableObject
         item = selected.Item;
         amount = UnityEngine.Random.Range(selected.MinAmount, selected.MaxAmount + 1);
         return amount > 0;
+    }
+
+    /// <summary>Boss 装备使用独立权重池，每次击杀额外必定尝试生成一个装备球。</summary>
+    public bool TryRollBossEquipment(float roll01, out InventoryItemDefinition item)
+    {
+        item = null;
+        if (bossEquipmentLootEntries == null || bossEquipmentLootEntries.Length == 0)
+        {
+            return false;
+        }
+
+        float totalWeight = 0f;
+        for (int i = 0; i < bossEquipmentLootEntries.Length; i++)
+        {
+            BossLootEntry entry = bossEquipmentLootEntries[i];
+            if (entry != null && entry.Item != null && entry.Item.IsEquipment)
+            {
+                totalWeight += entry.Weight;
+            }
+        }
+
+        if (totalWeight <= 0f)
+        {
+            return false;
+        }
+
+        float target = Mathf.Clamp(roll01, 0f, 0.999999f) * totalWeight;
+        float accumulated = 0f;
+        for (int i = 0; i < bossEquipmentLootEntries.Length; i++)
+        {
+            BossLootEntry entry = bossEquipmentLootEntries[i];
+            if (entry == null || entry.Item == null || !entry.Item.IsEquipment || entry.Weight <= 0f)
+            {
+                continue;
+            }
+
+            accumulated += entry.Weight;
+            if (target < accumulated)
+            {
+                item = entry.Item;
+                return true;
+            }
+        }
+
+        return false;
     }
 
 #if UNITY_EDITOR

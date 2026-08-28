@@ -269,6 +269,17 @@ public sealed class InventoryPrefabStructureTests
         Assert.That(panel.ValidatePrefabReferences(false), Is.True);
         InventorySlotView[] slots = gameplayUi.GetComponentsInChildren<InventorySlotView>(true);
         Assert.That(slots, Has.Length.EqualTo(InventoryModel.DefaultCapacity));
+        Assert.That(gameplayUi.GetComponentsInChildren<EquipmentSlotView>(true), Has.Length.EqualTo(6));
+        Transform overlay = gameplayUi.transform.Find("InventoryOverlay");
+        Assert.That(overlay, Is.Not.Null);
+        string backgroundPath = AssetDatabase.GetAssetPath(overlay.GetComponent<Image>().sprite);
+        Assert.That(backgroundPath, Does.Contain("淘宝ui素材/RuntimeSprites/Equipment/UI_Equipment_Background.png"));
+        Assert.That(AssetDatabase.GetAssetPath(overlay.Find("InventoryWindow/CloseButton").GetComponent<Image>().sprite),
+            Does.Contain("淘宝ui素材/RuntimeSprites/Equipment/UI_Equipment_Top_Back.png"));
+        Assert.That(AssetDatabase.GetAssetPath(overlay.Find("InventoryWindow/UseButton").GetComponent<Image>().sprite),
+            Does.Contain("淘宝ui素材/RuntimeSprites/Equipment/UI_Equipment_ButtonGreen.png"));
+        Assert.That(AssetDatabase.GetAssetPath(overlay.Find("InventoryWindow/DetailFrame").GetComponent<Image>().sprite),
+            Does.Contain("淘宝ui素材/RuntimeSprites/Equipment/UI_Equipment_EquipmentDetail1_Popup.png"));
 
         for (int i = 0; i < slots.Length; i++)
         {
@@ -289,15 +300,33 @@ public sealed class InventoryPrefabStructureTests
 
         Assert.That(database, Is.Not.Null);
         Assert.That(database.Capacity, Is.EqualTo(24));
-        Assert.That(database.Items, Has.Length.EqualTo(5));
+        Assert.That(database.Items, Has.Length.EqualTo(23));
+        Assert.That(database.TryGetItemById("merchant_training_hammer", out _), Is.True);
+        Assert.That(database.TryGetItemById("merchant_copper_ring", out _), Is.True);
         Assert.That(database.VaultLootEntries, Is.Empty);
         Assert.That(database.MonsterDropChance, Is.EqualTo(0.12f));
         Assert.That(database.MonsterLootEntries, Has.Length.EqualTo(2));
         Assert.That(database.MonsterLootEntries[0].Weight, Is.EqualTo(55f));
         Assert.That(database.MonsterLootEntries[1].Weight, Is.EqualTo(45f));
         Assert.That(database.WorldPickupPrefab, Is.Not.Null);
-        Assert.That(database.BossDropOrbCount, Is.EqualTo(2));
+        Assert.That(database.BossDropOrbCount, Is.EqualTo(3));
         Assert.That(database.BossLootEntries, Has.Length.EqualTo(3));
+        Assert.That(database.BossEquipmentLootEntries, Has.Length.EqualTo(12));
+        float rareWeight = 0f;
+        float epicWeight = 0f;
+        for (int i = 0; i < database.BossEquipmentLootEntries.Length; i++)
+        {
+            BossLootEntry entry = database.BossEquipmentLootEntries[i];
+            Assert.That(entry.Item.IsEquipment, Is.True);
+            Assert.That(entry.Item.MaxStack, Is.EqualTo(1));
+            Assert.That(entry.Item.IsUsable, Is.False);
+            Assert.That(entry.Item.Icon, Is.Not.Null);
+            Assert.That(AssetDatabase.GetAssetPath(entry.Item.Icon), Does.Contain("淘宝ui素材/RuntimeSprites/Equipment/"));
+            if (entry.Item.Rarity == InventoryItemRarity.Epic) epicWeight += entry.Weight;
+            else if (entry.Item.Rarity == InventoryItemRarity.Rare) rareWeight += entry.Weight;
+        }
+        Assert.That(rareWeight, Is.EqualTo(18f));
+        Assert.That(epicWeight, Is.EqualTo(6f));
         Assert.That(database.BossLootOrbPrefab, Is.Not.Null);
 
         Assert.That(boxPrefab, Is.Not.Null);

@@ -34,6 +34,8 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     [SerializeField] private Button secondaryButton;
     [SerializeField] private Text secondaryButtonText;
     [SerializeField] private InventoryPanel inventoryPanel;
+    [SerializeField] private MerchantShopPanel merchantShopPanel;
+    [SerializeField] private QuestPanel questPanel;
 
     [Header("Editor Preview")]
     [SerializeField] private bool editorPreviewOverlay = true;
@@ -48,9 +50,25 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     private CursorLockMode cachedCursorLockMode = CursorLockMode.Locked;
     private bool cachedCursorVisible;
     private bool hasSubmittedScoreToServer;
+    private Coroutine gameplayCursorRestoreRoutine;
 
     public bool IsGameplayInputBlocked =>
-        overlayMode != OverlayMode.None || (inventoryPanel != null && inventoryPanel.IsOpen);
+        overlayMode != OverlayMode.None ||
+        (merchantShopPanel != null && merchantShopPanel.IsModalOpen) ||
+        (questPanel != null && questPanel.IsOpen) ||
+        (inventoryPanel != null && inventoryPanel.IsOpen);
+
+    /// <summary>供商店提示判断，不把商店自己算进阻挡条件，避免循环依赖。</summary>
+    public bool HasBlockingOverlayExcludingMerchant =>
+        overlayMode != OverlayMode.None ||
+        (inventoryPanel != null && inventoryPanel.IsOpen) ||
+        (questPanel != null && questPanel.IsOpen);
+
+    /// <summary>供任务提示判断；不把任务面板自己算进阻挡条件。</summary>
+    public bool HasBlockingOverlayExcludingQuest =>
+        overlayMode != OverlayMode.None ||
+        (inventoryPanel != null && inventoryPanel.IsOpen) ||
+        (merchantShopPanel != null && merchantShopPanel.IsModalOpen);
 
     public IArchitecture GetArchitecture() => TreasureHunterArchitecture.Interface;
 
@@ -98,6 +116,12 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     {
         if (Application.isPlaying)
         {
+            if (gameplayCursorRestoreRoutine != null)
+            {
+                StopCoroutine(gameplayCursorRestoreRoutine);
+                gameplayCursorRestoreRoutine = null;
+            }
+
             this.UnRegisterEvent<PlayerDiedEvent>(HandlePlayerDied);
             BoxCo.OnVaultStatsChanged -= HandleVaultChanged;
             BoxCo.OnVaultDestroyed -= HandleVaultChanged;
@@ -164,7 +188,17 @@ public sealed class GameSessionUi : MonoBehaviour, IController
             return;
         }
 
-        // 背包属于比暂停菜单更靠前的模态层，ESC 先关闭背包，避免同一帧又打开暂停菜单。
+        // 商人对话/商店优先于背包和暂停，ESC 每次只关闭最上层模态。
+        if (merchantShopPanel != null && merchantShopPanel.TryCloseTopModal())
+        {
+            return;
+        }
+
+        if (questPanel != null && questPanel.TryClose())
+        {
+            return;
+        }
+
         if (inventoryPanel != null && inventoryPanel.IsOpen)
         {
             inventoryPanel.Close();
@@ -278,6 +312,8 @@ public sealed class GameSessionUi : MonoBehaviour, IController
         else if (secondaryButton == null) missing = nameof(secondaryButton);
         else if (secondaryButtonText == null) missing = nameof(secondaryButtonText);
         else if (inventoryPanel == null) missing = nameof(inventoryPanel);
+        else if (merchantShopPanel == null) missing = nameof(merchantShopPanel);
+        else if (questPanel == null) missing = nameof(questPanel);
 
         if (missing == null)
         {
@@ -299,6 +335,7 @@ public sealed class GameSessionUi : MonoBehaviour, IController
     private void SetOverlayMode(OverlayMode mode)
     {
         overlayMode = mode;
+        NotifyModalStateChanged();
         if (overlayRoot == null)
         {
             return;
@@ -313,6 +350,54 @@ public sealed class GameSessionUi : MonoBehaviour, IController
         overlayRoot.SetActive(true);
         overlayRoot.transform.SetAsLastSibling();
         ApplyOverlayContent(mode, GetCurrentScore(), false);
+    }
+
+    /// <summary>模态层变化后刷新靠近商人的提示，避免提示浮在背包或暂停面板上方。</summary>
+    public void NotifyModalStateChanged()
+    {
+        merchantShopPanel?.RefreshPromptVisibility();
+        questPanel?.RefreshPromptVisibility();
+    }
+
+    /// <summary>
+    /// 关闭玩法内模态界面后恢复第三人称鼠标状态。
+    /// ESC 在 Unity Editor 中还会被 Game View 用来释放鼠标，因此除了立即锁定，
+    /// 还要等待 ESC 真正松开后再于帧末确认一次，避免按键仍按住时被 Editor 再次解锁。
+    /// 恢复前若已经打开其它阻挡界面，则不会抢走该界面的鼠标。
+    /// </summary>
+    internal void RequestGameplayCursorRestore()
+    {
+        UiCursorStateUtility.EnsureHiddenAndLocked();
+        if (!Application.isPlaying || !isActiveAndEnabled)
+        {
+            return;
+        }
+
+        if (gameplayCursorRestoreRoutine != null)
+        {
+            StopCoroutine(gameplayCursorRestoreRoutine);
+        }
+
+        gameplayCursorRestoreRoutine = StartCoroutine(RestoreGameplayCursorAfterEscapeReleased());
+    }
+
+    private IEnumerator RestoreGameplayCursorAfterEscapeReleased()
+    {
+        // Unity Editor 会把 ESC 当成“释放 Game View 鼠标”的系统按键。
+        // 等到按键松开并完成本帧处理后再锁定，正式包和编辑器都能走同一套恢复流程。
+        while (Input.GetKey(KeyCode.Escape))
+        {
+            yield return null;
+        }
+
+        yield return new WaitForEndOfFrame();
+        gameplayCursorRestoreRoutine = null;
+        if (IsGameplayInputBlocked || Time.timeScale <= 0f)
+        {
+            yield break;
+        }
+
+        UiCursorStateUtility.EnsureHiddenAndLocked();
     }
 
     /// <summary>

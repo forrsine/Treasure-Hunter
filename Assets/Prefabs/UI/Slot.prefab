@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 3949606373645823307}
   - component: {fileID: 8288119109318065846}
   - component: {fileID: 3391420554880971482}
+  - component: {fileID: 770000000000000097}
   m_Layer: 5
   m_Name: Slot
   m_TagString: Untagged
@@ -463,3 +464,15 @@ MonoBehaviour:
     m_VerticalOverflow: 0
     m_LineSpacing: 1
   m_Text: "\u804C\u4E1A"
+--- !u!114 &770000000000000097
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 263991157287403705}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1000000000000000000000000000001, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

@@ -63,7 +63,8 @@ public sealed class PlayerCombatSystem : AbstractSystem
     public PlayerAttackRoll RollAttackDamage()
     {
         PlayerRuntimeStats stats = model.MutableStats;
-        int damage = Mathf.Max(1, stats.AttackPower);
+        int damage = this.GetSystem<DeveloperModeSystem>()
+            .GetEffectiveAttackPower(stats.AttackPower);
         bool isCritical = Random.value < stats.CritChance;
         if (isCritical)
         {
@@ -87,6 +88,12 @@ public sealed class PlayerCombatSystem : AbstractSystem
         if (incomingAttackPower <= 0 || stats.CurrentHp <= 0)
         {
             return new PlayerDamageResult(false, 0, stats.CurrentHp <= 0);
+        }
+
+        // 无敌在统一受伤入口拦截，不修改生命、不播放闪避，也不发送死亡或受伤事件。
+        if (this.GetModel<DeveloperModeModel>().InvincibilityEnabled)
+        {
+            return new PlayerDamageResult(false, 0, false);
         }
 
         if (allowDodge && stats.DodgeChance > 0f && Random.value < stats.DodgeChance)

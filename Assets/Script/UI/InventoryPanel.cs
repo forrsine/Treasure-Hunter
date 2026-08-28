@@ -25,6 +25,13 @@ public sealed class InventoryPanel : MonoBehaviour, IController
     [SerializeField] private Text detailDescriptionText;
     [SerializeField] private Button useButton;
     [SerializeField] private InventorySlotView[] slotViews;
+    [Header("Equipment View")]
+    [SerializeField] private EquipmentSlotView[] equipmentSlotViews;
+    [SerializeField] private Image classIcon;
+    [SerializeField] private Sprite[] classIcons;
+    [SerializeField] private Text characterNameText;
+    [SerializeField] private Text characterLevelText;
+    [SerializeField] private Text finalStatsText;
 
     [Header("Loot Toast")]
     [SerializeField] private GameObject toastRoot;
@@ -32,6 +39,7 @@ public sealed class InventoryPanel : MonoBehaviour, IController
     [SerializeField, Min(0.1f)] private float toastDuration = 2.2f;
 
     private int selectedSlotIndex = -1;
+    private EquipmentSlotType selectedEquipmentSlot = EquipmentSlotType.None;
     private bool isOpen;
     private bool hasCapturedGameplayState;
     private float cachedTimeScale = 1f;
@@ -47,6 +55,8 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         this.RegisterEvent<InventoryChangedEvent>(HandleInventoryChanged);
         this.RegisterEvent<InventoryItemAddedEvent>(HandleItemAdded);
         this.RegisterEvent<InventoryFullEvent>(HandleInventoryFull);
+        this.RegisterEvent<EquipmentChangedEvent>(HandleEquipmentChanged);
+        this.RegisterEvent<PlayerStatsChangedEvent>(HandlePlayerStatsChanged);
 
         if (closeButton != null)
         {
@@ -66,6 +76,8 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         this.UnRegisterEvent<InventoryChangedEvent>(HandleInventoryChanged);
         this.UnRegisterEvent<InventoryItemAddedEvent>(HandleItemAdded);
         this.UnRegisterEvent<InventoryFullEvent>(HandleInventoryFull);
+        this.UnRegisterEvent<EquipmentChangedEvent>(HandleEquipmentChanged);
+        this.UnRegisterEvent<PlayerStatsChangedEvent>(HandlePlayerStatsChanged);
 
         if (closeButton != null)
         {
@@ -91,6 +103,13 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         for (int i = 0; i < slotViews.Length; i++)
         {
             slotViews[i].Initialize(i, HandleSlotClicked);
+        }
+        if (equipmentSlotViews != null)
+        {
+            for (int i = 0; i < equipmentSlotViews.Length; i++)
+            {
+                equipmentSlotViews[i]?.Initialize(HandleEquipmentSlotClicked);
+            }
         }
 
         panelRoot.SetActive(false);
@@ -132,6 +151,11 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         else if (detailDescriptionText == null) missing = nameof(detailDescriptionText);
         else if (useButton == null) missing = nameof(useButton);
         else if (slotViews == null || slotViews.Length != InventoryModel.DefaultCapacity) missing = nameof(slotViews);
+        else if (equipmentSlotViews == null || equipmentSlotViews.Length != 6) missing = nameof(equipmentSlotViews);
+        else if (classIcon == null) missing = nameof(classIcon);
+        else if (characterNameText == null) missing = nameof(characterNameText);
+        else if (characterLevelText == null) missing = nameof(characterLevelText);
+        else if (finalStatsText == null) missing = nameof(finalStatsText);
         else if (toastRoot == null) missing = nameof(toastRoot);
         else if (toastText == null) missing = nameof(toastText);
 
@@ -181,6 +205,7 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         panelRoot.transform.SetAsLastSibling();
         SelectFirstAvailableSlot();
         RefreshView();
+        sessionUi?.NotifyModalStateChanged();
     }
 
     public void Close()
@@ -193,6 +218,7 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         isOpen = false;
         panelRoot.SetActive(false);
         RestoreGameplayState();
+        sessionUi?.NotifyModalStateChanged();
     }
 
     private bool CanOpen()
@@ -249,12 +275,16 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         }
 
         RestoreGameplayState();
+        sessionUi?.NotifyModalStateChanged();
     }
 
     private void HandleInventoryChanged(InventoryChangedEvent _)
     {
         RefreshView();
     }
+
+    private void HandleEquipmentChanged(EquipmentChangedEvent _) => RefreshView();
+    private void HandlePlayerStatsChanged(PlayerStatsChangedEvent _) => RefreshView();
 
     private void HandleItemAdded(InventoryItemAddedEvent e)
     {
@@ -292,6 +322,7 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         }
 
         int occupied = model.GetOccupiedSlotCount();
+        RefreshEquipmentView();
         if (capacityText != null)
         {
             capacityText.text = $"容量  {occupied} / {model.Capacity}";
@@ -313,10 +344,10 @@ public sealed class InventoryPanel : MonoBehaviour, IController
             slotViews[i].Refresh(slot, i == selectedSlotIndex);
         }
 
-        InventorySlotData selectedSlot = selectedSlotIndex >= 0 && selectedSlotIndex < model.Slots.Count
+        InventorySlotData selectedSlot = selectedEquipmentSlot == EquipmentSlotType.None && selectedSlotIndex >= 0 && selectedSlotIndex < model.Slots.Count
             ? model.Slots[selectedSlotIndex]
             : null;
-        RefreshDetail(selectedSlot);
+        RefreshDetail(selectedSlot, selectedEquipmentSlot);
     }
 
     private void SelectFirstAvailableSlot()
@@ -347,11 +378,33 @@ public sealed class InventoryPanel : MonoBehaviour, IController
     private void HandleSlotClicked(int index)
     {
         selectedSlotIndex = index;
+        selectedEquipmentSlot = EquipmentSlotType.None;
+        RefreshView();
+    }
+
+    private void HandleEquipmentSlotClicked(EquipmentSlotType slot)
+    {
+        selectedEquipmentSlot = slot;
+        selectedSlotIndex = -1;
         RefreshView();
     }
 
     private void HandleUseButtonClicked()
     {
+        if (selectedEquipmentSlot != EquipmentSlotType.None)
+        {
+            HandleEquipmentResult(this.SendCommand(new UnequipItemCommand(selectedEquipmentSlot)), false);
+            return;
+        }
+
+        InventoryModel inventory = this.GetModel<InventoryModel>();
+        if (selectedSlotIndex >= 0 && selectedSlotIndex < inventory.Slots.Count &&
+            !inventory.Slots[selectedSlotIndex].IsEmpty && inventory.Slots[selectedSlotIndex].Item.IsEquipment)
+        {
+            HandleEquipmentResult(this.SendCommand(new EquipInventoryItemCommand(selectedSlotIndex)), true);
+            return;
+        }
+
         InventoryUseResult result = this.SendCommand(new UseInventoryItemCommand(selectedSlotIndex));
         if (result.Succeeded)
         {
@@ -381,36 +434,158 @@ public sealed class InventoryPanel : MonoBehaviour, IController
         }
     }
 
-    private void RefreshDetail(InventorySlotData slot)
+    private void HandleEquipmentResult(EquipmentOperationResult result, bool equipping)
     {
-        bool hasItem = slot != null && !slot.IsEmpty;
-        detailIcon.enabled = hasItem && slot.Item.Icon != null;
-        detailIcon.sprite = hasItem ? slot.Item.Icon : null;
-        detailIcon.color = hasItem ? slot.Item.DisplayTint : Color.white;
+        if (result.Succeeded)
+        {
+            ShowToast($"已{(equipping ? "装备" : "卸下")} {result.Item.DisplayName}", InventoryUiUtility.GetRarityColor(result.Item.Rarity));
+            return;
+        }
+
+        string message = result.FailureReason == EquipmentOperationFailureReason.LevelLocked
+            ? $"戒指槽需要达到 {EquipmentSystem.RingUnlockLevel} 级"
+            : result.FailureReason == EquipmentOperationFailureReason.InventoryFull
+                ? "背包已满，无法卸下装备"
+                : "装备操作失败，请重新选择";
+        ShowToast(message, new Color(1f, 0.65f, 0.35f, 1f));
+    }
+
+    private void RefreshDetail(InventorySlotData slot, EquipmentSlotType equippedSlot)
+    {
+        InventoryItemDefinition equippedItem = equippedSlot != EquipmentSlotType.None
+            ? this.GetModel<EquipmentModel>().GetEquipped(equippedSlot)
+            : null;
+        bool hasItem = equippedItem != null || (slot != null && !slot.IsEmpty);
+        InventoryItemDefinition selectedItem = equippedItem != null ? equippedItem : hasItem ? slot.Item : null;
+        detailIcon.enabled = hasItem && selectedItem.Icon != null;
+        detailIcon.sprite = hasItem ? selectedItem.Icon : null;
+        detailIcon.color = hasItem ? selectedItem.DisplayTint : Color.white;
 
         if (useButton != null)
         {
-            useButton.gameObject.SetActive(hasItem && slot.Item.IsUsable);
+            bool showAction = hasItem && (selectedItem.IsUsable || selectedItem.IsEquipment);
+            useButton.gameObject.SetActive(showAction);
+            Text label = useButton.GetComponentInChildren<Text>(true);
+            if (label != null && showAction)
+            {
+                label.text = equippedItem != null ? "卸下" : selectedItem.IsEquipment ? "装备" : "使用";
+            }
         }
 
         if (!hasItem)
         {
             detailNameText.text = "未选择物品";
             detailNameText.color = new Color(0.88f, 0.82f, 0.72f, 1f);
-            detailMetaText.text = "点击左侧格子查看详情";
+            detailMetaText.text = "点击背包或装备槽查看详情";
             detailCountText.text = string.Empty;
             detailDescriptionText.text = "击败小怪或 Boss 后拾取掉落物，可以获得物品。";
             return;
         }
 
-        InventoryItemDefinition item = slot.Item;
+        InventoryItemDefinition item = selectedItem;
         detailNameText.text = item.DisplayName;
         detailNameText.color = InventoryUiUtility.GetRarityColor(item.Rarity);
         detailMetaText.text = $"{InventoryUiUtility.GetRarityName(item.Rarity)} · {InventoryUiUtility.GetCategoryName(item.Category)}";
-        detailCountText.text = $"数量：{slot.Count} / {item.MaxStack}";
-        detailDescriptionText.text = string.IsNullOrWhiteSpace(item.Description)
+        detailCountText.text = equippedItem != null ? GetEquipmentSlotName(equippedSlot) : $"数量：{slot.Count} / {item.MaxStack}";
+        InventoryItemDefinition comparison = item.IsEquipment && equippedItem == null
+            ? this.GetModel<EquipmentModel>().GetEquipped(item.EquipmentSlot)
+            : null;
+        string modifierText = item.IsEquipment ? "\n\n" + BuildModifierText(item, comparison) : string.Empty;
+        detailDescriptionText.text = (string.IsNullOrWhiteSpace(item.Description)
             ? "暂无物品说明。"
-            : item.Description;
+            : item.Description) + modifierText;
+    }
+
+    private void RefreshEquipmentView()
+    {
+        EquipmentModel equipment = this.GetModel<EquipmentModel>();
+        PlayerModel player = this.GetModel<PlayerModel>();
+        IPlayerStatsReadOnly stats = player.Stats;
+        if (equipmentSlotViews != null)
+        {
+            for (int i = 0; i < equipmentSlotViews.Length; i++)
+            {
+                EquipmentSlotView view = equipmentSlotViews[i];
+                view?.Refresh(equipment.GetEquipped(view.SlotType), view.SlotType == selectedEquipmentSlot, stats.Level);
+            }
+        }
+
+        NCharacter character = player.CharacterSave;
+        characterNameText.text = character != null ? character.name : "冒险者";
+        characterLevelText.text = $"Lv.{stats.Level}";
+        finalStatsText.text = $"攻击  {stats.AttackPower}\n生命  {stats.CurrentHp}/{stats.MaxHp}\n魔法  {stats.CurrentMp}/{stats.MaxMp}\n移速  {stats.CurrentMoveSpeed:0.00}\n暴击  {stats.CritChance * 100f:0.#}%\n闪避  {stats.DodgeChance * 100f:0.#}%\n减伤  {stats.DamageReduction * 100f:0.#}%\n吸血  {stats.LifeSteal * 100f:0.#}%";
+        int classIndex = character != null ? character.classId - 1 : -1;
+        if (classIcon != null && classIcons != null && classIndex >= 0 && classIndex < classIcons.Length)
+        {
+            classIcon.sprite = classIcons[classIndex];
+            classIcon.enabled = classIcon.sprite != null;
+        }
+    }
+
+    private static string BuildModifierText(InventoryItemDefinition item, InventoryItemDefinition comparison)
+    {
+        if (item.EquipmentStatModifiers == null) return string.Empty;
+        var lines = new System.Text.StringBuilder("装备属性");
+        for (int i = 0; i < item.EquipmentStatModifiers.Length; i++)
+        {
+            EquipmentStatModifier modifier = item.EquipmentStatModifiers[i];
+            bool percent = modifier.StatType == EquipmentStatType.CritChance || modifier.StatType == EquipmentStatType.DodgeChance || modifier.StatType == EquipmentStatType.DamageReduction || modifier.StatType == EquipmentStatType.LifeSteal;
+            lines.Append("\n+").Append(GetStatName(modifier.StatType)).Append(' ')
+                .Append(percent ? (modifier.Value * 100f).ToString("0.#") + "%" : modifier.Value.ToString("0.##"));
+        }
+        if (comparison != null)
+        {
+            lines.Append("\n\n与当前装备对比");
+            for (int typeValue = (int)EquipmentStatType.Attack; typeValue <= (int)EquipmentStatType.LifeSteal; typeValue++)
+            {
+                EquipmentStatType type = (EquipmentStatType)typeValue;
+                float delta = GetModifierValue(item, type) - GetModifierValue(comparison, type);
+                if (Mathf.Abs(delta) < 0.0001f) continue;
+                bool percent = type == EquipmentStatType.CritChance || type == EquipmentStatType.DodgeChance || type == EquipmentStatType.DamageReduction || type == EquipmentStatType.LifeSteal;
+                lines.Append("\n").Append(delta > 0f ? "+" : string.Empty).Append(GetStatName(type)).Append(' ')
+                    .Append(percent ? (delta * 100f).ToString("0.#") + "%" : delta.ToString("0.##"));
+            }
+        }
+        return lines.ToString();
+    }
+
+    private static float GetModifierValue(InventoryItemDefinition item, EquipmentStatType type)
+    {
+        float total = 0f;
+        if (item?.EquipmentStatModifiers == null) return total;
+        for (int i = 0; i < item.EquipmentStatModifiers.Length; i++)
+        {
+            if (item.EquipmentStatModifiers[i].StatType == type) total += item.EquipmentStatModifiers[i].Value;
+        }
+        return total;
+    }
+
+    private static string GetStatName(EquipmentStatType type)
+    {
+        switch (type)
+        {
+            case EquipmentStatType.Attack: return "攻击";
+            case EquipmentStatType.MaxHp: return "生命";
+            case EquipmentStatType.MaxMp: return "魔法";
+            case EquipmentStatType.MoveSpeed: return "移速";
+            case EquipmentStatType.CritChance: return "暴击";
+            case EquipmentStatType.DodgeChance: return "闪避";
+            case EquipmentStatType.DamageReduction: return "减伤";
+            default: return "吸血";
+        }
+    }
+
+    private static string GetEquipmentSlotName(EquipmentSlotType slot)
+    {
+        switch (slot)
+        {
+            case EquipmentSlotType.Weapon: return "已穿戴 · 武器";
+            case EquipmentSlotType.Armor: return "已穿戴 · 护甲";
+            case EquipmentSlotType.Shield: return "已穿戴 · 盾牌";
+            case EquipmentSlotType.Gloves: return "已穿戴 · 手套";
+            case EquipmentSlotType.Boots: return "已穿戴 · 鞋子";
+            default: return "已穿戴 · 戒指";
+        }
     }
 
     private void ShowToast(string message, Color color)

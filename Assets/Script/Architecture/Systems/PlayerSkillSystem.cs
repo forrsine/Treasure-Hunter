@@ -10,11 +10,13 @@ public sealed class PlayerSkillSystem : AbstractSystem
 {
     private PlayerModel playerModel;
     private PlayerSkillModel skillModel;
+    private DeveloperModeModel developerModeModel;
 
     protected override void OnInit()
     {
         playerModel = this.GetModel<PlayerModel>();
         skillModel = this.GetModel<PlayerSkillModel>();
+        developerModeModel = this.GetModel<DeveloperModeModel>();
     }
 
     /// <summary>
@@ -379,7 +381,8 @@ public sealed class PlayerSkillSystem : AbstractSystem
             return false;
         }
 
-        if (runtimeData.IsCoolingDown())
+        bool zeroCooldownEnabled = developerModeModel != null && developerModeModel.ZeroCooldownEnabled;
+        if (!zeroCooldownEnabled && runtimeData.IsCoolingDown())
         {
             NotifyCastFailed(skillId, $"技能冷却中：{runtimeData.cooldownRemaining:0.0} 秒");
             return false;
@@ -402,7 +405,10 @@ public sealed class PlayerSkillSystem : AbstractSystem
             return false;
         }
 
-        runtimeData.StartCooldown(levelData.cooldown);
+        if (!zeroCooldownEnabled)
+        {
+            runtimeData.StartCooldown(levelData.cooldown);
+        }
         Debug.Log($"释放技能成功：{skill.name} Lv.{runtimeData.level}，消耗 MP {levelData.mpCost}");
 
         return true;
@@ -424,7 +430,21 @@ public sealed class PlayerSkillSystem : AbstractSystem
     /// </summary>
     public void TickSkillCooldowns(float deltaTime)
     {
+        if (developerModeModel != null && developerModeModel.ZeroCooldownEnabled)
+        {
+            return;
+        }
+
         skillModel.TickCooldowns(deltaTime);
+    }
+
+    /// <summary>
+    /// 开启开发者零冷却时立即清掉已经存在的 CD。
+    /// 写操作仍由技能 System 完成，DeveloperModeSystem 不直接改技能 Model。
+    /// </summary>
+    public void ClearAllCooldownsForDevelopment()
+    {
+        skillModel.ClearAllCooldowns();
     }
 
 }

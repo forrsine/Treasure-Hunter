@@ -127,6 +127,7 @@ public sealed class BossLootDropController : MonoBehaviour, IController
         }
 
         int dropCount = Mathf.Min(database.BossDropOrbCount, bossLootEntries.Length);
+        int totalOrbCount = dropCount + 1;
         bool[] usedEntries = new bool[bossLootEntries.Length];
         for (int i = 0; i < dropCount; i++)
         {
@@ -145,8 +146,22 @@ public sealed class BossLootDropController : MonoBehaviour, IController
                 pickupPrefab,
                 item,
                 amount,
-                CalculateSpawnPosition(deadBoss.transform.position, i, dropCount),
+                CalculateSpawnPosition(deadBoss.transform.position, i, totalOrbCount),
                 pickupLifetimeSeconds);
+        }
+
+        if (database.TryRollBossEquipment(Random.value, out InventoryItemDefinition equipment))
+        {
+            WorldLootPool.Instance.Get(
+                pickupPrefab,
+                equipment,
+                1,
+                CalculateSpawnPosition(deadBoss.transform.position, dropCount, totalOrbCount),
+                pickupLifetimeSeconds);
+        }
+        else
+        {
+            Debug.LogWarning("Boss 装备掉落失败：独立装备池为空或权重无效。", database);
         }
     }
 

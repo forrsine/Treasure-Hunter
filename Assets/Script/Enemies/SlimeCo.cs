@@ -41,6 +41,12 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     }
     public SlimeType slimeType;     // 当前史莱姆类型
 
+    [Header("任务身份")]
+    [SerializeField, Tooltip("任务系统使用的稳定怪物身份，不依赖 Prefab 名称或材质颜色。")]
+    private MonsterKind monsterKind;
+
+    public MonsterKind MonsterKind => monsterKind;
+
     // ---------- 基本参数 ----------
     public float IdleTime = 3.5f;               // 闲置持续时间
     float curIdleTime = 0f;                     // 闲置计时器
@@ -116,14 +122,6 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     public float bulletSpeed = 8f;              // 子弹速度
     public float bulletLifeTime = 2f;           // 子弹存活时间
 
-    [Header("Audio")]
-    [SerializeField] private AudioSource sfxSource;
-    [SerializeField] private AudioClip meleeAttackClip;
-    [SerializeField] private AudioClip rangedShootClip;
-    [SerializeField] private AudioClip hitClip;
-    [SerializeField] [Range(0f, 1f)] private float attackVolume = 1f;
-    [SerializeField] [Range(0f, 1f)] private float hitVolume = 1f;
-
     // ---------- 着色器属性名称常量 ----------
     const string MainTexProperty = "_MainTex";
     const string AlbedoProperty = "_Albedo";
@@ -174,7 +172,6 @@ public class SlimeCo : MonoBehaviour, FighterInterface
         CacheBaseStats();
         CacheHitAnimationHashes();  // 缓存动画状态哈希
         EnsureSeparationLayerMask();
-        EnsureAudioSource();
     }
 
     /// <summary>
@@ -827,6 +824,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
             }
 
             isDie = true;
+            GameAudioService.PlayAt(GameSfxId.SlimeDeath, transform.position);
             DisableAtk();   // 关闭攻击碰撞体
 
             if (cc != null)
@@ -1407,45 +1405,11 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     }
 
     /// <summary>
-    /// 确保史莱姆身上有播放音效用的 AudioSource。
-    /// </summary>
-    void EnsureAudioSource()
-    {
-        if (sfxSource == null)
-        {
-            sfxSource = GetComponent<AudioSource>();
-        }
-
-        if (sfxSource == null)
-        {
-            sfxSource = gameObject.AddComponent<AudioSource>();
-        }
-
-        sfxSource.playOnAwake = false;
-        GameSettingsService.RouteSoundsSource(sfxSource);
-    }
-
-    /// <summary>
-    /// 安全播放一个怪物音效。
-    /// </summary>
-    bool PlayClip(AudioClip clip, float volume)
-    {
-        if (clip == null)
-        {
-            return false;
-        }
-
-        EnsureAudioSource();
-        sfxSource.PlayOneShot(clip, volume);
-        return true;
-    }
-
-    /// <summary>
     /// 动画事件调用：播放近战攻击音效。
     /// </summary>
     public void PlayMeleeAttackSfxEvent()
     {
-        PlayClip(meleeAttackClip, attackVolume);
+        GameAudioService.PlayAt(GameSfxId.SlimeMelee, transform.position);
     }
 
     /// <summary>
@@ -1453,7 +1417,7 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     /// </summary>
     public void PlayRangedShootSfxEvent()
     {
-        PlayClip(rangedShootClip, attackVolume);
+        GameAudioService.PlayAt(GameSfxId.SlimeRanged, transform.position);
     }
 
     /// <summary>
@@ -1461,6 +1425,6 @@ public class SlimeCo : MonoBehaviour, FighterInterface
     /// </summary>
     public void PlayHitSfxEvent()
     {
-        PlayClip(hitClip, hitVolume);
+        GameAudioService.PlayAt(GameSfxId.SlimeHit, transform.position);
     }
 }

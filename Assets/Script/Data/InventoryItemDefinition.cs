@@ -7,7 +7,8 @@ public enum InventoryItemCategory
 {
     Consumable,
     Material,
-    Quest
+    Quest,
+    Equipment
 }
 
 /// <summary>
@@ -48,6 +49,8 @@ public sealed class InventoryItemDefinition : ScriptableObject
     [SerializeField] private InventoryItemUseEffect useEffect;
     [SerializeField, Range(0f, 1f)] private float restorePercent;
     [SerializeField] private Color displayTint = Color.white;
+    [SerializeField] private EquipmentSlotType equipmentSlot;
+    [SerializeField] private EquipmentStatModifier[] equipmentStatModifiers = System.Array.Empty<EquipmentStatModifier>();
 
     public string ItemId => itemId;
     public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
@@ -62,6 +65,9 @@ public sealed class InventoryItemDefinition : ScriptableObject
     // UI 与地面表现应退回白色，而不是把图标意外显示成完全透明。
     public Color DisplayTint => displayTint.a <= 0f ? Color.white : displayTint;
     public bool IsUsable => useEffect != InventoryItemUseEffect.None && RestorePercent > 0f;
+    public EquipmentSlotType EquipmentSlot => equipmentSlot;
+    public EquipmentStatModifier[] EquipmentStatModifiers => equipmentStatModifiers;
+    public bool IsEquipment => category == InventoryItemCategory.Equipment && equipmentSlot != EquipmentSlotType.None;
 
     /// <summary>
     /// 运行时判断两个配置是否代表同一种物品。
@@ -85,7 +91,12 @@ public sealed class InventoryItemDefinition : ScriptableObject
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        maxStack = Mathf.Max(1, maxStack);
+        maxStack = category == InventoryItemCategory.Equipment ? 1 : Mathf.Max(1, maxStack);
+        if (category == InventoryItemCategory.Equipment)
+        {
+            useEffect = InventoryItemUseEffect.None;
+            restorePercent = 0f;
+        }
         restorePercent = Mathf.Clamp01(restorePercent);
         if (string.IsNullOrWhiteSpace(itemId))
         {

@@ -71,6 +71,8 @@ public sealed class DBService : Singleton<DBService>
                     PendingAttributeUpgradeCount INT NOT NULL CONSTRAINT DF_PlayerCharacters_PendingAttributeUpgradeCount DEFAULT 0,
                     VaultDestroyedCount INT NOT NULL CONSTRAINT DF_PlayerCharacters_VaultDestroyedCount DEFAULT 0,
                     CompletedBossCount INT NOT NULL CONSTRAINT DF_PlayerCharacters_CompletedBossCount DEFAULT 0,
+                    Gold BIGINT NOT NULL CONSTRAINT DF_PlayerCharacters_Gold DEFAULT 0,
+                    MerchantIntroCompleted BIT NOT NULL CONSTRAINT DF_PlayerCharacters_MerchantIntroCompleted DEFAULT 0,
                     CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_PlayerCharacters_CreatedAt DEFAULT SYSUTCDATETIME(),
                     UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_PlayerCharacters_UpdatedAt DEFAULT SYSUTCDATETIME(),
                     CONSTRAINT FK_PlayerCharacters_Users FOREIGN KEY (UserId) REFERENCES dbo.Users(Id),
@@ -101,6 +103,19 @@ public sealed class DBService : Singleton<DBService>
                     CONSTRAINT DF_PlayerCharacters_CompletedBossCount DEFAULT 0;
             END
 
+            IF COL_LENGTH(N'dbo.PlayerCharacters', N'Gold') IS NULL
+            BEGIN
+                ALTER TABLE dbo.PlayerCharacters
+                ADD Gold BIGINT NOT NULL CONSTRAINT DF_PlayerCharacters_Gold DEFAULT 0;
+            END
+
+            IF COL_LENGTH(N'dbo.PlayerCharacters', N'MerchantIntroCompleted') IS NULL
+            BEGIN
+                ALTER TABLE dbo.PlayerCharacters
+                ADD MerchantIntroCompleted BIT NOT NULL
+                    CONSTRAINT DF_PlayerCharacters_MerchantIntroCompleted DEFAULT 0;
+            END
+
             IF OBJECT_ID(N'dbo.CharacterAttributeUpgrades', N'U') IS NULL
             BEGIN
                 CREATE TABLE dbo.CharacterAttributeUpgrades (
@@ -127,6 +142,46 @@ public sealed class DBService : Singleton<DBService>
                         FOREIGN KEY (CharacterId) REFERENCES dbo.PlayerCharacters(Id) ON DELETE CASCADE,
                     CONSTRAINT CK_CharacterInventoryItems_Slot CHECK (SlotIndex >= 0 AND SlotIndex < 24),
                     CONSTRAINT CK_CharacterInventoryItems_Count CHECK (ItemCount > 0)
+                );
+            END
+
+            IF OBJECT_ID(N'dbo.CharacterEquippedItems', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CharacterEquippedItems (
+                    CharacterId BIGINT NOT NULL,
+                    EquipmentSlot INT NOT NULL,
+                    ItemId NVARCHAR(64) NOT NULL,
+                    CONSTRAINT PK_CharacterEquippedItems PRIMARY KEY (CharacterId, EquipmentSlot),
+                    CONSTRAINT FK_CharacterEquippedItems_Character
+                        FOREIGN KEY (CharacterId) REFERENCES dbo.PlayerCharacters(Id) ON DELETE CASCADE,
+                    CONSTRAINT CK_CharacterEquippedItems_Slot CHECK (EquipmentSlot >= 1 AND EquipmentSlot <= 6)
+                );
+            END
+
+
+            IF OBJECT_ID(N'dbo.CharacterShopPurchases', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CharacterShopPurchases (
+                    CharacterId BIGINT NOT NULL,
+                    ItemId NVARCHAR(64) NOT NULL,
+                    CONSTRAINT PK_CharacterShopPurchases PRIMARY KEY (CharacterId, ItemId),
+                    CONSTRAINT FK_CharacterShopPurchases_Character
+                        FOREIGN KEY (CharacterId) REFERENCES dbo.PlayerCharacters(Id) ON DELETE CASCADE
+                );
+            END
+
+            IF OBJECT_ID(N'dbo.CharacterQuestProgress', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CharacterQuestProgress (
+                    CharacterId BIGINT NOT NULL,
+                    QuestId NVARCHAR(64) NOT NULL,
+                    QuestState INT NOT NULL,
+                    CurrentCount INT NOT NULL,
+                    CONSTRAINT PK_CharacterQuestProgress PRIMARY KEY (CharacterId, QuestId),
+                    CONSTRAINT FK_CharacterQuestProgress_Character
+                        FOREIGN KEY (CharacterId) REFERENCES dbo.PlayerCharacters(Id) ON DELETE CASCADE,
+                    CONSTRAINT CK_CharacterQuestProgress_State CHECK (QuestState >= 1 AND QuestState <= 3),
+                    CONSTRAINT CK_CharacterQuestProgress_Count CHECK (CurrentCount >= 0)
                 );
             END
             """,
@@ -296,6 +351,8 @@ public sealed class DBService : Singleton<DBService>
                         PendingAttributeUpgradeCount = 0,
                         VaultDestroyedCount = 0,
                         CompletedBossCount = 0,
+                        Gold = 0,
+                        MerchantIntroCompleted = 0,
                         UpdatedAt = SYSUTCDATETIME()
                     OUTPUT INSERTED.Id,
                            INSERTED.UserId,
@@ -306,7 +363,9 @@ public sealed class DBService : Singleton<DBService>
                            INSERTED.Exp,
                            INSERTED.PendingAttributeUpgradeCount,
                            INSERTED.VaultDestroyedCount,
-                           INSERTED.CompletedBossCount
+                           INSERTED.CompletedBossCount,
+                           INSERTED.Gold,
+                           INSERTED.MerchantIntroCompleted
                     WHERE UserId = @UserId AND SlotIndex = @SlotIndex;
                 END
                 ELSE
@@ -322,7 +381,9 @@ public sealed class DBService : Singleton<DBService>
                            INSERTED.Exp,
                            INSERTED.PendingAttributeUpgradeCount,
                            INSERTED.VaultDestroyedCount,
-                           INSERTED.CompletedBossCount
+                           INSERTED.CompletedBossCount,
+                           INSERTED.Gold,
+                           INSERTED.MerchantIntroCompleted
                     VALUES (@UserId, @SlotIndex, @Name, @ClassId, 1, 0);
                 END
                 """,
@@ -358,6 +419,20 @@ public sealed class DBService : Singleton<DBService>
                     transaction);
                 clearInventoryCommand.Parameters.AddWithValue("@CharacterId", character.ID);
                 clearInventoryCommand.ExecuteNonQuery();
+
+                using var clearEquipmentCommand = new SqlCommand(
+                    "DELETE FROM dbo.CharacterEquippedItems WHERE CharacterId = @CharacterId",
+                    connection,
+                    transaction);
+                clearEquipmentCommand.Parameters.AddWithValue("@CharacterId", character.ID);
+                clearEquipmentCommand.ExecuteNonQuery();
+
+                using var clearShopPurchasesCommand = new SqlCommand(
+                    "DELETE FROM dbo.CharacterShopPurchases WHERE CharacterId = @CharacterId",
+                    connection,
+                    transaction);
+                clearShopPurchasesCommand.Parameters.AddWithValue("@CharacterId", character.ID);
+                clearShopPurchasesCommand.ExecuteNonQuery();
             }
 
             transaction.Commit();
@@ -392,8 +467,13 @@ public sealed class DBService : Singleton<DBService>
         int pendingAttributeUpgradeCount,
         int vaultDestroyedCount,
         int completedBossCount,
+        long gold,
+        bool merchantIntroCompleted,
         IReadOnlyDictionary<int, int> attributeUpgradeCounts,
-        IReadOnlyList<TInventoryItem> inventoryItems)
+        IReadOnlyList<TInventoryItem> inventoryItems,
+        IReadOnlyList<TEquippedItem> equippedItems,
+        IReadOnlyList<string> purchasedLimitedShopItemIds,
+        IReadOnlyList<TQuestProgress> questProgress)
     {
         using SqlConnection connection = OpenConnection();
         EnsurePlayerCharactersTable(connection);
@@ -409,6 +489,8 @@ public sealed class DBService : Singleton<DBService>
                     PendingAttributeUpgradeCount = @PendingAttributeUpgradeCount,
                     VaultDestroyedCount = @VaultDestroyedCount,
                     CompletedBossCount = @CompletedBossCount,
+                    Gold = @Gold,
+                    MerchantIntroCompleted = @MerchantIntroCompleted,
                     UpdatedAt = SYSUTCDATETIME()
                 WHERE Id = @CharacterId AND UserId = @UserId;
                 """,
@@ -420,6 +502,8 @@ public sealed class DBService : Singleton<DBService>
             updateCommand.Parameters.AddWithValue("@PendingAttributeUpgradeCount", pendingAttributeUpgradeCount);
             updateCommand.Parameters.AddWithValue("@VaultDestroyedCount", vaultDestroyedCount);
             updateCommand.Parameters.AddWithValue("@CompletedBossCount", completedBossCount);
+            updateCommand.Parameters.AddWithValue("@Gold", gold);
+            updateCommand.Parameters.AddWithValue("@MerchantIntroCompleted", merchantIntroCompleted);
             updateCommand.Parameters.AddWithValue("@CharacterId", characterId);
             updateCommand.Parameters.AddWithValue("@UserId", userId);
 
@@ -482,6 +566,69 @@ public sealed class DBService : Singleton<DBService>
                 insertInventoryCommand.ExecuteNonQuery();
             }
 
+            using (var deleteEquipmentCommand = new SqlCommand(
+                       "DELETE FROM dbo.CharacterEquippedItems WHERE CharacterId = @CharacterId",
+                       connection,
+                       transaction))
+            {
+                deleteEquipmentCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                deleteEquipmentCommand.ExecuteNonQuery();
+            }
+
+            foreach (TEquippedItem item in equippedItems)
+            {
+                using var insertEquipmentCommand = new SqlCommand(
+                    "INSERT INTO dbo.CharacterEquippedItems (CharacterId, EquipmentSlot, ItemId) VALUES (@CharacterId, @EquipmentSlot, @ItemId);",
+                    connection,
+                    transaction);
+                insertEquipmentCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                insertEquipmentCommand.Parameters.AddWithValue("@EquipmentSlot", item.EquipmentSlot);
+                insertEquipmentCommand.Parameters.AddWithValue("@ItemId", item.ItemId);
+                insertEquipmentCommand.ExecuteNonQuery();
+            }
+
+            using (var deleteShopPurchasesCommand = new SqlCommand(
+                       "DELETE FROM dbo.CharacterShopPurchases WHERE CharacterId = @CharacterId",
+                       connection,
+                       transaction))
+            {
+                deleteShopPurchasesCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                deleteShopPurchasesCommand.ExecuteNonQuery();
+            }
+
+            foreach (string itemId in purchasedLimitedShopItemIds)
+            {
+                using var insertShopPurchaseCommand = new SqlCommand(
+                    "INSERT INTO dbo.CharacterShopPurchases (CharacterId, ItemId) VALUES (@CharacterId, @ItemId);",
+                    connection,
+                    transaction);
+                insertShopPurchaseCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                insertShopPurchaseCommand.Parameters.AddWithValue("@ItemId", itemId);
+                insertShopPurchaseCommand.ExecuteNonQuery();
+            }
+
+            using (var deleteQuestCommand = new SqlCommand(
+                       "DELETE FROM dbo.CharacterQuestProgress WHERE CharacterId = @CharacterId",
+                       connection,
+                       transaction))
+            {
+                deleteQuestCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                deleteQuestCommand.ExecuteNonQuery();
+            }
+
+            foreach (TQuestProgress progress in questProgress)
+            {
+                using var insertQuestCommand = new SqlCommand(
+                    "INSERT INTO dbo.CharacterQuestProgress (CharacterId, QuestId, QuestState, CurrentCount) VALUES (@CharacterId, @QuestId, @QuestState, @CurrentCount);",
+                    connection,
+                    transaction);
+                insertQuestCommand.Parameters.AddWithValue("@CharacterId", characterId);
+                insertQuestCommand.Parameters.AddWithValue("@QuestId", progress.QuestId);
+                insertQuestCommand.Parameters.AddWithValue("@QuestState", progress.State);
+                insertQuestCommand.Parameters.AddWithValue("@CurrentCount", progress.CurrentCount);
+                insertQuestCommand.ExecuteNonQuery();
+            }
+
             transaction.Commit();
         }
         catch
@@ -532,7 +679,8 @@ public sealed class DBService : Singleton<DBService>
         using (var command = new SqlCommand(
                    """
                    SELECT Id, UserId, SlotIndex, Name, ClassId, Level, Exp,
-                          PendingAttributeUpgradeCount, VaultDestroyedCount, CompletedBossCount
+                           PendingAttributeUpgradeCount, VaultDestroyedCount, CompletedBossCount,
+                           Gold, MerchantIntroCompleted
                    FROM dbo.PlayerCharacters
                    WHERE UserId = @UserId
                    ORDER BY SlotIndex;
@@ -550,6 +698,9 @@ public sealed class DBService : Singleton<DBService>
 
         LoadAttributeUpgrades(connection, userId, characters);
         LoadInventoryItems(connection, userId, characters);
+        LoadEquippedItems(connection, userId, characters);
+        LoadShopPurchases(connection, userId, characters);
+        LoadQuestProgress(connection, userId, characters);
 
         return characters;
     }
@@ -625,6 +776,84 @@ public sealed class DBService : Singleton<DBService>
         }
     }
 
+    private static void LoadEquippedItems(SqlConnection connection, long userId, List<TCharacter> characters)
+    {
+        if (characters.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<long, TCharacter> charactersById = characters.ToDictionary(character => character.ID);
+        using var command = new SqlCommand(
+            "SELECT equipped.CharacterId, equipped.EquipmentSlot, equipped.ItemId FROM dbo.CharacterEquippedItems AS equipped INNER JOIN dbo.PlayerCharacters AS characters ON characters.Id = equipped.CharacterId WHERE characters.UserId = @UserId ORDER BY equipped.CharacterId, equipped.EquipmentSlot;",
+            connection);
+        command.Parameters.AddWithValue("@UserId", userId);
+        using SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            long characterId = reader.GetInt64(0);
+            if (charactersById.TryGetValue(characterId, out TCharacter? character))
+            {
+                character.EquippedItems.Add(new TEquippedItem
+                {
+                    EquipmentSlot = reader.GetInt32(1),
+                    ItemId = reader.GetString(2)
+                });
+            }
+        }
+    }
+
+    private static void LoadShopPurchases(SqlConnection connection, long userId, List<TCharacter> characters)
+    {
+        if (characters.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<long, TCharacter> charactersById = characters.ToDictionary(character => character.ID);
+        using var command = new SqlCommand(
+            "SELECT purchases.CharacterId, purchases.ItemId FROM dbo.CharacterShopPurchases AS purchases INNER JOIN dbo.PlayerCharacters AS characters ON characters.Id = purchases.CharacterId WHERE characters.UserId = @UserId ORDER BY purchases.CharacterId, purchases.ItemId;",
+            connection);
+        command.Parameters.AddWithValue("@UserId", userId);
+        using SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            long characterId = reader.GetInt64(0);
+            if (charactersById.TryGetValue(characterId, out TCharacter? character))
+            {
+                character.PurchasedLimitedShopItemIds.Add(reader.GetString(1));
+            }
+        }
+    }
+
+    private static void LoadQuestProgress(SqlConnection connection, long userId, List<TCharacter> characters)
+    {
+        if (characters.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<long, TCharacter> charactersById = characters.ToDictionary(character => character.ID);
+        using var command = new SqlCommand(
+            "SELECT progress.CharacterId, progress.QuestId, progress.QuestState, progress.CurrentCount FROM dbo.CharacterQuestProgress AS progress INNER JOIN dbo.PlayerCharacters AS characters ON characters.Id = progress.CharacterId WHERE characters.UserId = @UserId ORDER BY progress.CharacterId, progress.QuestId;",
+            connection);
+        command.Parameters.AddWithValue("@UserId", userId);
+        using SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            long characterId = reader.GetInt64(0);
+            if (charactersById.TryGetValue(characterId, out TCharacter? character))
+            {
+                character.QuestProgress.Add(new TQuestProgress
+                {
+                    QuestId = reader.GetString(1),
+                    State = reader.GetInt32(2),
+                    CurrentCount = reader.GetInt32(3)
+                });
+            }
+        }
+    }
+
     private static TCharacter ReadCharacter(SqlDataReader reader)
     {
         // 数据库字段到内存模型的映射集中在一处，表结构变化时只需调整这里。
@@ -643,9 +872,10 @@ public sealed class DBService : Singleton<DBService>
             PendingAttributeUpgradeCount = reader.GetInt32(7),
             VaultDestroyedCount = reader.GetInt32(8),
             CompletedBossCount = reader.GetInt32(9),
+            Gold = reader.GetInt64(10),
+            MerchantIntroCompleted = reader.GetBoolean(11),
             TID = classId,
-            MapID = 1,
-            Gold = 0
+            MapID = 1
         };
     }
 }

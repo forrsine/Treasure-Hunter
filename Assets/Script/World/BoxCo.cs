@@ -308,6 +308,7 @@ public class BoxCo : MonoBehaviour, FighterInterface
 
         // 扣血后立刻刷新分数、特效、血条和事件。
         currentHp = Mathf.Max(0, currentHp - damage);
+        GameAudioService.PlayAt(GameSfxId.VaultHit, transform.position);
         RefreshScoreFromCurrentProgress();
         SpawnEffect(hitVfxPrefab);
         TriggerHitFlash();
@@ -341,6 +342,73 @@ public class BoxCo : MonoBehaviour, FighterInterface
         NotifyVaultStatsChanged();
         HandleDestroyed();
         return true;
+    }
+
+    /// <summary>
+    /// 开发者模式专用：连续结算指定次数的正式击破，并跳过每次之间的重生等待。
+    /// 每次仍然进入 HandleDestroyed，所以经验、金币、掉落、难度成长和 Boss 入口事件都不会被绕过。
+    /// </summary>
+    public int BreakRepeatedlyForDevelopment(int requestedBreakCount)
+    {
+        int safeBreakCount = Mathf.Max(0, requestedBreakCount);
+        if (safeBreakCount <= 0)
+        {
+            return 0;
+        }
+
+        int completedBreakCount = 0;
+        for (int i = 0; i < safeBreakCount; i++)
+        {
+            // 如果玩家刚好在正常重生窗口中按下热键，先完成这次重生，再进入下一次正式击破。
+            if (isRespawning || respawnRoutine != null)
+            {
+                CompleteRespawnImmediatelyForDevelopment();
+            }
+
+            if (currentHp <= 0)
+            {
+                break;
+            }
+
+            currentHp = 0;
+            RefreshScoreFromCurrentProgress();
+            UpdateHpUI();
+            NotifyVaultStatsChanged();
+            HandleDestroyed(startRespawnRoutine: false);
+            completedBreakCount++;
+            CompleteRespawnImmediatelyForDevelopment();
+        }
+
+        return completedBreakCount;
+    }
+
+    /// <summary>
+    /// 只跳过宝箱的重生表现，不跳过击破结算。
+    /// 这让 F5 可以在一帧内补足本轮进度，同时不会留下缩放、碰撞或无敌状态残留。
+    /// </summary>
+    private void CompleteRespawnImmediatelyForDevelopment()
+    {
+        if (respawnRoutine != null)
+        {
+            StopCoroutine(respawnRoutine);
+            respawnRoutine = null;
+        }
+
+        isRespawning = false;
+        // 正常流程会在 RespawnAfterBreak 的后半段重算并补满新一轮生命；
+        // 同步开发者流程跳过了协程，因此必须在这里显式完成同一步，否则下一次循环仍会看到 0 血。
+        ApplyVaultStatsForLevel(keepCurrentHp: false);
+        invincibleTimer = 0f;
+        SetInvincibleState(false);
+        RestoreAnimationScale();
+        RestoreHitFlashState();
+
+        if (damageCollider != null)
+        {
+            damageCollider.enabled = true;
+        }
+
+        NotifyVaultStatsChanged();
     }
 
     /// <summary>
@@ -536,7 +604,7 @@ public class BoxCo : MonoBehaviour, FighterInterface
     /// <summary>
     /// 处理金库血量归零后的奖励、难度提升、事件广播和重生流程。
     /// </summary>
-    private void HandleDestroyed()
+    private void HandleDestroyed(bool startRespawnRoutine = true)
     {
         if (isRespawning)
         {
@@ -550,6 +618,7 @@ public class BoxCo : MonoBehaviour, FighterInterface
         // 击破次数 +1。后续 CalculateMaxHp 会按新层级计算下一轮血量。
         vaultLevel++;
 
+        GameAudioService.PlayAt(GameSfxId.VaultBreak, transform.position);
         SpawnEffect(breakVfxPrefab);
         TrySetAnimatorTrigger(breakTriggerName);
 
@@ -562,6 +631,11 @@ public class BoxCo : MonoBehaviour, FighterInterface
 
         OnVaultDestroyed?.Invoke(this);
         NotifyVaultStatsChanged();
+
+        if (!startRespawnRoutine)
+        {
+            return;
+        }
 
         if (respawnRoutine != null)
         {

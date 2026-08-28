@@ -19,6 +19,8 @@ public sealed class InitializePlayerCommand : AbstractCommand
     protected override void OnExecute()
     {
         this.GetSystem<PlayerProgressionSystem>().InitializePlayer(save, define);
+        this.GetSystem<EquipmentSystem>().ReapplyAfterPlayerReset();
+        this.SendEvent(new PlayerStatsChangedEvent());
     }
 }
 
@@ -209,6 +211,9 @@ public sealed class ResetPlayerProgressAfterDeathCommand : AbstractCommand
     protected override void OnExecute()
     {
         this.GetSystem<PlayerProgressionSystem>().ResetProgressAfterDeath(confirmedCharacter);
+        this.GetSystem<EquipmentSystem>().ReapplyAfterPlayerReset();
+        this.GetModel<PlayerModel>().MutableStats.CurrentHp = 0;
+        this.SendEvent(new PlayerStatsChangedEvent());
     }
 }
 

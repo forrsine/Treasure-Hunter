@@ -23,3 +23,5 @@ MonoBehaviour:
   useEffect: 2
   restorePercent: 0.3
   displayTint: {r: 0.35, g: 0.65, b: 1, a: 1}
+  equipmentSlot: 0
+  equipmentStatModifiers: []

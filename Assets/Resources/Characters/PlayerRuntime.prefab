@@ -216,33 +216,8 @@ MonoBehaviour:
   source: {fileID: 0}
   autoPlayFootstepSfx: 1
   autoPlayActionSfx: 1
-  walkFootstepClips:
-  - {fileID: 8300000, guid: 7a75790979eba2d4d94aa4abb7b7e96b, type: 3}
-  - {fileID: 8300000, guid: 200834ed15c4f1542bf1933a16ccb8ac, type: 3}
-  - {fileID: 8300000, guid: cbf3d36b0c254c346b36f7f820f4460d, type: 3}
-  - {fileID: 8300000, guid: 860f4b6e9d98c5f42ab7a86535b4b8d5, type: 3}
-  - {fileID: 8300000, guid: c0860d43559cba9469a3b90eff151c1c, type: 3}
-  runFootstepClips:
-  - {fileID: 8300000, guid: f0c02e5bc39799a44958457031464f19, type: 3}
-  - {fileID: 8300000, guid: dbafedb7a32049848b25bc73d49bea31, type: 3}
-  - {fileID: 8300000, guid: 55541c9f6e0419842b903c12ed745f33, type: 3}
-  - {fileID: 8300000, guid: 00e260a481fe16947b91654e2be41330, type: 3}
-  - {fileID: 8300000, guid: dbc548ade0e65f043942f25ab59f33f9, type: 3}
-  jumpClip: {fileID: 8300000, guid: 2c5292ba5cf254919a6b9e2b18e04f49, type: 3}
-  rollClip: {fileID: 8300000, guid: 79180f511d89441b9aa23ccae1992fe0, type: 3}
-  attack1Clip: {fileID: 8300000, guid: d46323e22e74e46baa241cbf48c85671, type: 3}
-  attack2Clip: {fileID: 8300000, guid: d46323e22e74e46baa241cbf48c85671, type: 3}
-  attack3Clip: {fileID: 8300000, guid: fe0b1f9aeb45b41b089175aeeabd5d95, type: 3}
-  skillClip: {fileID: 8300000, guid: 101106cd810615041bb13f121e59a2d7, type: 3}
-  hitClip: {fileID: 8300000, guid: 89e6bc608da7b47d4914f3d9c2484e48, type: 3}
   walkFootstepInterval: 0.7
   runFootstepInterval: 0.3
-  footstepVolume: 1
-  jumpVolume: 1
-  rollVolume: 1
-  attackVolume: 1
-  skillVolume: 1
-  hitVolume: 1
 --- !u!114 &3974072919841607022
 MonoBehaviour:
   m_ObjectHideFlags: 0

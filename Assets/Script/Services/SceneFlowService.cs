@@ -65,6 +65,9 @@ public static class SceneFlowService
         CharacterProgressSaveService.Instance?.EndSession();
         GameplayCharacterManager.Instance.Clear();
         TreasureHunterArchitecture.Interface.SendCommand(new ResetInventoryCommand());
+        TreasureHunterArchitecture.Interface.SendCommand(new ResetEquipmentCommand());
+        TreasureHunterArchitecture.Interface.SendCommand(new ResetEconomyAndShopCommand());
+        TreasureHunterArchitecture.Interface.SendCommand(new ResetQuestProgressCommand());
         SelectedCharacterState.Clear();
         GameplayRuntime.Instance.ClearVaultProgressCache();
         BossRunProgressState.ResetRun();
@@ -82,6 +85,15 @@ public static class SceneFlowService
         // 先恢复权威角色背包，再开启存档会话；这样恢复事件不会被误判成一次玩家修改。
         TreasureHunterArchitecture.Interface.SendCommand(
             new RestoreInventoryCommand(selectedCharacter != null ? selectedCharacter.inventoryItems : null));
+        TreasureHunterArchitecture.Interface.SendCommand(
+            new RestoreEquipmentCommand(selectedCharacter != null ? selectedCharacter.equippedItems : null));
+        TreasureHunterArchitecture.Interface.SendCommand(
+            new RestoreEconomyAndShopCommand(
+                selectedCharacter != null ? selectedCharacter.gold : 0L,
+                selectedCharacter != null && selectedCharacter.merchantIntroCompleted,
+                selectedCharacter != null ? selectedCharacter.purchasedLimitedShopItemIds : null));
+        TreasureHunterArchitecture.Interface.SendCommand(
+            new RestoreQuestProgressCommand(selectedCharacter != null ? selectedCharacter.questProgress : null));
         CharacterProgressSaveService saveService = CharacterProgressSaveService.Instance;
         if (saveService != null)
         {
@@ -128,6 +140,9 @@ public static class SceneFlowService
     {
         ClearSession(apiClient);
         TreasureHunterArchitecture.Interface.SendCommand(new ResetInventoryCommand());
+        TreasureHunterArchitecture.Interface.SendCommand(new ResetEquipmentCommand());
+        TreasureHunterArchitecture.Interface.SendCommand(new ResetEconomyAndShopCommand());
+        TreasureHunterArchitecture.Interface.SendCommand(new ResetQuestProgressCommand());
         SelectedCharacterState.Clear();
         GameplayRuntime.Instance.ClearVaultProgressCache();
         BossRunProgressState.ResetRun();

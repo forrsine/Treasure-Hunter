@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d78dfce684b1eb4e937e0f1b1ff7389, type: 3}
+  m_Name: MerchantHunterGloves
+  m_EditorClassIdentifier: 
+  itemId: merchant_hunter_gloves
+  displayName: "\u730E\u624B\u624B\u5957"
+  category: 3
+  rarity: 1
+  icon: {fileID: 21300000, guid: 96734337da0f6eb4da0624e82b7b8e46, type: 3}
+  description: "\u5E2E\u52A9\u5192\u9669\u8005\u6293\u4F4F\u81F4\u547D\u65F6\u673A\u3002"
+  maxStack: 1
+  useEffect: 0
+  restorePercent: 0
+  displayTint: {r: 1, g: 1, b: 1, a: 1}
+  equipmentSlot: 4
+  equipmentStatModifiers:
+  - statType: 4
+    value: 0.02

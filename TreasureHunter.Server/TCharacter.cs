@@ -20,9 +20,28 @@ public sealed class TCharacter
     public int CompletedBossCount { get; set; }
     public Dictionary<int, int> AttributeUpgradeCounts { get; } = new();
     public List<TInventoryItem> InventoryItems { get; } = new();
+    public List<TEquippedItem> EquippedItems { get; } = new();
+    public List<string> PurchasedLimitedShopItemIds { get; } = new();
+    public List<TQuestProgress> QuestProgress { get; } = new();
     public int TID { get; set; }
     public int MapID { get; set; } = 1;
     public long Gold { get; set; }
+    public bool MerchantIntroCompleted { get; set; }
+}
+
+/// <summary>数据库中的一条角色任务进度。</summary>
+public sealed class TQuestProgress
+{
+    public string QuestId { get; set; } = "";
+    public int State { get; set; }
+    public int CurrentCount { get; set; }
+}
+
+/// <summary>数据库中的一个已穿戴装备槽。</summary>
+public sealed class TEquippedItem
+{
+    public int EquipmentSlot { get; set; }
+    public string ItemId { get; set; } = "";
 }
 
 /// <summary>数据库中的一个角色背包格。</summary>
