@@ -156,6 +156,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   economyConfig: {fileID: 11400000, guid: f4cd41b062cdff54dad038031d9926c7, type: 2}
   rewardSpawnPoint: {fileID: 0}
+  surfacePadding: 0.2
+  heightAboveColliderBottom: 0.2
 --- !u!1 &1408035780603406653
 GameObject:
   m_ObjectHideFlags: 0
